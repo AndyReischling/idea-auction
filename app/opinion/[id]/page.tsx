@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
+import '../../global.css';
+import styles from './page.module.css';
 
 interface UserProfile {
   username: string;
@@ -23,9 +25,10 @@ interface OpinionAsset {
 
 interface Transaction {
   id: string;
-  type: 'buy' | 'sell' | 'earn';
+  type: 'buy' | 'sell' | 'earn' | 'bet_win' | 'bet_loss' | 'bet_place';
   opinionId?: string;
   opinionText?: string;
+  betId?: string;
   amount: number;
   date: string;
 }
@@ -364,113 +367,238 @@ export default function OpinionPage() {
     setSellPrice(calculateSellPrice(updatedMarketData.currentPrice, updatedMarketData.timesPurchased));
     setTimesSold(updatedMarketData.timesSold);
     
-    setMessage(`Successfully sold for $${sellPrice}! Market price adjusted from $${oldPrice} to $${updatedMarketData.currentPrice}.`);
+    setMessage(`Successfully sold for ${sellPrice}! Market price adjusted from ${oldPrice} to ${updatedMarketData.currentPrice}.`);
     setTimeout(() => setMessage(''), 7000);
   };
 
   const getMarketTrend = () => {
     const netDemand = timesPurchased - timesSold;
-    if (netDemand > 5) return { emoji: '🚀', text: 'Bullish', color: '#28a745' };
-    if (netDemand > 2) return { emoji: '📈', text: 'Rising', color: '#28a745' };
-    if (netDemand > -2) return { emoji: '➡️', text: 'Stable', color: '#6c757d' };
-    if (netDemand > -5) return { emoji: '📉', text: 'Declining', color: '#dc3545' };
-    return { emoji: '💀', text: 'Bearish', color: '#dc3545' };
+    if (netDemand > 5) return { emoji: '🚀', text: 'Bullish', color: 'bullish', class: 'bullish' };
+    if (netDemand > 2) return { emoji: '📈', text: 'Rising', color: 'bullish', class: 'bullish' };
+    if (netDemand > -2) return { emoji: '➡️', text: 'Stable', color: 'stable', class: 'stable' };
+    if (netDemand > -5) return { emoji: '📉', text: 'Declining', color: 'bearish', class: 'bearish' };
+    return { emoji: '💀', text: 'Bearish', color: 'bearish', class: 'bearish' };
+  };
+
+  const getMessageClass = (message: string) => {
+    if (message.includes('Successfully')) return 'success';
+    if (message.includes('Insufficient')) return 'error';
+    return 'warning';
   };
 
   const trend = getMarketTrend();
 
   return (
-    <div style={{ display: 'flex' }}>
+    <div className="page-container">
       <Sidebar opinions={opinions} />
       
-      <main style={{ padding: '2rem', flex: 1, maxWidth: '900px' }}>
+      <main className="main-content">
         {/* Header with Navigation */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: '2rem' 
-        }}>
+        <div className={styles.pageHeader}>
           <button
             onClick={() => router.push('/')}
-            style={{ 
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              fontWeight: 'bold'
-            }}
+            className={styles.backButton}
           >
             ← Back to Profile
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <a href="/users" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#6f42c1', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+          <div className={styles.headerActions}>
+            {/* Navigation Buttons */}
+            <a href="/users" className="nav-button traders">
               📊 View Traders
             </a>
-            <a href="/generate" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#28a745', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+            <a href="/feed" className="nav-button feed">
+              📡 Live Feed
+            </a>
+            <a href="/generate" className="nav-button generate">
               ✨ Generate
             </a>
-            <div style={{ padding: '0.75rem 1rem', backgroundColor: '#e8f5e8', borderRadius: '6px', border: '1px solid #c3e6c3', textAlign: 'center' }}>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: '#155724' }}>💰 Wallet</p>
-              <p style={{ margin: 0, fontWeight: 'bold', color: '#155724' }}>${userProfile.balance.toLocaleString()}</p>
+
+            {/* Wallet Display */}
+            <div className={styles.walletDisplay}>
+              <p>💰 Wallet</p>
+              <p>${userProfile.balance.toLocaleString()}</p>
             </div>
           </div>
         </div>
 
         {/* Main Opinion Card */}
-        <div style={{ padding: '2rem', backgroundColor: '#ffffff', borderRadius: '12px', border: '1px solid #e9ecef', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-            <h1 style={{ fontSize: '1.8rem', margin: 0, color: '#333', fontWeight: 'bold' }}>💬 Opinion #{id}</h1>
+        <div className={styles.opinionCard}>
+          <div className={styles.opinionHeader}>
+            <h1 className={styles.opinionTitle}>💬 Opinion #{id}</h1>
             {alreadyOwned && (
-              <div style={{ padding: '0.5rem 1rem', backgroundColor: '#d4edda', color: '#155724', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>
+              <div className={styles.ownedBadge}>
                 ✅ Owned: {ownedQuantity}
               </div>
             )}
           </div>
           
-          <div style={{ padding: '1.5rem', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '2rem', borderLeft: '4px solid #007bff' }}>
-            <p style={{ fontSize: '1.3rem', lineHeight: '1.6', margin: 0, fontStyle: 'italic', color: '#2c3e50' }}>
-              "{opinion}"
-            </p>
+          <div className={styles.opinionText}>
+            <p>"{opinion}"</p>
           </div>
 
-          {/* Enhanced Market Data */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-            <div style={{ padding: '1.5rem', backgroundColor: '#e3f2fd', borderRadius: '8px', border: '1px solid #bbdefb' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#1565c0', fontSize: '1.1rem' }}>💰 Current Price</h3>
-              <p style={{ fontSize: '1.8rem', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: '#1565c0' }}>${currentPrice}</p>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#888' }}>Base price: $10</p>
+          {/* Price Chart */}
+          <div className={styles.chartContainer}>
+            <h3 className={styles.chartTitle}>📈 Price History Chart</h3>
+            
+            {(() => {
+              if (!opinion) return null;
+              
+              const marketData = getOpinionMarketData(opinion);
+              const priceHistory = marketData.priceHistory || [];
+              
+              // Create chart data with at least current price
+              let chartData = [];
+              if (priceHistory.length > 0) {
+                chartData = priceHistory.map(item => ({
+                  price: item.price,
+                  date: new Date(item.timestamp).toLocaleDateString(),
+                  time: new Date(item.timestamp).toLocaleTimeString(),
+                  action: item.action
+                }));
+              } else {
+                // Show base price and current price if no history
+                chartData = [
+                  { price: marketData.basePrice, date: 'Start', time: '', action: 'base' },
+                  { price: currentPrice, date: 'Now', time: '', action: 'current' }
+                ];
+              }
+              
+              if (chartData.length === 0) {
+                return (
+                  <div className={styles.chartEmpty}>
+                    <div>📊</div>
+                    <h4>No Trading Data Yet</h4>
+                    <p>Chart will appear after first purchase or sale</p>
+                  </div>
+                );
+              }
+              
+              // Calculate price range for visual scaling
+              const prices = chartData.map(d => d.price);
+              const minPrice = Math.min(...prices);
+              const maxPrice = Math.max(...prices);
+              const priceRange = maxPrice - minPrice;
+              const firstPrice = prices[0];
+              const lastPrice = prices[prices.length - 1];
+              const totalChange = lastPrice - firstPrice;
+              const totalChangePercent = firstPrice > 0 ? ((totalChange / firstPrice) * 100) : 0;
+              
+              // Simple bar chart representation
+              const maxBarHeight = 150;
+              
+              return (
+                <div>
+                  {/* Chart Summary */}
+                  <div className={styles.chartSummary}>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Starting Price</div>
+                      <div className={styles.summaryValue}>${firstPrice}</div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Current Price</div>
+                      <div className={styles.summaryValue}>${lastPrice}</div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Total Change</div>
+                      <div className={`${styles.summaryValue} ${totalChange >= 0 ? styles.positive : styles.negative}`}>
+                        {totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)} ({totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
+                      </div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Data Points</div>
+                      <div className={styles.summaryValue}>{chartData.length}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Simple Visual Chart */}
+                  <div className={styles.chartVisual}>
+                    {/* Y-axis labels */}
+                    <div className={`${styles.yAxisLabel} ${styles.top}`}>
+                      ${maxPrice}
+                    </div>
+                    <div className={`${styles.yAxisLabel} ${styles.bottom}`}>
+                      ${minPrice}
+                    </div>
+                    
+                    {chartData.map((dataPoint, index) => {
+                      const barHeight = priceRange > 0 
+                        ? ((dataPoint.price - minPrice) / priceRange) * maxBarHeight 
+                        : maxBarHeight / 2;
+                      const isIncrease = index === 0 || dataPoint.price >= chartData[index - 1].price;
+                      
+                      return (
+                        <div key={index} className={styles.chartBar}>
+                          {/* Price label on top */}
+                          <div className={`${styles.barLabel} ${isIncrease ? styles.positive : styles.negative}`}>
+                            ${dataPoint.price}
+                          </div>
+                          
+                          {/* Bar */}
+                          <div
+                            className={`${styles.bar} ${isIncrease ? styles.positive : styles.negative}`}
+                            style={{ height: `${barHeight}px` }}
+                            title={`${dataPoint.price} - ${dataPoint.date} ${dataPoint.time}`}
+                          />
+                          
+                          {/* Date label */}
+                          <div className={styles.barDate}>
+                            {dataPoint.date}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Legend */}
+                  <div className={styles.chartLegend}>
+                    <div className={styles.legendItem}>
+                      <div className={`${styles.legendColor} ${styles.positive}`}></div>
+                      <span>Price Increase</span>
+                    </div>
+                    <div className={styles.legendItem}>
+                      <div className={`${styles.legendColor} ${styles.negative}`}></div>
+                      <span>Price Decrease</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Market Stats */}
+          <div className={styles.marketStats}>
+            <div className={`${styles.statCard} ${styles.price}`}>
+              <h3 className={`${styles.statTitle} ${styles.price}`}>💰 Current Price</h3>
+              <p className={styles.statValue}>${currentPrice}</p>
+              <p className={styles.statSubtext}>Base price: $10</p>
             </div>
 
-            <div style={{ padding: '1.5rem', backgroundColor: '#fff3e0', borderRadius: '8px', border: '1px solid #ffcc02' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#e65100', fontSize: '1.1rem' }}>📊 Market Trend</h3>
-              <p style={{ fontSize: '1.8rem', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: trend.color }}>
+            <div className={`${styles.statCard} ${styles.trend}`}>
+              <h3 className={`${styles.statTitle} ${styles.trend}`}>📊 Market Trend</h3>
+              <p className={`${styles.statValue} ${styles[trend.class]}`}>
                 {trend.emoji} {trend.text}
               </p>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#888' }}>
+              <p className={styles.statSubtext}>
                 Net demand: {timesPurchased - timesSold}
               </p>
             </div>
 
-            <div style={{ padding: '1.5rem', backgroundColor: '#e8f5e8', borderRadius: '8px', border: '1px solid #c3e6c3' }}>
-              <h3 style={{ margin: '0 0 1rem 0', color: '#155724', fontSize: '1.1rem' }}>🔄 Trading Volume</h3>
-              <p style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: '#155724' }}>
+            <div className={`${styles.statCard} ${styles.volume}`}>
+              <h3 className={`${styles.statTitle} ${styles.volume}`}>🔄 Trading Volume</h3>
+              <p className={styles.statValue}>
                 {timesPurchased} buys
               </p>
-              <p style={{ margin: 0, fontSize: '0.9rem', color: '#155724' }}>
+              <p className={styles.statSubtext}>
                 {timesSold} sells
               </p>
             </div>
 
             {alreadyOwned && (
-              <div style={{ padding: '1.5rem', backgroundColor: '#f8d7da', borderRadius: '8px', border: '1px solid #f5c6cb' }}>
-                <h3 style={{ margin: '0 0 1rem 0', color: '#721c24', fontSize: '1.1rem' }}>💸 Sell Price</h3>
-                <p style={{ fontSize: '1.8rem', fontWeight: 'bold', margin: '0 0 0.5rem 0', color: '#721c24' }}>${sellPrice}</p>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: '#888' }}>
+              <div className={`${styles.statCard} ${styles.sell}`}>
+                <h3 className={`${styles.statTitle} ${styles.sell}`}>💸 Sell Price</h3>
+                <p className={styles.statValue}>${sellPrice}</p>
+                <p className={styles.statSubtext}>
                   {Math.round((sellPrice / currentPrice) * 100)}% of market price
                 </p>
               </div>
@@ -478,25 +606,16 @@ export default function OpinionPage() {
           </div>
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className={styles.actionButtons}>
             {!alreadyOwned || ownedQuantity === 0 ? (
               <button
                 onClick={purchaseOpinion}
                 disabled={userProfile.balance < currentPrice}
-                style={{
-                  padding: '1rem 2rem',
-                  fontSize: '1.1rem',
-                  backgroundColor: userProfile.balance < currentPrice ? '#ccc' : '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: userProfile.balance < currentPrice ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold'
-                }}
+                className={`${styles.actionButton} ${styles.buy}`}
               >
                 {userProfile.balance < currentPrice 
-                  ? `Need $${currentPrice - userProfile.balance} more`
-                  : `Buy for $${currentPrice}`
+                  ? `Need ${currentPrice - userProfile.balance} more`
+                  : `Buy for ${currentPrice}`
                 }
               </button>
             ) : (
@@ -504,35 +623,17 @@ export default function OpinionPage() {
                 <button
                   onClick={purchaseOpinion}
                   disabled={userProfile.balance < currentPrice}
-                  style={{
-                    padding: '1rem 2rem',
-                    fontSize: '1.1rem',
-                    backgroundColor: userProfile.balance < currentPrice ? '#ccc' : '#007bff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: userProfile.balance < currentPrice ? 'not-allowed' : 'pointer',
-                    fontWeight: 'bold'
-                  }}
+                  className={`${styles.actionButton} ${styles.buyMore}`}
                 >
                   {userProfile.balance < currentPrice 
-                    ? `Need $${currentPrice - userProfile.balance} more`
-                    : `Buy More ($${currentPrice})`
+                    ? `Need ${currentPrice - userProfile.balance} more`
+                    : `Buy More (${currentPrice})`
                   }
                 </button>
                 
                 <button
                   onClick={sellOpinion}
-                  style={{
-                    padding: '1rem 2rem',
-                    fontSize: '1.1rem',
-                    backgroundColor: '#dc3545',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 'bold'
-                  }}
+                  className={`${styles.actionButton} ${styles.sell}`}
                 >
                   Sell 1 for ${sellPrice}
                 </button>
@@ -543,41 +644,26 @@ export default function OpinionPage() {
 
         {/* Status Messages */}
         {message && (
-          <div style={{
-            padding: '1rem',
-            marginBottom: '1rem',
-            borderRadius: '8px',
-            backgroundColor: message.includes('Successfully') ? '#d4edda' : 
-                           message.includes('Insufficient') ? '#f8d7da' : '#fff3cd',
-            color: message.includes('Successfully') ? '#155724' : 
-                   message.includes('Insufficient') ? '#721c24' : '#856404',
-            border: `1px solid ${message.includes('Successfully') ? '#c3e6cb' : 
-                                 message.includes('Insufficient') ? '#f5c6cb' : '#ffeaa7'}`,
-            textAlign: 'center',
-            fontSize: '1rem',
-            fontWeight: 'bold'
-          }}>
+          <div className={`${styles.statusMessage} ${styles[getMessageClass(message)]}`}>
             {message}
           </div>
         )}
 
         {/* Enhanced Trading Info */}
-        <div style={{ padding: '1.5rem', backgroundColor: '#e9ecef', borderRadius: '8px', fontSize: '0.95rem', color: '#6c757d' }}>
-          <p style={{ margin: '0 0 1rem 0' }}>
-            💡 <strong>Enhanced Trading System:</strong>
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem', margin: 0 }}>
-            <div>
+        <div className={styles.tradingInfo}>
+          <p>💡 <strong>Enhanced Trading System:</strong></p>
+          <div className={styles.tradingInfoGrid}>
+            <div className={styles.tradingInfoSection}>
               <strong>Dynamic Pricing:</strong>
-              <ul style={{ margin: '0.5rem 0', paddingLeft: '1.5rem' }}>
+              <ul>
                 <li>Prices rise exponentially with net demand</li>
                 <li>Volatility based on opinion content</li>
                 <li>Selling pressure reduces prices</li>
               </ul>
             </div>
-            <div>
+            <div className={styles.tradingInfoSection}>
               <strong>Selling Mechanism:</strong>
-              <ul style={{ margin: '0.5rem 0', paddingLeft: '1.5rem' }}>
+              <ul>
                 <li>Sell price is 85-95% of market price</li>
                 <li>Higher liquidity = better sell ratios</li>
                 <li>Each sale affects market price</li>

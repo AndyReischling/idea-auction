@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
+import '../global.css';
+import styles from './page.module.css';
 
 interface ActivityFeedItem {
   id: string;
@@ -148,16 +150,29 @@ export default function FeedPage() {
     }
   };
 
-  // Get activity icon and color
+  // Get activity icon class
+  const getActivityIconClass = (type: string) => {
+    switch (type) {
+      case 'buy': return styles.buy;
+      case 'sell': return styles.sell;
+      case 'bet_place': return styles.betPlace;
+      case 'bet_win': return styles.betWin;
+      case 'bet_loss': return styles.betLoss;
+      case 'generate': return styles.generate;
+      default: return styles.buy;
+    }
+  };
+
+  // Get activity icon emoji
   const getActivityIcon = (type: string) => {
     switch (type) {
-      case 'buy': return { icon: '🛒', color: '#28a745', bg: '#d4edda' };
-      case 'sell': return { icon: '💰', color: '#17a2b8', bg: '#d1ecf1' };
-      case 'bet_place': return { icon: '🎲', color: '#6f42c1', bg: '#e2d9f3' };
-      case 'bet_win': return { icon: '🎉', color: '#28a745', bg: '#d4edda' };
-      case 'bet_loss': return { icon: '😞', color: '#dc3545', bg: '#f8d7da' };
-      case 'generate': return { icon: '✨', color: '#ffc107', bg: '#fff3cd' };
-      default: return { icon: '📊', color: '#6c757d', bg: '#f8f9fa' };
+      case 'buy': return '🛒';
+      case 'sell': return '💰';
+      case 'bet_place': return '🎲';
+      case 'bet_win': return '🎉';
+      case 'bet_loss': return '😞';
+      case 'generate': return '✨';
+      default: return '📊';
     }
   };
 
@@ -229,6 +244,27 @@ export default function FeedPage() {
     }
   };
 
+  // Get filter count
+  const getFilterCount = (filterType: string) => {
+    switch (filterType) {
+      case 'all':
+        return activityFeed.length;
+      case 'trades':
+        return activityFeed.filter(a => a.type === 'buy' || a.type === 'sell').length;
+      case 'bets':
+        return activityFeed.filter(a => a.type.includes('bet')).length;
+      case 'generates':
+        return activityFeed.filter(a => a.type === 'generate').length;
+      default:
+        return 0;
+    }
+  };
+
+  // Get amount class
+  const getAmountClass = (amount: number) => {
+    return amount >= 0 ? styles.positive : styles.negative;
+  };
+
   useEffect(() => {
     // Load opinions for sidebar
     const stored = localStorage.getItem('opinions');
@@ -274,191 +310,98 @@ export default function FeedPage() {
   const filteredActivities = filterActivities(activityFeed);
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="page-container">
       <Sidebar opinions={opinions} />
       
-      <main style={{ padding: '2rem', flex: 1, maxWidth: '1000px' }}>
+      <main className="main-content">
         {/* Header */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: '2rem' 
-        }}>
-          <div>
-            <h1 style={{ fontSize: '2.5rem', margin: 0, color: '#333' }}>
+        <div className={styles.pageHeader}>
+          <div className={styles.headerContent}>
+            <h1 className={styles.headerTitle}>
               📡 Live Trading Feed
             </h1>
-            <p style={{ margin: '0.5rem 0', color: '#666', fontSize: '1.1rem' }}>
+            <p className={styles.headerSubtitle}>
               Real-time marketplace activity from all traders
             </p>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className={styles.headerActions}>
             {/* Generate Opinions Button */}
-            <a
-              href="/generate"
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#28a745',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+            <a href="/generate" className="nav-button generate">
               ✨ Generate Opinions
             </a>
 
             {/* Navigation Buttons */}
-            <a href="/users" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#6f42c1', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+            <a href="/users" className="nav-button traders">
               👥 Traders
             </a>
-            <a href="/" style={{ padding: '0.75rem 1.5rem', backgroundColor: '#007bff', color: 'white', textDecoration: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+            <a href="/" className="nav-button traders">
               👤 My Wallet
             </a>
           </div>
         </div>
 
         {/* Filter Controls */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '0.5rem', 
-          marginBottom: '2rem',
-          padding: '1rem',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '8px',
-          border: '1px solid #e9ecef'
-        }}>
-          <span style={{ marginRight: '1rem', fontWeight: 'bold', color: '#666' }}>Filter:</span>
+        <div className={styles.filterControls}>
+          <span className={styles.filterLabel}>Filter:</span>
           {(['all', 'trades', 'bets', 'generates'] as const).map(filterType => (
             <button
               key={filterType}
               onClick={() => setFilter(filterType)}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: filter === filterType ? '#007bff' : 'white',
-                color: filter === filterType ? 'white' : '#333',
-                border: '1px solid #007bff',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontWeight: filter === filterType ? 'bold' : 'normal',
-                textTransform: 'capitalize'
-              }}
+              className={`${styles.filterButton} ${filter === filterType ? styles.active : ''}`}
             >
-              {filterType === 'all' ? `All Activity (${activityFeed.length})` :
-               filterType === 'trades' ? `Trades (${activityFeed.filter(a => a.type === 'buy' || a.type === 'sell').length})` :
-               filterType === 'bets' ? `Bets (${activityFeed.filter(a => a.type.includes('bet')).length})` :
-               `Generates (${activityFeed.filter(a => a.type === 'generate').length})`}
+              {filterType === 'all' ? `All Activity (${getFilterCount(filterType)})` :
+               filterType === 'trades' ? `Trades (${getFilterCount(filterType)})` :
+               filterType === 'bets' ? `Bets (${getFilterCount(filterType)})` :
+               `Generates (${getFilterCount(filterType)})`}
             </button>
           ))}
         </div>
 
         {/* Activity Feed */}
-        <div style={{
-          backgroundColor: '#fff',
-          borderRadius: '12px',
-          border: '1px solid #e9ecef',
-          overflow: 'hidden',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
+        <div className={styles.feedContainer}>
           {/* Feed Header */}
-          <div style={{
-            padding: '1rem 1.5rem',
-            backgroundColor: '#f8f9fa',
-            borderBottom: '1px solid #e9ecef',
-            fontWeight: 'bold',
-            color: '#495057'
-          }}>
-            🔴 LIVE • {filteredActivities.length} Recent Activities
+          <div className={styles.feedHeader}>
+            <div className={styles.liveIndicator}></div>
+            LIVE • {filteredActivities.length} Recent Activities
           </div>
 
           {/* Feed Content */}
-          <div style={{
-            maxHeight: '70vh',
-            overflowY: 'auto',
-            padding: '0'
-          }}>
+          <div className={styles.feedContent}>
             {filteredActivities.length === 0 ? (
-              <div style={{
-                padding: '3rem',
-                textAlign: 'center',
-                color: '#6c757d'
-              }}>
-                <p style={{ fontSize: '1.2rem', margin: '0 0 0.5rem 0' }}>📭</p>
-                <p style={{ margin: 0 }}>No activity found for this filter</p>
+              <div className={styles.emptyFeed}>
+                <p>📭</p>
+                <p>No activity found for this filter</p>
               </div>
             ) : (
               filteredActivities.map((activity, index) => {
-                const { icon, color, bg } = getActivityIcon(activity.type);
                 const isUserActivity = activity.username === currentUser.username;
                 
                 return (
                   <div 
                     key={activity.id}
-                    style={{
-                      padding: '1rem 1.5rem',
-                      borderBottom: index < filteredActivities.length - 1 ? '1px solid #f1f3f4' : 'none',
-                      backgroundColor: isUserActivity ? '#f0f8ff' : 'transparent',
-                      borderLeft: isUserActivity ? '4px solid #007bff' : 'none',
-                      transition: 'background-color 0.2s ease'
-                    }}
+                    className={`${styles.activityItem} ${isUserActivity ? styles.userActivity : ''}`}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                    <div className={styles.activityLayout}>
                       {/* Activity Icon */}
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '50%',
-                        backgroundColor: bg,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '1.2rem',
-                        flexShrink: 0
-                      }}>
-                        {icon}
+                      <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
+                        {getActivityIcon(activity.type)}
                       </div>
 
                       {/* Activity Content */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{
-                          fontSize: '0.95rem',
-                          lineHeight: '1.4',
-                          color: '#495057',
-                          marginBottom: '0.25rem'
-                        }}>
+                      <div className={styles.activityContent}>
+                        <div className={styles.activityDescription}>
                           {formatActivityDescription(activity)}
                           {isUserActivity && (
-                            <span style={{
-                              marginLeft: '0.5rem',
-                              padding: '0.125rem 0.5rem',
-                              backgroundColor: '#007bff',
-                              color: 'white',
-                              borderRadius: '10px',
-                              fontSize: '0.7rem',
-                              fontWeight: 'bold'
-                            }}>
+                            <span className={styles.userBadge}>
                               YOU
                             </span>
                           )}
                         </div>
                         
-                        <div style={{
-                          fontSize: '0.8rem',
-                          color: '#6c757d',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          <span>{activity.relativeTime}</span>
-                          <span style={{
-                            fontWeight: 'bold',
-                            color: activity.amount >= 0 ? '#28a745' : '#dc3545'
-                          }}>
+                        <div className={styles.activityMeta}>
+                          <span className={styles.activityTime}>{activity.relativeTime}</span>
+                          <span className={`${styles.activityAmount} ${getAmountClass(activity.amount)}`}>
                             {activity.amount >= 0 ? '+' : ''}${Math.abs(activity.amount).toLocaleString()}
                           </span>
                         </div>
@@ -472,62 +415,33 @@ export default function FeedPage() {
         </div>
 
         {/* Market Stats */}
-        <div style={{
-          marginTop: '2rem',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '1rem'
-        }}>
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#d4edda',
-            borderRadius: '8px',
-            border: '1px solid #c3e6cb',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#155724' }}>
+        <div className={styles.marketStats}>
+          <div className={`${styles.statCard} ${styles.purchases}`}>
+            <div className={`${styles.statNumber} ${styles.purchases}`}>
               {activityFeed.filter(a => a.type === 'buy').length}
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#155724' }}>Total Purchases</div>
+            <div className={styles.statLabel}>Total Purchases</div>
           </div>
           
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#d1ecf1',
-            borderRadius: '8px',
-            border: '1px solid #b8daff',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#0c5460' }}>
+          <div className={`${styles.statCard} ${styles.sales}`}>
+            <div className={`${styles.statNumber} ${styles.sales}`}>
               {activityFeed.filter(a => a.type === 'sell').length}
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#0c5460' }}>Total Sales</div>
+            <div className={styles.statLabel}>Total Sales</div>
           </div>
           
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#e2d9f3',
-            borderRadius: '8px',
-            border: '1px solid #d4c4fb',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#6f42c1' }}>
+          <div className={`${styles.statCard} ${styles.bets}`}>
+            <div className={`${styles.statNumber} ${styles.bets}`}>
               {activityFeed.filter(a => a.type.includes('bet')).length}
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#6f42c1' }}>Active Bets</div>
+            <div className={styles.statLabel}>Active Bets</div>
           </div>
           
-          <div style={{
-            padding: '1rem',
-            backgroundColor: '#fff3cd',
-            borderRadius: '8px',
-            border: '1px solid #ffeaa7',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#856404' }}>
+          <div className={`${styles.statCard} ${styles.volume}`}>
+            <div className={`${styles.statNumber} ${styles.volume}`}>
               ${activityFeed.reduce((sum, a) => sum + Math.abs(a.amount), 0).toLocaleString()}
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#856404' }}>Total Volume</div>
+            <div className={styles.statLabel}>Total Volume</div>
           </div>
         </div>
       </main>

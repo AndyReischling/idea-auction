@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
+import '../global.css';
+import styles from './page.module.css';
 
 function GenerateOpinions() {
   const [opinion, setOpinion] = useState('Click the button to generate an opinion!');
   const [userInput, setUserInput] = useState('');
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [charCount, setCharCount] = useState(0);
+  const [lastGenerated, setLastGenerated] = useState<string>('');
+
+  const MAX_CHARS = 500;
 
   useEffect(() => {
     try {
@@ -24,6 +30,10 @@ function GenerateOpinions() {
       setAllOpinions([]);
     }
   }, []);
+
+  useEffect(() => {
+    setCharCount(userInput.length);
+  }, [userInput]);
 
   const generateOpinion = async () => {
     setLoading(true);
@@ -44,6 +54,7 @@ function GenerateOpinions() {
       const newOpinion = data.opinion;
       
       setOpinion(newOpinion);
+      setLastGenerated(newOpinion);
       
       const updatedOpinions = [...allOpinions, newOpinion];
       setAllOpinions(updatedOpinions);
@@ -65,6 +76,7 @@ function GenerateOpinions() {
       
       const randomOpinion = mockOpinions[Math.floor(Math.random() * mockOpinions.length)];
       setOpinion(randomOpinion);
+      setLastGenerated(randomOpinion);
       
       const updatedOpinions = [...allOpinions, randomOpinion];
       setAllOpinions(updatedOpinions);
@@ -75,7 +87,7 @@ function GenerateOpinions() {
   };
 
   const submitUserOpinion = () => {
-    if (userInput.trim()) {
+    if (userInput.trim() && userInput.length <= MAX_CHARS) {
       const trimmedInput = userInput.trim();
       
       const updatedOpinions = [...allOpinions, trimmedInput];
@@ -84,161 +96,118 @@ function GenerateOpinions() {
       
       setUserInput('');
       setOpinion(`Submitted: ${trimmedInput}`);
+      setCharCount(0);
     }
   };
 
+  const getCharCountClass = () => {
+    if (charCount > MAX_CHARS) return styles.error;
+    if (charCount > MAX_CHARS * 0.8) return styles.warning;
+    return '';
+  };
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="page-container">
       <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
       
-      <main style={{ padding: '2rem', flex: 1, maxWidth: '800px' }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          marginBottom: '2rem',
-          padding: '1rem',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '8px'
-        }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '2rem' }}>Opinion Generator</h1>
-            <p style={{ margin: '0.25rem 0 0 0', color: '#666' }}>
-              Create and save opinions
+      <main className="main-content">
+        <div className={styles.pageHeader}>
+          <div className={styles.headerContent}>
+            <h1 className={styles.headerTitle}>Opinion Generator</h1>
+            <p className={styles.headerSubtitle}>
+              Create and save opinions to trade in the marketplace
             </p>
           </div>
           
           {/* Navigation Buttons */}
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <a
-              href="/users"
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#6f42c1',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+          <div className={styles.headerActions}>
+            <a href="/users" className="nav-button traders">
               📊 View Traders
             </a>
-            <a
-              href="/"
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#007bff',
-                color: 'white',
-                textDecoration: 'none',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+            <a href="/feed" className="nav-button feed">
+              📡 Live Feed
+            </a>
+            <a href="/" className="nav-button traders">
               ← Back to Profile
             </a>
           </div>
         </div>
 
-        <div style={{ 
-          padding: '1.5rem', 
-          border: '1px solid #ddd', 
-          borderRadius: '8px', 
-          marginBottom: '2rem' 
-        }}>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#555' }}>
+        {/* Statistics Display */}
+        <div className={styles.statsDisplay}>
+          <div className={styles.statItem}>
+            <p className={styles.statNumber}>{allOpinions.length}</p>
+            <p className={styles.statLabel}>Total Opinions</p>
+          </div>
+          <div className={styles.statItem}>
+            <p className={styles.statNumber}>{lastGenerated ? '1' : '0'}</p>
+            <p className={styles.statLabel}>Generated Today</p>
+          </div>
+          <div className={styles.statItem}>
+            <p className={styles.statNumber}>{userInput.trim() ? '1' : '0'}</p>
+            <p className={styles.statLabel}>Draft Ready</p>
+          </div>
+        </div>
+
+        {/* Random Generator Section */}
+        <div className={`${styles.generatorSection} ${styles.randomGenerator}`}>
+          <h2 className={styles.sectionTitle}>
             🎲 Random Opinion Generator
           </h2>
           
-          <div style={{ 
-            padding: '1rem', 
-            backgroundColor: '#f8f9fa', 
-            borderRadius: '6px', 
-            marginBottom: '1rem',
-            minHeight: '60px',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            <p style={{ margin: 0, fontStyle: 'italic', fontSize: '1.1rem' }}>
+          <div className={styles.opinionDisplay}>
+            <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}>
               {loading ? 'Generating witty opinion...' : opinion}
             </p>
           </div>
           
-          <button
-            onClick={generateOpinion}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: loading ? '#ccc' : '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '1rem'
-            }}
-          >
-            {loading ? 'Generating...' : 'Generate New Opinion'}
-          </button>
+          <div className={styles.actionContainer}>
+            <button
+              onClick={generateOpinion}
+              disabled={loading}
+              className={styles.generateButton}
+            >
+              {loading && <div className={styles.loadingSpinner}></div>}
+              {loading ? 'Generating...' : 'Generate New Opinion'}
+            </button>
+          </div>
         </div>
 
-        <div style={{ 
-          padding: '1.5rem', 
-          border: '1px solid #ddd', 
-          borderRadius: '8px',
-          marginBottom: '2rem'
-        }}>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#555' }}>
+        {/* User Input Section */}
+        <div className={`${styles.generatorSection} ${styles.userInput}`}>
+          <h2 className={styles.sectionTitle}>
             ✍️ Submit Your Opinion
           </h2>
           
           <textarea
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
-            placeholder="What's your opinion on something? Share your thoughts here..."
-            style={{
-              width: '100%',
-              minHeight: '100px',
-              padding: '0.75rem',
-              border: '1px solid #ccc',
-              borderRadius: '6px',
-              marginBottom: '1rem',
-              fontFamily: 'inherit',
-              fontSize: '1rem',
-              resize: 'vertical'
-            }}
+            placeholder="What's your opinion on something? Share your thoughts here... Be creative, controversial, or just plain weird!"
+            className={styles.textarea}
+            maxLength={MAX_CHARS + 50} // Allow slight overflow for warning
           />
           
-          <button
-            onClick={submitUserOpinion}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '1rem'
-            }}
-          >
-            Submit Opinion
-          </button>
+          <div className={`${styles.characterCounter} ${getCharCountClass()}`}>
+            {charCount}/{MAX_CHARS} characters
+          </div>
+          
+          <div className={styles.actionContainer}>
+            <button
+              onClick={submitUserOpinion}
+              disabled={!userInput.trim() || charCount > MAX_CHARS}
+              className={styles.submitButton}
+            >
+              Submit Opinion
+            </button>
+          </div>
         </div>
 
-        <div style={{ 
-          padding: '1rem', 
-          backgroundColor: '#e9ecef', 
-          borderRadius: '6px', 
-          fontSize: '0.9rem',
-          color: '#6c757d'
-        }}>
-          <p style={{ margin: 0 }}>
-            💡 <strong>Tip:</strong> All opinions are automatically saved 
-            and appear in the sidebar. Click on any opinion in the sidebar to view it in detail.
+        {/* Tips Section */}
+        <div className={styles.tipsSection}>
+          <p className={styles.tipsText}>
+            <strong>Tip:</strong> All opinions are automatically saved 
+            and appear in the sidebar. Click on any opinion in the sidebar to view it in detail 
+            and start trading! The more unique and engaging your opinions, the more valuable they might become.
           </p>
         </div>
       </main>

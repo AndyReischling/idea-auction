@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
+import styles from './page.module.css';
+import './global.css'; // Changed from './global.css' to './globals.css'
 
 interface UserProfile {
   username: string;
@@ -127,17 +129,6 @@ export default function UserProfile() {
     return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
   };
 
-  // Get bet status color
-  const getBetStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return { bg: '#fff3cd', color: '#856404', border: '#ffeaa7' };
-      case 'won': return { bg: '#d4edda', color: '#155724', border: '#c3e6cb' };
-      case 'lost': return { bg: '#f8d7da', color: '#721c24', border: '#f5c6cb' };
-      case 'expired': return { bg: '#e2e3e5', color: '#383d41', border: '#d6d8db' };
-      default: return { bg: '#f8f9fa', color: '#6c757d', border: '#dee2e6' };
-    }
-  };
-
   // Calculate days remaining for active bets
   const getDaysRemaining = (expiryDate: string): number => {
     const expiry = new Date(expiryDate);
@@ -148,226 +139,87 @@ export default function UserProfile() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="page-container">
       <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
       
-      <main style={{ padding: '2rem', flex: 1, maxWidth: '1200px' }}>
+      <main className="main-content">
         {/* Header with Navigation Buttons */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: '2rem'
-        }}>
+        <div className="header-section">
           {/* User Header */}
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            padding: '1.5rem',
-            backgroundColor: '#f8f9fa',
-            borderRadius: '12px',
-            border: '1px solid #e9ecef',
-            flex: 1,
-            marginRight: '1rem'
-          }}>
-            <div style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '50%',
-              backgroundColor: '#007bff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontSize: '2rem',
-              fontWeight: 'bold',
-              marginRight: '1.5rem'
-            }}>
+          <div className="user-header">
+            <div className="user-avatar">
               {userProfile.username[0].toUpperCase()}
             </div>
-            <div>
-              <h1 style={{ fontSize: '2rem', margin: 0, color: '#333' }}>{userProfile.username}</h1>
-              <p style={{ margin: '0.25rem 0', color: '#666' }}>Member since {userProfile.joinDate}</p>
-              <p style={{ margin: 0, color: '#666' }}>Opinion Trader & Collector</p>
+            <div className="user-info">
+              <h1>{userProfile.username}</h1>
+              <p>Member since {userProfile.joinDate}</p>
+              <p>Opinion Trader & Collector</p>
             </div>
           </div>
 
           {/* Navigation Buttons */}
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <a
-              href="/users"
-              style={{
-                padding: '1rem 1.5rem',
-                backgroundColor: '#6f42c1',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                whiteSpace: 'nowrap',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+          <div className="navigation-buttons">
+            <a href="/users" className="nav-button traders">
               📊 View Traders
             </a>
-            <a
-              href="/feed"
-              style={{
-                padding: '1rem 1.5rem',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                whiteSpace: 'nowrap',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+            <a href="/feed" className="nav-button feed">
               📡 Live Feed
             </a>
-            <a
-              href="/generate"
-              style={{
-                padding: '1rem 1.5rem',
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                whiteSpace: 'nowrap',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-            >
+            <a href="/generate" className="nav-button generate">
               ✨ Generate Opinions
             </a>
           </div>
         </div>
 
         {/* Wallet Overview */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-          gap: '1rem', 
-          marginBottom: '2rem' 
-        }}>
-          <div style={{ 
-            padding: '1.5rem', 
-            backgroundColor: '#e8f5e8', 
-            borderRadius: '8px', 
-            border: '1px solid #c3e6c3' 
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', color: '#155724' }}>💰 Wallet Balance</h3>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#155724' }}>
-              ${userProfile.balance.toLocaleString()}
-            </p>
+        <div className={styles.walletOverview}>
+          <div className={`${styles.walletCard} ${styles.balance}`}>
+            <h3>💰 Wallet Balance</h3>
+            <p>${userProfile.balance.toLocaleString()}</p>
           </div>
 
-          <div style={{ 
-            padding: '1.5rem', 
-            backgroundColor: '#e3f2fd', 
-            borderRadius: '8px', 
-            border: '1px solid #bbdefb' 
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', color: '#0d47a1' }}>📊 Portfolio Value</h3>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#0d47a1' }}>
-              ${portfolioValue.toLocaleString()}
-            </p>
+          <div className={`${styles.walletCard} ${styles.portfolio}`}>
+            <h3>📊 Portfolio Value</h3>
+            <p>${portfolioValue.toLocaleString()}</p>
           </div>
 
-          <div style={{ 
-            padding: '1.5rem', 
-            backgroundColor: totalGainsLosses >= 0 ? '#e8f5e8' : '#ffebee', 
-            borderRadius: '8px', 
-            border: `1px solid ${totalGainsLosses >= 0 ? '#c3e6c3' : '#ffcdd2'}` 
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', color: totalGainsLosses >= 0 ? '#155724' : '#c62828' }}>
-              📈 P&L
-            </h3>
-            <p style={{ 
-              fontSize: '1.5rem', 
-              fontWeight: 'bold', 
-              margin: 0, 
-              color: totalGainsLosses >= 0 ? '#155724' : '#c62828' 
-            }}>
-              {totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}
-            </p>
+          <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`}>
+            <h3>📈 P&L</h3>
+            <p>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
           </div>
 
-          <div style={{ 
-            padding: '1.5rem', 
-            backgroundColor: '#fff3e0', 
-            borderRadius: '8px', 
-            border: '1px solid #ffcc02' 
-          }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', color: '#e65100' }}>🎲 Active Bets</h3>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>
-              {myBets.filter(bet => bet.status === 'active').length}
-            </p>
+          <div className={`${styles.walletCard} ${styles.bets}`}>
+            <h3>🎲 Active Bets</h3>
+            <p>{myBets.filter(bet => bet.status === 'active').length}</p>
           </div>
         </div>
 
         {/* Opinion Portfolio */}
-        <section style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#333' }}>
-            💼 Your Opinion Portfolio
-          </h2>
+        <section className="section">
+          <h2 className="section-title">💼 Your Opinion Portfolio</h2>
           
           {ownedOpinions.length === 0 ? (
-            <div style={{ 
-              padding: '2rem', 
-              textAlign: 'center', 
-              backgroundColor: '#f8f9fa', 
-              borderRadius: '8px',
-              color: '#666'
-            }}>
+            <div className="empty-state">
               <p>You don't own any opinions yet!</p>
               <p>Start by buying some opinions from the marketplace.</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="grid grid-2">
               {ownedOpinions.map((opinion) => {
                 const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
                 const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
                 
                 return (
-                  <div key={opinion.id} style={{ 
-                    padding: '1rem', 
-                    border: '1px solid #ddd', 
-                    borderRadius: '8px',
-                    backgroundColor: 'white'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>
-                          {safeSlice(opinion.text, 80)}
-                        </p>
-                        <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
-                          Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}
-                        </p>
+                  <div key={opinion.id} className="card">
+                    <div className="card-header">
+                      <div className="card-content">
+                        <p>{safeSlice(opinion.text, 80)}</p>
+                        <p className="card-subtitle">Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}</p>
                       </div>
-                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                        <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
-                          Bought: ${opinion.purchasePrice}
-                        </p>
-                        <p style={{ margin: '0', fontWeight: 'bold' }}>
-                          Current: ${opinion.currentPrice}
-                        </p>
-                        <p style={{ 
-                          margin: '0', 
-                          fontWeight: 'bold',
-                          color: gainLoss >= 0 ? '#28a745' : '#dc3545' 
-                        }}>
+                      <div className={styles.opinionPricing}>
+                        <p>Bought: ${opinion.purchasePrice}</p>
+                        <p>Current: ${opinion.currentPrice}</p>
+                        <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
                           {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
                         </p>
                       </div>
@@ -380,61 +232,39 @@ export default function UserProfile() {
         </section>
 
         {/* My Betting History */}
-        <section style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#333' }}>
-            🎲 My Portfolio Bets
-          </h2>
+        <section className="section">
+          <h2 className="section-title">🎲 My Portfolio Bets</h2>
           
           {myBets.length === 0 ? (
-            <div style={{ 
-              padding: '2rem', 
-              textAlign: 'center', 
-              backgroundColor: '#f8f9fa', 
-              borderRadius: '8px',
-              color: '#666'
-            }}>
+            <div className="empty-state">
               <p>You haven't placed any portfolio bets yet!</p>
-              <p>Visit the <a href="/users" style={{ color: '#007bff' }}>Traders page</a> to bet on other traders' performance.</p>
+              <p>Visit the <a href="/users">Traders page</a> to bet on other traders' performance.</p>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem' }}>
+            <div className="grid grid-2">
               {myBets.slice(0, 10).map((bet) => {
-                const statusColors = getBetStatusColor(bet.status);
                 const daysRemaining = bet.status === 'active' ? getDaysRemaining(bet.expiryDate) : null;
                 
                 return (
-                  <div key={bet.id} style={{ 
-                    padding: '1rem', 
-                    backgroundColor: statusColors.bg,
-                    border: `1px solid ${statusColors.border}`,
-                    borderRadius: '8px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                          <span style={{ 
-                            fontSize: '0.75rem',
-                            padding: '0.25rem 0.5rem',
-                            backgroundColor: statusColors.color,
-                            color: 'white',
-                            borderRadius: '12px',
-                            fontWeight: 'bold',
-                            textTransform: 'uppercase'
-                          }}>
+                  <div key={bet.id} className="card">
+                    <div className="card-header">
+                      <div className="card-content">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span className={`${styles.betStatus} ${styles[bet.status]}`}>
                             {bet.status}
                           </span>
                           {bet.status === 'active' && daysRemaining !== null && (
-                            <span style={{ fontSize: '0.85rem', color: statusColors.color, fontWeight: 'bold' }}>
+                            <span className="card-subtitle">
                               {daysRemaining} days left
                             </span>
                           )}
                         </div>
                         
-                        <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold', color: statusColors.color }}>
+                        <p className="card-subtitle">
                           Betting ${bet.amount} on {bet.targetUser}'s portfolio to {bet.betType} by {bet.targetPercentage}%
                         </p>
                         
-                        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.9rem', color: '#666' }}>
+                        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
                           <span>Timeframe: {bet.timeFrame} days</span>
                           <span>Volatility: {bet.volatilityRating}</span>
                           <span>Multiplier: {bet.multiplier}x</span>
@@ -442,19 +272,15 @@ export default function UserProfile() {
                       </div>
                       
                       <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                        <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
-                          Placed: {bet.placedDate}
-                        </p>
-                        <p style={{ margin: '0', fontWeight: 'bold', fontSize: '1.1rem', color: statusColors.color }}>
+                        <p className="card-subtitle">Placed: {bet.placedDate}</p>
+                        <p className={bet.status === 'won' ? 'status-positive' : bet.status === 'lost' ? 'status-negative' : 'status-neutral'}>
                           {bet.status === 'won' ? `Won $${bet.potentialPayout}` :
                            bet.status === 'lost' ? `Lost $${bet.amount}` :
                            bet.status === 'active' ? `Potential: $${bet.potentialPayout}` :
                            'Expired'}
                         </p>
                         {bet.status === 'active' && (
-                          <p style={{ margin: '0', fontSize: '0.8rem', color: '#666' }}>
-                            Expires: {bet.expiryDate}
-                          </p>
+                          <p className="card-subtitle">Expires: {bet.expiryDate}</p>
                         )}
                       </div>
                     </div>
@@ -465,53 +291,35 @@ export default function UserProfile() {
           )}
           
           {myBets.length > 10 && (
-            <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-              <a 
-                href="/users" 
-                style={{ 
-                  color: '#007bff', 
-                  textDecoration: 'none', 
-                  fontWeight: 'bold' 
-                }}
-              >
-                View all {myBets.length} bets →
-              </a>
+            <div style={{ textAlign: 'center', marginTop: '20px' }}>
+              <a href="/users" className="btn btn-secondary">View all {myBets.length} bets →</a>
             </div>
           )}
         </section>
 
         {/* Recent Activity */}
-        <section>
-          <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#333' }}>
-            📋 Recent Activity
-          </h2>
+        <section className="section">
+          <h2 className="section-title">📋 Recent Activity</h2>
           
           {recentTransactions.length === 0 ? (
-            <p style={{ color: '#666' }}>No recent transactions.</p>
+            <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
           ) : (
-            <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {recentTransactions.map((transaction) => (
-                <div key={transaction.id} style={{ 
-                  padding: '1rem', 
-                  borderBottom: '1px solid #eee',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <p style={{ margin: '0', fontWeight: 'bold' }}>
-                      {transaction.type === 'buy' ? '🛒 Bought' : transaction.type === 'sell' ? '💰 Sold' : '✨ Earned'} Opinion
-                    </p>
-                    <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
-                      {transaction.opinionText || 'Generated opinion'} • {transaction.date}
-                    </p>
+                <div key={transaction.id} className="card">
+                  <div className="card-header">
+                    <div className="card-content">
+                      <p>
+                        {transaction.type === 'buy' ? '🛒 Bought' : transaction.type === 'sell' ? '💰 Sold' : '✨ Earned'} Opinion
+                      </p>
+                      <p className="card-subtitle">
+                        {transaction.opinionText || 'Generated opinion'} • {transaction.date}
+                      </p>
+                    </div>
+                    <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
+                      {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
+                    </span>
                   </div>
-                  <span style={{ 
-                    fontWeight: 'bold',
-                    color: transaction.amount >= 0 ? '#28a745' : '#dc3545'
-                  }}>
-                    {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
-                  </span>
                 </div>
               ))}
             </div>

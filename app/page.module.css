@@ -1,0 +1,159 @@
+/* page.module.css - Main profile page specific styles */
+
+/* Wallet Overview */
+.walletOverview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.walletCard {
+  padding: 24px;
+  border-radius: var(--radius-xl);
+  border: 2px solid var(--border-primary);
+  transition: all var(--transition);
+  position: relative;
+}
+
+.walletCard:hover {
+  border-color: var(--lime-green);
+  transform: translateY(-3px);
+}
+
+.walletCard h3 {
+  margin: 0 0 12px 0;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.walletCard p {
+  font-size: var(--font-size-3xl);
+  font-weight: 800;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+/* Wallet card variants */
+.walletCard.balance {
+  background: var(--lime-green);
+}
+
+.walletCard.balance h3,
+.walletCard.balance p {
+  color: var(--text-black);
+}
+
+.walletCard.portfolio {
+  background: var(--bg-card);
+  border-color: var(--lime-green);
+}
+
+.walletCard.pnl.positive {
+  background: var(--lime-green);
+}
+
+.walletCard.pnl.positive h3,
+.walletCard.pnl.positive p {
+  color: var(--text-black);
+}
+
+.walletCard.pnl.negative {
+  background: var(--coral-red);
+}
+
+.walletCard.pnl.negative h3,
+.walletCard.pnl.negative p {
+  color: var(--text-primary);
+}
+
+.walletCard.bets {
+  background: var(--soft-purple);
+}
+
+.walletCard.bets h3,
+.walletCard.bets p {
+  color: var(--text-primary);
+}
+
+/* Opinion-specific styles */
+.opinionPricing {
+  text-align: right;
+  min-width: 120px;
+}
+
+.opinionPricing p {
+  margin: 2px 0;
+}
+
+.opinionPricing p:first-child {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+.opinionPricing p:nth-child(2) {
+  font-weight: 700;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.opinionPricing p:last-child {
+  font-weight: 700;
+  font-size: var(--font-size-base);
+}
+
+.opinionPricing .positive {
+  color: var(--lime-green);
+}
+
+.opinionPricing .negative {
+  color: var(--coral-red);
+}
+
+/* Betting-specific styles */
+.betStatus {
+  font-size: var(--font-size-xs);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.betStatus.active {
+  background: var(--warning);
+  color: var(--text-black);
+}
+
+.betStatus.won {
+  background: var(--lime-green);
+  color: var(--text-black);
+}
+
+.betStatus.lost {
+  background: var(--coral-red);
+  color: var(--text-primary);
+}
+
+.betStatus.expired {
+  background: var(--text-tertiary);
+  color: var(--text-primary);
+}
+
+/* Activity feed specific */
+.activityAmount {
+  font-weight: 700;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+}
+
+.activityAmount.positive {
+  color: var(--lime-green);
+}
+
+.activityAmount.negative {
+  color: var(--coral-red);
+}

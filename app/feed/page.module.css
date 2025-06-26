@@ -1,0 +1,488 @@
+/* page.module.css - Feed page specific styles */
+
+/* Header Section */
+.pageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  gap: 1rem;
+}
+
+.headerContent {
+  flex: 1;
+}
+
+.headerTitle {
+  font-size: var(--font-size-4xl);
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.headerSubtitle {
+  margin: 8px 0 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-lg);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Filter Controls */
+.filterControls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-primary);
+  align-items: center;
+  transition: all var(--transition);
+}
+
+.filterControls:hover {
+  border-color: var(--lime-green);
+  background: var(--bg-elevated);
+}
+
+.filterLabel {
+  margin-right: 1rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.filterButton {
+  padding: 8px 16px;
+  border: 2px solid var(--soft-blue);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-transform: capitalize;
+  transition: all var(--transition);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.filterButton:hover {
+  transform: translateY(-1px);
+}
+
+.filterButton.active {
+  background: var(--soft-blue);
+  color: var(--text-primary);
+  border-color: var(--soft-blue);
+}
+
+/* Activity Feed */
+.feedContainer {
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  border: 2px solid var(--border-primary);
+  overflow: hidden;
+  transition: all var(--transition);
+}
+
+.feedContainer:hover {
+  border-color: var(--lime-green);
+}
+
+.feedHeader {
+  padding: 1rem 1.5rem;
+  background: var(--bg-section);
+  border-bottom: 2px solid var(--border-primary);
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.liveIndicator {
+  width: 8px;
+  height: 8px;
+  background: var(--coral-red);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.feedContent {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.feedContent::-webkit-scrollbar {
+  width: 8px;
+}
+
+.feedContent::-webkit-scrollbar-track {
+  background: var(--bg-section);
+}
+
+.feedContent::-webkit-scrollbar-thumb {
+  background: var(--border-secondary);
+  border-radius: 4px;
+}
+
+.feedContent::-webkit-scrollbar-thumb:hover {
+  background: var(--lime-green);
+}
+
+.emptyFeed {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.emptyFeed p:first-child {
+  font-size: var(--font-size-xl);
+  margin: 0 0 0.5rem 0;
+}
+
+.emptyFeed p:last-child {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+/* Activity Items */
+.activityItem {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-primary);
+  transition: all var(--transition);
+  position: relative;
+}
+
+.activityItem:last-child {
+  border-bottom: none;
+}
+
+.activityItem:hover {
+  background: var(--bg-section);
+}
+
+.activityItem.userActivity {
+  background: var(--bg-elevated);
+  border-left: 4px solid var(--lime-green);
+}
+
+.activityItem.userActivity:hover {
+  background: var(--bg-card);
+}
+
+.activityLayout {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.activityIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xl);
+  flex-shrink: 0;
+  border: 2px solid;
+  transition: all var(--transition);
+}
+
+.activityIcon.buy {
+  background: var(--lime-green);
+  border-color: var(--lime-dark);
+  color: var(--text-black);
+}
+
+.activityIcon.sell {
+  background: var(--soft-blue);
+  border-color: var(--soft-blue);
+  color: var(--text-primary);
+}
+
+.activityIcon.betPlace {
+  background: var(--soft-purple);
+  border-color: var(--soft-purple);
+  color: var(--text-primary);
+}
+
+.activityIcon.betWin {
+  background: var(--lime-green);
+  border-color: var(--lime-dark);
+  color: var(--text-black);
+}
+
+.activityIcon.betLoss {
+  background: var(--coral-red);
+  border-color: var(--coral-bright);
+  color: var(--text-primary);
+}
+
+.activityIcon.generate {
+  background: var(--warning);
+  border-color: #ffc107;
+  color: var(--text-black);
+}
+
+.activityContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.activityDescription {
+  font-size: var(--font-size-base);
+  line-height: 1.4;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.activityDescription strong {
+  font-weight: 700;
+  color: var(--lime-green);
+}
+
+.activityDescription em {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.userBadge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--lime-green);
+  color: var(--text-black);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.activityMeta {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.activityTime {
+  color: var(--text-tertiary);
+}
+
+.activityAmount {
+  font-weight: 700;
+  font-size: var(--font-size-base);
+}
+
+.activityAmount.positive {
+  color: var(--lime-green);
+}
+
+.activityAmount.negative {
+  color: var(--coral-red);
+}
+
+/* Market Stats */
+.marketStats {
+  margin-top: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.statCard {
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  border: 2px solid;
+  text-align: center;
+  transition: all var(--transition);
+  background: var(--bg-card);
+}
+
+.statCard:hover {
+  transform: translateY(-2px);
+}
+
+.statCard.purchases {
+  border-color: var(--lime-green);
+}
+
+.statCard.sales {
+  border-color: var(--soft-blue);
+}
+
+.statCard.bets {
+  border-color: var(--soft-purple);
+}
+
+.statCard.volume {
+  border-color: var(--warning);
+}
+
+.statNumber {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  margin: 0 0 4px 0;
+}
+
+.statNumber.purchases {
+  color: var(--lime-green);
+}
+
+.statNumber.sales {
+  color: var(--soft-blue);
+}
+
+.statNumber.bets {
+  color: var(--soft-purple);
+}
+
+.statNumber.volume {
+  color: var(--warning);
+}
+
+.statLabel {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Activity Type Indicators */
+.tradeIndicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 8px;
+}
+
+.tradeIndicator.buy {
+  background: var(--lime-green);
+}
+
+.tradeIndicator.sell {
+  background: var(--soft-blue);
+}
+
+.tradeIndicator.bet {
+  background: var(--soft-purple);
+}
+
+.tradeIndicator.generate {
+  background: var(--warning);
+}
+
+/* Loading Animation */
+.loadingActivity {
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .pageHeader {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .headerActions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .filterControls {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .filterButton {
+    font-size: var(--font-size-xs);
+    padding: 6px 12px;
+  }
+
+  .activityLayout {
+    gap: 0.75rem;
+  }
+
+  .activityIcon {
+    width: 32px;
+    height: 32px;
+    font-size: var(--font-size-base);
+  }
+
+  .activityDescription {
+    font-size: var(--font-size-sm);
+  }
+
+  .activityMeta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .marketStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .feedContent {
+    max-height: 60vh;
+  }
+}
+
+@media (max-width: 480px) {
+  .activityItem {
+    padding: 0.75rem 1rem;
+  }
+
+  .feedHeader {
+    padding: 0.75rem 1rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .filterControls {
+    padding: 0.75rem;
+  }
+
+  .headerTitle {
+    font-size: var(--font-size-3xl);
+  }
+
+  .marketStats {
+    grid-template-columns: 1fr;
+  }
+
+  .statCard {
+    padding: 0.75rem;
+  }
+
+  .statNumber {
+    font-size: var(--font-size-xl);
+  }
+}
