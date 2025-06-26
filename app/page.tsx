@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import styles from './page.module.css';
-import './global.css'; // Changed from './global.css' to './globals.css'
+import './global.css'; 
 
 interface UserProfile {
   username: string;
@@ -209,8 +209,12 @@ export default function UserProfile() {
                 const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
                 const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
                 
+                // Find the opinion index in allOpinions array for proper routing
+                const opinionIndex = allOpinions.findIndex(op => op === opinion.text);
+                const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
+                
                 return (
-                  <div key={opinion.id} className="card">
+                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
                     <div className="card-header">
                       <div className="card-content">
                         <p>{safeSlice(opinion.text, 80)}</p>
@@ -224,7 +228,7 @@ export default function UserProfile() {
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </a>
                 );
               })}
             </div>

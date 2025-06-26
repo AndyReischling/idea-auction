@@ -151,9 +151,12 @@ export default function Sidebar({
     
     const processedOpinions: OpinionWithPrice[] = opinions
       .filter(Boolean)
+      .reverse() // Show newest opinions first
       .map((op, i) => {
         const text = typeof op === 'string' ? op : op.text;
-        const id = typeof op === 'string' ? `${i}` : op.id;
+        // Use reverse index to maintain correct IDs
+        const originalIndex = opinions.length - 1 - i;
+        const id = typeof op === 'string' ? `${originalIndex}` : op.id;
         
         const marketData = getOpinionMarketData(text);
         const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
