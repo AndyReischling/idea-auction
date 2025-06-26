@@ -29,6 +29,24 @@ interface Transaction {
   date: string;
 }
 
+interface AdvancedBet {
+  id: string;
+  bettor: string;
+  targetUser: string;
+  betType: 'increase' | 'decrease';
+  targetPercentage: number;
+  amount: number;
+  timeFrame: number;
+  initialPortfolioValue: number;
+  currentPortfolioValue: number;
+  placedDate: string;
+  expiryDate: string;
+  status: 'active' | 'won' | 'lost' | 'expired';
+  multiplier: number;
+  potentialPayout: number;
+  volatilityRating: 'Low' | 'Medium' | 'High';
+}
+
 export default function UserProfile() {
   const [userProfile, setUserProfile] = useState<UserProfile>({
     username: 'OpinionTrader123',
@@ -41,6 +59,7 @@ export default function UserProfile() {
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
+  const [myBets, setMyBets] = useState<AdvancedBet[]>([]);
 
   // Load data from localStorage
   useEffect(() => {
@@ -50,7 +69,7 @@ export default function UserProfile() {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          const validOpinions = parsed.filter(op => op && typeof op === 'string' && op.trim().length > 0);
+          const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
           setAllOpinions(validOpinions);
         }
       }
@@ -72,10 +91,19 @@ export default function UserProfile() {
       if (storedTransactions) {
         setRecentTransactions(JSON.parse(storedTransactions));
       }
+
+      // Load my bets
+      const storedBets = localStorage.getItem('advancedBets');
+      if (storedBets) {
+        const allBets = JSON.parse(storedBets);
+        // Filter to only show current user's bets
+        const userBets = allBets.filter((bet: AdvancedBet) => bet.bettor === userProfile.username);
+        setMyBets(userBets);
+      }
     } catch (error) {
       console.error('Error loading user data:', error);
     }
-  }, []);
+  }, [userProfile.username]);
 
   // Save user profile to localStorage
   const saveUserProfile = (profile: UserProfile) => {
@@ -93,52 +121,30 @@ export default function UserProfile() {
     total + ((opinion.currentPrice - opinion.purchasePrice) * opinion.quantity), 0
   );
 
-  // Generate random price for demonstration
-  const getRandomPrice = () => Math.floor(Math.random() * 100) + 10;
-
   // SAFE SLICE FUNCTION - prevents null errors
   const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
     if (!text || typeof text !== 'string') return 'Unknown text';
     return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
   };
 
-  // Mock function to simulate buying an opinion
-  const buyOpinion = (opinionText: string) => {
-    if (!opinionText || typeof opinionText !== 'string') {
-      console.error('Invalid opinion text');
-      return;
+  // Get bet status color
+  const getBetStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return { bg: '#fff3cd', color: '#856404', border: '#ffeaa7' };
+      case 'won': return { bg: '#d4edda', color: '#155724', border: '#c3e6cb' };
+      case 'lost': return { bg: '#f8d7da', color: '#721c24', border: '#f5c6cb' };
+      case 'expired': return { bg: '#e2e3e5', color: '#383d41', border: '#d6d8db' };
+      default: return { bg: '#f8f9fa', color: '#6c757d', border: '#dee2e6' };
     }
+  };
 
-    const price = getRandomPrice();
-    if (userProfile.balance >= price) {
-      const newAsset: OpinionAsset = {
-        id: Date.now().toString(),
-        text: opinionText,
-        purchasePrice: price,
-        currentPrice: price,
-        purchaseDate: new Date().toLocaleDateString(),
-        quantity: 1
-      };
-
-      const newTransaction: Transaction = {
-        id: Date.now().toString(),
-        type: 'buy',
-        opinionId: newAsset.id,
-        opinionText: safeSlice(opinionText, 50), // SAFE SLICE HERE
-        amount: -price,
-        date: new Date().toLocaleDateString()
-      };
-
-      setOwnedOpinions(prev => [...prev, newAsset]);
-      setRecentTransactions(prev => [newTransaction, ...prev.slice(0, 9)]);
-      saveUserProfile({
-        ...userProfile,
-        balance: userProfile.balance - price
-      });
-
-      localStorage.setItem('ownedOpinions', JSON.stringify([...ownedOpinions, newAsset]));
-      localStorage.setItem('transactions', JSON.stringify([newTransaction, ...recentTransactions.slice(0, 9)]));
-    }
+  // Calculate days remaining for active bets
+  const getDaysRemaining = (expiryDate: string): number => {
+    const expiry = new Date(expiryDate);
+    const now = new Date();
+    const diffTime = expiry.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays);
   };
 
   return (
@@ -208,6 +214,25 @@ export default function UserProfile() {
               📊 View Traders
             </a>
             <a
+              href="/feed"
+              style={{
+                padding: '1rem 1.5rem',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              📡 Live Feed
+            </a>
+            <a
               href="/generate"
               style={{
                 padding: '1rem 1.5rem',
@@ -228,26 +253,6 @@ export default function UserProfile() {
             </a>
           </div>
         </div>
-
-<a
-  href="/feed"
-  style={{
-    padding: '1rem 1.5rem',
-    backgroundColor: '#dc3545',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '1rem',
-    fontWeight: 'bold',
-    whiteSpace: 'nowrap',
-    textDecoration: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem'
-  }}
->
-  📡 Live Feed
-</a>
 
         {/* Wallet Overview */}
         <div style={{ 
@@ -305,9 +310,9 @@ export default function UserProfile() {
             borderRadius: '8px', 
             border: '1px solid #ffcc02' 
           }}>
-            <h3 style={{ margin: '0 0 0.5rem 0', color: '#e65100' }}>🏆 Opinions Owned</h3>
+            <h3 style={{ margin: '0 0 0.5rem 0', color: '#e65100' }}>🎲 Active Bets</h3>
             <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#e65100' }}>
-              {ownedOpinions.length}
+              {myBets.filter(bet => bet.status === 'active').length}
             </p>
           </div>
         </div>
@@ -374,47 +379,103 @@ export default function UserProfile() {
           )}
         </section>
 
-        {/* Quick Buy Section */}
+        {/* My Betting History */}
         <section style={{ marginBottom: '2rem' }}>
           <h2 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#333' }}>
-            🛒 Quick Buy Available Opinions
+            🎲 My Portfolio Bets
           </h2>
           
-          {allOpinions.length === 0 ? (
-            <p style={{ color: '#666' }}>No opinions available. Generate some first!</p>
+          {myBets.length === 0 ? (
+            <div style={{ 
+              padding: '2rem', 
+              textAlign: 'center', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '8px',
+              color: '#666'
+            }}>
+              <p>You haven't placed any portfolio bets yet!</p>
+              <p>Visit the <a href="/users" style={{ color: '#007bff' }}>Traders page</a> to bet on other traders' performance.</p>
+            </div>
           ) : (
-            <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
-              {allOpinions.slice(0, 6).map((opinion, index) => (
-                <div key={index} style={{ 
-                  padding: '1rem', 
-                  border: '1px solid #ddd', 
-                  borderRadius: '8px',
-                  backgroundColor: 'white'
-                }}>
-                  <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem' }}>
-                    {safeSlice(opinion, 100)}
-                  </p>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 'bold', color: '#007bff' }}>
-                      ${getRandomPrice()}
-                    </span>
-                    <button
-                      onClick={() => buyOpinion(opinion)}
-                      style={{
-                        padding: '0.5rem 1rem',
-                        backgroundColor: '#28a745',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '0.9rem'
-                      }}
-                    >
-                      Buy Now
-                    </button>
+            <div style={{ display: 'grid', gap: '1rem' }}>
+              {myBets.slice(0, 10).map((bet) => {
+                const statusColors = getBetStatusColor(bet.status);
+                const daysRemaining = bet.status === 'active' ? getDaysRemaining(bet.expiryDate) : null;
+                
+                return (
+                  <div key={bet.id} style={{ 
+                    padding: '1rem', 
+                    backgroundColor: statusColors.bg,
+                    border: `1px solid ${statusColors.border}`,
+                    borderRadius: '8px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          <span style={{ 
+                            fontSize: '0.75rem',
+                            padding: '0.25rem 0.5rem',
+                            backgroundColor: statusColors.color,
+                            color: 'white',
+                            borderRadius: '12px',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase'
+                          }}>
+                            {bet.status}
+                          </span>
+                          {bet.status === 'active' && daysRemaining !== null && (
+                            <span style={{ fontSize: '0.85rem', color: statusColors.color, fontWeight: 'bold' }}>
+                              {daysRemaining} days left
+                            </span>
+                          )}
+                        </div>
+                        
+                        <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold', color: statusColors.color }}>
+                          Betting ${bet.amount} on {bet.targetUser}'s portfolio to {bet.betType} by {bet.targetPercentage}%
+                        </p>
+                        
+                        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.9rem', color: '#666' }}>
+                          <span>Timeframe: {bet.timeFrame} days</span>
+                          <span>Volatility: {bet.volatilityRating}</span>
+                          <span>Multiplier: {bet.multiplier}x</span>
+                        </div>
+                      </div>
+                      
+                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
+                        <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
+                          Placed: {bet.placedDate}
+                        </p>
+                        <p style={{ margin: '0', fontWeight: 'bold', fontSize: '1.1rem', color: statusColors.color }}>
+                          {bet.status === 'won' ? `Won $${bet.potentialPayout}` :
+                           bet.status === 'lost' ? `Lost $${bet.amount}` :
+                           bet.status === 'active' ? `Potential: $${bet.potentialPayout}` :
+                           'Expired'}
+                        </p>
+                        {bet.status === 'active' && (
+                          <p style={{ margin: '0', fontSize: '0.8rem', color: '#666' }}>
+                            Expires: {bet.expiryDate}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+          )}
+          
+          {myBets.length > 10 && (
+            <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+              <a 
+                href="/users" 
+                style={{ 
+                  color: '#007bff', 
+                  textDecoration: 'none', 
+                  fontWeight: 'bold' 
+                }}
+              >
+                View all {myBets.length} bets →
+              </a>
             </div>
           )}
         </section>
