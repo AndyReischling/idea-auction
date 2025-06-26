@@ -1,14 +1,16 @@
-// app/api/generate/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
 
-export async function POST() {
-  console.log('✅ /api/generate endpoint was hit');
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-  /* ---------- build the prompt ---------- */
-  const styles = ['odd', 'funny', 'off-beat', 'witty', 'absurd'];
-  const tone   = styles[Math.floor(Math.random() * styles.length)];
-
-const prompt = `
+export async function POST(req: NextRequest) {
+  try {
+    // You can customize the tone here or get it from the request body
+    const tone = "controversial"; // or "witty", "absurd", etc.
+    
+    const prompt = `
 You are a witty, absurdist internet presence. 
 
 Give me an **${tone}** example of the kind of statement that could go viral online in 1–2 sentences. It must feel fresh. The tone is Tracy Jordan meets Woody Allen meets Mitch Hedberg meets Dr. Leo Spaceman.
@@ -39,44 +41,48 @@ Example opinions (for style only):
 
 Return **only** the new opinion.`;
 
-  /* ---------- call OpenAI ---------- */
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type' : 'application/json',
-        Authorization   : `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model      : 'gpt-3.5-turbo',
-        messages   : [{ role: 'user', content: prompt }],
-        temperature: 1,
-        max_tokens : 100,
-      }),
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo", // or "gpt-4" if you prefer
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      max_tokens: 150,
+      temperature: 0.9, // High creativity for absurdist humor
     });
 
-    /* ---- handle non-OK responses from OpenAI ---- */
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error('❌ OpenAI returned', response.status, errText);
-      return NextResponse.json(
-        { error: 'Failed to generate opinion' },
-        { status: 500 },
-      );
+    const opinion = completion.choices[0]?.message?.content?.trim();
+
+    if (!opinion) {
+      throw new Error('No opinion generated');
     }
 
-    const data  = await response.json();
-    console.log('🔁 OpenAI response:', data);
+    return NextResponse.json({ opinion });
 
-    const idea =
-      data.choices?.[0]?.message?.content ?? 'No idea returned';
-
-    return NextResponse.json({ idea });
-  } catch (err) {
-    console.error('❌ /api/generate crashed:', err);
-    return NextResponse.json(
-      { error: 'Server error' },
-      { status: 500 },
-    );
+  } catch (error) {
+    console.error('Error generating opinion:', error);
+    
+    // Fallback to mock opinions if OpenAI fails
+    const mockOpinions = [
+      "I'm not saying I'm always right, but I can't recall a time when I was wrong. But hey, it's all part of the charm.",
+      "The best way to predict the future is to invent it yourself, then immediately forget where you put it.",
+      "My therapist says I have a pre-existing condition of not knowing when to stop talking.",
+      "I took the money I was saving for retirement and bought a really good pen.",
+      "Confidence is what you have before you understand the problem, which explains most of my life decisions.",
+      "I'm not lazy, I'm just highly motivated to do nothing.",
+      "My diet is basically see food and eat food, but pronounced with a really pretentious accent.",
+      "I went to buy some camouflage pants the other day but couldn't find any.",
+      "The early bird might get the worm, but the second mouse gets the cheese.",
+      "I haven't slept for ten days, because that would be too long."
+    ];
+    
+    const randomOpinion = mockOpinions[Math.floor(Math.random() * mockOpinions.length)];
+    
+    return NextResponse.json({ 
+      opinion: randomOpinion,
+      fallback: true 
+    });
   }
 }

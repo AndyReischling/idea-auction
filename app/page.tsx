@@ -32,7 +32,7 @@ interface Transaction {
 export default function UserProfile() {
   const [userProfile, setUserProfile] = useState<UserProfile>({
     username: 'OpinionTrader123',
-    balance: 10000, // Starting with $10,000 fake money
+    balance: 10000,
     joinDate: new Date().toLocaleDateString(),
     totalEarnings: 0,
     totalLosses: 0
@@ -45,12 +45,13 @@ export default function UserProfile() {
   // Load data from localStorage
   useEffect(() => {
     try {
-      // Load existing opinions for sidebar
+      // Load existing opinions for sidebar - FILTER OUT NULL VALUES
       const stored = localStorage.getItem('opinions');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          setAllOpinions(parsed);
+          const validOpinions = parsed.filter(op => op && typeof op === 'string' && op.trim().length > 0);
+          setAllOpinions(validOpinions);
         }
       }
 
@@ -95,8 +96,19 @@ export default function UserProfile() {
   // Generate random price for demonstration
   const getRandomPrice = () => Math.floor(Math.random() * 100) + 10;
 
+  // SAFE SLICE FUNCTION - prevents null errors
+  const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
+    if (!text || typeof text !== 'string') return 'Unknown text';
+    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
+  };
+
   // Mock function to simulate buying an opinion
   const buyOpinion = (opinionText: string) => {
+    if (!opinionText || typeof opinionText !== 'string') {
+      console.error('Invalid opinion text');
+      return;
+    }
+
     const price = getRandomPrice();
     if (userProfile.balance >= price) {
       const newAsset: OpinionAsset = {
@@ -112,7 +124,7 @@ export default function UserProfile() {
         id: Date.now().toString(),
         type: 'buy',
         opinionId: newAsset.id,
-        opinionText: opinionText.slice(0, 50) + '...',
+        opinionText: safeSlice(opinionText, 50), // SAFE SLICE HERE
         amount: -price,
         date: new Date().toLocaleDateString()
       };
@@ -131,10 +143,10 @@ export default function UserProfile() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
+      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
       
       <main style={{ padding: '2rem', flex: 1, maxWidth: '1200px' }}>
-      {/* Header with Generate Button */}
+        {/* Header with Navigation Buttons */}
         <div style={{ 
           display: 'flex', 
           justifyContent: 'space-between',
@@ -174,29 +186,68 @@ export default function UserProfile() {
             </div>
           </div>
 
-          {/* Generate Opinion Button */}
-          <a
-            href="/generate"
-            style={{
-              padding: '1rem 1.5rem',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              fontWeight: 'bold',
-              whiteSpace: 'nowrap',
-              transition: 'background-color 0.2s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              textDecoration: 'none'
-            }}
-          >
-            ✨ Generate Opinions
-          </a>
+          {/* Navigation Buttons */}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <a
+              href="/users"
+              style={{
+                padding: '1rem 1.5rem',
+                backgroundColor: '#6f42c1',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              📊 View Traders
+            </a>
+            <a
+              href="/generate"
+              style={{
+                padding: '1rem 1.5rem',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              ✨ Generate Opinions
+            </a>
+          </div>
         </div>
+
+<a
+  href="/feed"
+  style={{
+    padding: '1rem 1.5rem',
+    backgroundColor: '#dc3545',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    whiteSpace: 'nowrap',
+    textDecoration: 'none',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem'
+  }}
+>
+  📡 Live Feed
+</a>
 
         {/* Wallet Overview */}
         <div style={{ 
@@ -294,7 +345,7 @@ export default function UserProfile() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>
-                          {opinion.text.slice(0, 80)}...
+                          {safeSlice(opinion.text, 80)}
                         </p>
                         <p style={{ margin: '0', fontSize: '0.9rem', color: '#666' }}>
                           Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}
@@ -341,7 +392,7 @@ export default function UserProfile() {
                   backgroundColor: 'white'
                 }}>
                   <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem' }}>
-                    {opinion.slice(0, 100)}...
+                    {safeSlice(opinion, 100)}
                   </p>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 'bold', color: '#007bff' }}>
