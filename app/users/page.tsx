@@ -33,6 +33,7 @@ interface PublicUserData {
   volatility: number;
   recentPerformance: number; // 7-day performance
   rank: number;
+  isCurrentUser?: boolean; // Flag to identify current user
 }
 
 interface AdvancedBet {
@@ -59,6 +60,14 @@ interface Transaction {
   amount: number;
   date: string;
   description?: string;
+}
+
+// Interface for bot user data
+interface BotUser {
+  username: string;
+  portfolio: OpinionAsset[];
+  joinDate: string;
+  // Add any other bot-specific properties
 }
 
 export default function UsersPage() {
@@ -121,43 +130,102 @@ export default function UsersPage() {
     return totalVolatility / opinions.length;
   };
 
-  // Calculate advanced bet multiplier
-  const calculateBetMultiplier = (
-    betType: 'increase' | 'decrease',
-    targetPercentage: number,
-    timeFrame: number,
-    userVolatility: number,
-    recentPerformance: number
-  ): number => {
-    // Base difficulty from target percentage (exponential)
-    const percentageDifficulty = Math.pow(Math.abs(targetPercentage) / 10, 1.2);
-    
-    // Time pressure (shorter = harder, exponential curve)
-    const timeDifficulty = Math.pow((30 - Math.min(timeFrame, 30)) / 30, 0.8) + 0.3;
-    
-    // Volatility affects predictability
-    const volatilityFactor = Math.max(0.8, Math.min(2.0, userVolatility));
-    
-    // Trend alignment (betting against trend is harder)
-    const trendAlignment = betType === 'increase' 
-      ? (recentPerformance > 5 ? 0.7 : recentPerformance < -5 ? 1.4 : 1.0)
-      : (recentPerformance < -5 ? 0.7 : recentPerformance > 5 ? 1.4 : 1.0);
-    
-    // Market conditions (higher percentage moves are exponentially harder)
-    const marketDifficulty = targetPercentage > 20 ? Math.pow(targetPercentage / 20, 1.5) : 1.0;
-    
-    const baseDifficulty = percentageDifficulty * timeDifficulty * volatilityFactor * trendAlignment * marketDifficulty;
-    const multiplier = Math.max(1.1, Math.min(15.0, 1 + baseDifficulty * 0.8));
-    
-    return Math.round(multiplier * 100) / 100;
+  // Get current user's portfolio from localStorage
+  const getCurrentUserPortfolio = (): OpinionAsset[] => {
+    try {
+      const portfolio = localStorage.getItem('userPortfolio');
+      if (portfolio) {
+        return JSON.parse(portfolio);
+      }
+    } catch (error) {
+      console.error('Error loading user portfolio:', error);
+    }
+    return [];
   };
 
-  // Generate enhanced mock users
+  // Get bot users from localStorage
+  const getBotUsers = (): BotUser[] => {
+    try {
+      const bots = localStorage.getItem('botUsers');
+      if (bots) {
+        return JSON.parse(bots);
+      }
+    } catch (error) {
+      console.error('Error loading bot users:', error);
+    }
+    return [];
+  };
+
+  // Get other real users (you might need to implement this based on your user system)
+  const getOtherUsers = (): any[] => {
+    try {
+      const otherUsers = localStorage.getItem('otherUsers');
+      if (otherUsers) {
+        return JSON.parse(otherUsers);
+      }
+    } catch (error) {
+      console.error('Error loading other users:', error);
+    }
+    return [];
+  };
+
+  // Convert user data to PublicUserData format
+  const convertToPublicUserData = (
+    username: string,
+    portfolio: OpinionAsset[],
+    joinDate: string,
+    isCurrentUser: boolean = false
+  ): PublicUserData => {
+    let totalValue = 0;
+    let totalCost = 0;
+
+    // Calculate portfolio value and cost
+    portfolio.forEach(asset => {
+      const marketData = getOpinionMarketData(asset.text);
+      const currentPrice = marketData.currentPrice || asset.currentPrice;
+      totalValue += currentPrice * asset.quantity;
+      totalCost += asset.purchasePrice * asset.quantity;
+    });
+
+    const gainsLosses = totalValue - totalCost;
+    const performancePercentage = totalCost > 0 ? ((gainsLosses / totalCost) * 100) : 0;
+    const volatility = calculatePortfolioVolatility(portfolio);
+    
+    // For real users, you might want to calculate actual recent performance
+    // For now, using a placeholder calculation
+    const recentPerformance = performancePercentage * 0.3; // Simplified calculation
+
+    // Get top performing opinions
+    const topOpinions = [...portfolio]
+      .map(opinion => ({
+        ...opinion,
+        currentPrice: getOpinionMarketData(opinion.text).currentPrice || opinion.currentPrice
+      }))
+      .sort((a, b) => 
+        ((b.currentPrice - b.purchasePrice) * b.quantity) - ((a.currentPrice - a.purchasePrice) * a.quantity)
+      )
+      .slice(0, 5);
+
+    return {
+      username,
+      portfolioValue: totalValue,
+      totalGainsLosses: gainsLosses,
+      opinionsCount: portfolio.length,
+      joinDate,
+      performancePercentage,
+      topOpinions,
+      volatility,
+      recentPerformance,
+      rank: 0, // Will be set after sorting
+      isCurrentUser
+    };
+  };
+
+  // Generate enhanced mock users (keeping some for demo purposes)
   const generateMockUsers = (): PublicUserData[] => {
     const mockUsernames = [
       'CryptoGuru2024', 'OpinionWhale', 'TrendSpotter', 'MarketMaven', 'BearishBob',
-      'BullishBella', 'VolatileVic', 'SteadySteve', 'RiskyRita', 'SafetySteven',
-      'DiamondHands', 'PaperTrader', 'AlgoAssassin', 'PatternPundit', 'ChartChampion'
+      'BullishBella', 'VolatileVic', 'SteadySteve', 'RiskyRita', 'SafetySteven'
     ];
 
     const users = mockUsernames.map((username, index) => {
@@ -210,16 +278,101 @@ export default function UsersPage() {
       };
     });
 
-    // Sort by portfolio value and assign ranks
-    users.sort((a, b) => b.portfolioValue - a.portfolioValue);
-    users.forEach((user, index) => user.rank = index + 1);
-
     return users;
+  };
+
+  // Get all users (real + mock)
+  const getAllUsers = (): PublicUserData[] => {
+    const allUsers: PublicUserData[] = [];
+
+    // Add current user
+    const currentUserPortfolio = getCurrentUserPortfolio();
+    if (currentUserPortfolio.length > 0) {
+      const currentUserData = convertToPublicUserData(
+        currentUser.username,
+        currentUserPortfolio,
+        currentUser.joinDate,
+        true
+      );
+      allUsers.push(currentUserData);
+    }
+
+    // Add bot users
+    const botUsers = getBotUsers();
+    botUsers.forEach(bot => {
+      const botData = convertToPublicUserData(
+        bot.username,
+        bot.portfolio,
+        bot.joinDate
+      );
+      allUsers.push(botData);
+    });
+
+    // Add other real users
+    const otherUsers = getOtherUsers();
+    otherUsers.forEach(user => {
+      const userData = convertToPublicUserData(
+        user.username,
+        user.portfolio || [],
+        user.joinDate || new Date().toLocaleDateString()
+      );
+      allUsers.push(userData);
+    });
+
+    // Add some mock users for demonstration (you can remove this later)
+    if (allOpinions.length > 0) {
+      const mockUsers = generateMockUsers();
+      allUsers.push(...mockUsers);
+    }
+
+    // Sort by portfolio value and assign ranks
+    allUsers.sort((a, b) => b.portfolioValue - a.portfolioValue);
+    allUsers.forEach((user, index) => user.rank = index + 1);
+
+    return allUsers;
+  };
+
+  // Calculate advanced bet multiplier
+  const calculateBetMultiplier = (
+    betType: 'increase' | 'decrease',
+    targetPercentage: number,
+    timeFrame: number,
+    userVolatility: number,
+    recentPerformance: number
+  ): number => {
+    // Base difficulty from target percentage (exponential)
+    const percentageDifficulty = Math.pow(Math.abs(targetPercentage) / 10, 1.2);
+    
+    // Time pressure (shorter = harder, exponential curve)
+    const timeDifficulty = Math.pow((30 - Math.min(timeFrame, 30)) / 30, 0.8) + 0.3;
+    
+    // Volatility affects predictability
+    const volatilityFactor = Math.max(0.8, Math.min(2.0, userVolatility));
+    
+    // Trend alignment (betting against trend is harder)
+    const trendAlignment = betType === 'increase' 
+      ? (recentPerformance > 5 ? 0.7 : recentPerformance < -5 ? 1.4 : 1.0)
+      : (recentPerformance < -5 ? 0.7 : recentPerformance > 5 ? 1.4 : 1.0);
+    
+    // Market conditions (higher percentage moves are exponentially harder)
+    const marketDifficulty = targetPercentage > 20 ? Math.pow(targetPercentage / 20, 1.5) : 1.0;
+    
+    const baseDifficulty = percentageDifficulty * timeDifficulty * volatilityFactor * trendAlignment * marketDifficulty;
+    const multiplier = Math.max(1.1, Math.min(15.0, 1 + baseDifficulty * 0.8));
+    
+    return Math.round(multiplier * 100) / 100;
   };
 
   // Place advanced bet
   const placeBet = () => {
     if (!selectedUser) return;
+
+    // Prevent betting on yourself
+    if (selectedUser.isCurrentUser) {
+      setMessage('You cannot bet on your own portfolio!');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
 
     if (betForm.amount <= 0 || betForm.amount > currentUser.balance) {
       setMessage('Invalid bet amount or insufficient funds!');
@@ -391,12 +544,12 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    // Generate mock users after opinions are loaded
+    // Generate all users (real + mock) after opinions are loaded
     if (allOpinions.length > 0) {
-      const users = generateMockUsers();
+      const users = getAllUsers();
       setPublicUsers(users);
     }
-  }, [allOpinions]);
+  }, [allOpinions, currentUser]);
 
   const sortedUsers = sortUsers(publicUsers);
 
@@ -486,7 +639,7 @@ export default function UsersPage() {
             {sortedUsers.map((user) => (
               <div 
                 key={user.username} 
-                className={styles.userCard}
+                className={`${styles.userCard} ${user.isCurrentUser ? styles.currentUserCard : ''}`}
                 onClick={() => {
                   setSelectedUser(user);
                   setShowBetModal(true);
@@ -498,7 +651,10 @@ export default function UsersPage() {
                       {getRankDisplay(user.rank)}
                     </div>
                     <div className={styles.userDetails}>
-                      <h3>{user.username}</h3>
+                      <h3>
+                        {user.username}
+                        {user.isCurrentUser && <span className={styles.youLabel}> (You)</span>}
+                      </h3>
                       <p>{user.opinionsCount} opinions • Joined {user.joinDate}</p>
                     </div>
                   </div>
@@ -566,6 +722,7 @@ export default function UsersPage() {
               <div className={styles.modalHeader}>
                 <h2 className={styles.modalTitle}>
                   🎯 Bet on {selectedUser.username}'s Portfolio
+                  {selectedUser.isCurrentUser && <span className={styles.cantBetWarning}> (Cannot bet on yourself)</span>}
                 </h2>
                 <button
                   onClick={() => {
@@ -578,181 +735,190 @@ export default function UsersPage() {
                 </button>
               </div>
 
-              {/* Portfolio Summary */}
-              <div className={styles.portfolioSummary}>
-                <div className={styles.summaryItem}>
-                  <p>Current Value</p>
-                  <p>${selectedUser.portfolioValue.toLocaleString()}</p>
+              {selectedUser.isCurrentUser ? (
+                <div className={styles.cantBetMessage}>
+                  <p>🚫 You cannot place bets on your own portfolio.</p>
+                  <p>Choose another trader to bet on their performance!</p>
                 </div>
-                <div className={styles.summaryItem}>
-                  <p>Recent Performance</p>
-                  <p className={getPerformanceClass(selectedUser.recentPerformance)}>
-                    {selectedUser.recentPerformance >= 0 ? '+' : ''}{selectedUser.recentPerformance.toFixed(1)}%
-                  </p>
-                </div>
-                <div className={styles.summaryItem}>
-                  <p>Volatility</p>
-                  <p className={getVolatilityClass(selectedUser.volatility)}>
-                    {selectedUser.volatility > 2.0 ? 'High' : selectedUser.volatility > 1.3 ? 'Medium' : 'Low'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Betting Form */}
-              <div className={styles.bettingForm}>
-                <h3 className={styles.formTitle}>📊 Custom Portfolio Bet</h3>
-                
-                {/* Bet Direction */}
-                <div className={styles.formGroup}>
-                  <p className={styles.formLabel}>Direction:</p>
-                  <div className={styles.directionButtons}>
-                    <button
-                      onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
-                      className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
-                    >
-                      📈 INCREASE
-                    </button>
-                    <button
-                      onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
-                      className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
-                    >
-                      📉 DECREASE
-                    </button>
+              ) : (
+                <>
+                  {/* Portfolio Summary */}
+                  <div className={styles.portfolioSummary}>
+                    <div className={styles.summaryItem}>
+                      <p>Current Value</p>
+                      <p>${selectedUser.portfolioValue.toLocaleString()}</p>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <p>Recent Performance</p>
+                      <p className={getPerformanceClass(selectedUser.recentPerformance)}>
+                        {selectedUser.recentPerformance >= 0 ? '+' : ''}{selectedUser.recentPerformance.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <p>Volatility</p>
+                      <p className={getVolatilityClass(selectedUser.volatility)}>
+                        {selectedUser.volatility > 2.0 ? 'High' : selectedUser.volatility > 1.3 ? 'Medium' : 'Low'}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                {/* Target Percentage */}
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>
-                    Target Percentage: {betForm.targetPercentage}%
-                  </label>
-                  <input
-                    type="range"
-                    min="5"
-                    max="50"
-                    step="5"
-                    value={betForm.targetPercentage}
-                    onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
-                    className={styles.rangeInput}
-                  />
-                  <div className={styles.rangeLabels}>
-                    <span>5% (Easy)</span>
-                    <span>25% (Medium)</span>
-                    <span>50% (Hard)</span>
-                  </div>
-                </div>
-
-                {/* Timeframe */}
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>
-                    Timeframe: {betForm.timeFrame} days
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="30"
-                    step="1"
-                    value={betForm.timeFrame}
-                    onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
-                    className={styles.rangeInput}
-                  />
-                  <div className={styles.rangeLabels}>
-                    <span>1 day (Hard)</span>
-                    <span>15 days</span>
-                    <span>30 days (Easy)</span>
-                  </div>
-                </div>
-
-                {/* Bet Amount */}
-                <div className={styles.formGroup}>
-                  <label className={styles.formLabel}>Bet Amount:</label>
-                  <input
-                    type="number"
-                    value={betForm.amount}
-                    onChange={(e) => setBetForm({ ...betForm, amount: parseInt(e.target.value) || 0 })}
-                    placeholder="Enter amount..."
-                    min="1"
-                    max={currentUser.balance}
-                    className={styles.amountInput}
-                  />
-                  <div className={styles.quickAmounts}>
-                    {[50, 100, 250, 500].map(amount => (
-                      <button
-                        key={amount}
-                        onClick={() => setBetForm({ ...betForm, amount })}
-                        disabled={amount > currentUser.balance}
-                        className={styles.quickAmountButton}
-                      >
-                        ${amount}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Bet Summary */}
-                {betForm.amount > 0 && (
-                  <div className={styles.betSummary}>
-                    <p>Bet Summary:</p>
-                    <p>
-                      Betting ${betForm.amount} that {selectedUser.username}'s portfolio will{' '}
-                      <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
-                      within <strong>{betForm.timeFrame} days</strong>
-                    </p>
-                    <p>
-                      Multiplier: <strong>
-                        {calculateBetMultiplier(
-                          betForm.betType,
-                          betForm.targetPercentage,
-                          betForm.timeFrame,
-                          selectedUser.volatility,
-                          selectedUser.recentPerformance
-                        ).toFixed(2)}x
-                      </strong> • 
-                      Potential Payout: <strong>
-                        ${Math.round(betForm.amount * calculateBetMultiplier(
-                          betForm.betType,
-                          betForm.targetPercentage,
-                          betForm.timeFrame,
-                          selectedUser.volatility,
-                          selectedUser.recentPerformance
-                        ))}
-                      </strong>
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  onClick={placeBet}
-                  disabled={betForm.amount <= 0 || betForm.amount > currentUser.balance}
-                  className={styles.placeBetButton}
-                >
-                  {betForm.amount <= 0 ? 'Enter Bet Amount' :
-                   betForm.amount > currentUser.balance ? 'Insufficient Funds' :
-                   `Place Bet: ${betForm.amount}`}
-                </button>
-              </div>
-
-              {/* Holdings Preview */}
-              <div className={styles.modalHoldings}>
-                <h3>Top Holdings ({selectedUser.opinionsCount} total)</h3>
-                <div className={styles.holdingsGrid}>
-                  {selectedUser.topOpinions.map((opinion, index) => (
-                    <div key={index} className={styles.holdingItem}>
-                      <div>
-                        <p className={styles.holdingText}>
-                          "{safeSlice(opinion.text, 60)}"
-                        </p>
-                      </div>
-                      <div className={styles.holdingStats}>
-                        <p>${opinion.currentPrice}</p>
-                        <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative}>
-                          {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
-                        </p>
+                  {/* Betting Form */}
+                  <div className={styles.bettingForm}>
+                    <h3 className={styles.formTitle}>📊 Custom Portfolio Bet</h3>
+                    
+                    {/* Bet Direction */}
+                    <div className={styles.formGroup}>
+                      <p className={styles.formLabel}>Direction:</p>
+                      <div className={styles.directionButtons}>
+                        <button
+                          onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
+                          className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
+                        >
+                          📈 INCREASE
+                        </button>
+                        <button
+                          onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
+                          className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
+                        >
+                          📉 DECREASE
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+
+                    {/* Target Percentage */}
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>
+                        Target Percentage: {betForm.targetPercentage}%
+                      </label>
+                      <input
+                        type="range"
+                        min="5"
+                        max="50"
+                        step="5"
+                        value={betForm.targetPercentage}
+                        onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
+                        className={styles.rangeInput}
+                      />
+                      <div className={styles.rangeLabels}>
+                        <span>5% (Easy)</span>
+                        <span>25% (Medium)</span>
+                        <span>50% (Hard)</span>
+                      </div>
+                    </div>
+
+                    {/* Timeframe */}
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>
+                        Timeframe: {betForm.timeFrame} days
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value={betForm.timeFrame}
+                        onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
+                        className={styles.rangeInput}
+                      />
+                      <div className={styles.rangeLabels}>
+                        <span>1 day (Hard)</span>
+                        <span>15 days</span>
+                        <span>30 days (Easy)</span>
+                      </div>
+                    </div>
+
+                    {/* Bet Amount */}
+                    <div className={styles.formGroup}>
+                      <label className={styles.formLabel}>Bet Amount:</label>
+                      <input
+                        type="number"
+                        value={betForm.amount}
+                        onChange={(e) => setBetForm({ ...betForm, amount: parseInt(e.target.value) || 0 })}
+                        placeholder="Enter amount..."
+                        min="1"
+                        max={currentUser.balance}
+                        className={styles.amountInput}
+                      />
+                      <div className={styles.quickAmounts}>
+                        {[50, 100, 250, 500].map(amount => (
+                          <button
+                            key={amount}
+                            onClick={() => setBetForm({ ...betForm, amount })}
+                            disabled={amount > currentUser.balance}
+                            className={styles.quickAmountButton}
+                          >
+                            ${amount}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Bet Summary */}
+                    {betForm.amount > 0 && (
+                      <div className={styles.betSummary}>
+                        <p>Bet Summary:</p>
+                        <p>
+                          Betting ${betForm.amount} that {selectedUser.username}'s portfolio will{' '}
+                          <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
+                          within <strong>{betForm.timeFrame} days</strong>
+                        </p>
+                        <p>
+                          Multiplier: <strong>
+                            {calculateBetMultiplier(
+                              betForm.betType,
+                              betForm.targetPercentage,
+                              betForm.timeFrame,
+                              selectedUser.volatility,
+                              selectedUser.recentPerformance
+                            ).toFixed(2)}x
+                          </strong> • 
+                          Potential Payout: <strong>
+                            ${Math.round(betForm.amount * calculateBetMultiplier(
+                              betForm.betType,
+                              betForm.targetPercentage,
+                              betForm.timeFrame,
+                              selectedUser.volatility,
+                              selectedUser.recentPerformance
+                            ))}
+                          </strong>
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={placeBet}
+                      disabled={betForm.amount <= 0 || betForm.amount > currentUser.balance}
+                      className={styles.placeBetButton}
+                    >
+                      {betForm.amount <= 0 ? 'Enter Bet Amount' :
+                       betForm.amount > currentUser.balance ? 'Insufficient Funds' :
+                       `Place Bet: ${betForm.amount}`}
+                    </button>
+                  </div>
+
+                  {/* Holdings Preview */}
+                  <div className={styles.modalHoldings}>
+                    <h3>Top Holdings ({selectedUser.opinionsCount} total)</h3>
+                    <div className={styles.holdingsGrid}>
+                      {selectedUser.topOpinions.map((opinion, index) => (
+                        <div key={index} className={styles.holdingItem}>
+                          <div>
+                            <p className={styles.holdingText}>
+                              "{safeSlice(opinion.text, 60)}"
+                            </p>
+                          </div>
+                          <div className={styles.holdingStats}>
+                            <p>${opinion.currentPrice}</p>
+                            <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative}>
+                              {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

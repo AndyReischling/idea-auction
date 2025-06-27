@@ -1,16 +1,20 @@
-/* app/layout.tsx ----------------------------------------------- */
-import Sidebar from './components/Sidebar';
+import './global.css';
 
-export const metadata = { title: 'Random Opinion Generator' };
+export const metadata = {
+  title: 'Opinion Auction Platform',
+  description: 'Trade opinions in a dynamic marketplace',
+};
 
-import { ReactNode } from 'react';
-
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+      </body>
     </html>
   );
 }
-
-

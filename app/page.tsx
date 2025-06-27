@@ -62,6 +62,7 @@ export default function UserProfile() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [myBets, setMyBets] = useState<AdvancedBet[]>([]);
+  const [botsRunning, setBotsRunning] = useState<boolean>(false);
 
   // Load data from localStorage
   useEffect(() => {
@@ -107,10 +108,35 @@ export default function UserProfile() {
     }
   }, [userProfile.username]);
 
+  // Monitor bot status (simplified version)
+  useEffect(() => {
+    const checkBotStatus = () => {
+      const botsEnabled = localStorage.getItem('botsAutoStart') === 'true';
+      setBotsRunning(botsEnabled);
+    };
+
+    checkBotStatus();
+    const interval = setInterval(checkBotStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Save user profile to localStorage
   const saveUserProfile = (profile: UserProfile) => {
     setUserProfile(profile);
     localStorage.setItem('userProfile', JSON.stringify(profile));
+  };
+
+  // Simplified bot control handlers
+  const handleStartBots = () => {
+    localStorage.setItem('botsAutoStart', 'true');
+    setBotsRunning(true);
+    console.log('🤖 Bots enabled globally');
+  };
+
+  const handleStopBots = () => {
+    localStorage.setItem('botsAutoStart', 'false');
+    setBotsRunning(false);
+    console.log('🛑 Bots disabled globally');
   };
 
   // Calculate portfolio value
@@ -154,6 +180,15 @@ export default function UserProfile() {
               <h1>{userProfile.username}</h1>
               <p>Member since {userProfile.joinDate}</p>
               <p>Opinion Trader & Collector</p>
+              {/* Bot status indicator */}
+              <p style={{ 
+                fontSize: '12px', 
+                color: botsRunning ? '#10b981' : '#ef4444',
+                fontWeight: '600',
+                marginTop: '4px'
+              }}>
+                🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
+              </p>
             </div>
           </div>
 
@@ -168,7 +203,55 @@ export default function UserProfile() {
             <a href="/generate" className="nav-button generate">
               ✨ Generate Opinions
             </a>
+            {/* Bot Control button */}
+            <a href="/admin" className="nav-button admin" style={{ 
+              backgroundColor: '#8b5cf6',
+              color: 'white',
+              textDecoration: 'none'
+            }}>
+              🤖 Bot Control
+            </a>
           </div>
+        </div>
+
+        {/* Global Bot Controls */}
+        <div style={{
+          display: 'flex',
+          gap: '10px',
+          marginBottom: '20px',
+          padding: '12px',
+          backgroundColor: botsRunning ? '#f0fdf4' : '#fef2f2',
+          borderRadius: '8px',
+          border: `1px solid ${botsRunning ? '#bbf7d0' : '#fecaca'}`
+        }}>
+          <button
+            onClick={botsRunning ? handleStopBots : handleStartBots}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: '600',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              backgroundColor: botsRunning ? '#ef4444' : '#10b981',
+              color: 'white',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {botsRunning ? '⏹️ Stop Global Bots' : '▶️ Start Global Bots'}
+          </button>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '14px',
+            color: '#64748b',
+            marginLeft: '10px'
+          }}>
+            {botsRunning ? 
+              '🟢 AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
+              '🔴 AI traders are paused globally'
+            }
+          </span>
         </div>
 
         {/* Wallet Overview */}
@@ -202,6 +285,11 @@ export default function UserProfile() {
             <div className="empty-state">
               <p>You don't own any opinions yet!</p>
               <p>Start by buying some opinions from the marketplace.</p>
+              {botsRunning && (
+                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
+                  🤖 Bots are creating market activity across the platform right now!
+                </p>
+              )}
             </div>
           ) : (
             <div className="grid grid-2">
@@ -243,6 +331,11 @@ export default function UserProfile() {
             <div className="empty-state">
               <p>You haven't placed any portfolio bets yet!</p>
               <p>Visit the <a href="/users">Traders page</a> to bet on other traders' performance.</p>
+              {botsRunning && (
+                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
+                  🤖 Bots are actively placing bets on portfolios - check the Live Feed to see their activity!
+                </p>
+              )}
             </div>
           ) : (
             <div className="grid grid-2">
@@ -306,7 +399,14 @@ export default function UserProfile() {
           <h2 className="section-title">📋 Recent Activity</h2>
           
           {recentTransactions.length === 0 ? (
-            <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
+            <div>
+              <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
+              {botsRunning && (
+                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
+                  🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#8b5cf6' }}>Live Feed</a> to see all activity!
+                </p>
+              )}
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {recentTransactions.map((transaction) => (
