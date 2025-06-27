@@ -777,3 +777,251 @@
     max-width: none;
   }
 }
+
+/* User Card Action Buttons */
+.userCardActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-primary);
+}
+
+.viewDetailsButton, .placeBetButton {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  min-height: 32px;
+  border: 1px solid transparent;
+}
+
+.viewDetailsButton {
+  background: var(--bg-section);
+  color: var(--text-primary);
+  border-color: var(--border-primary);
+}
+
+.viewDetailsButton:hover {
+  background: var(--bg-elevated);
+  border-color: var(--lime-green);
+  transform: translateY(-1px);
+}
+
+.placeBetButton {
+  background: var(--lime-green);
+  color: var(--text-black);
+  border-color: var(--lime-green);
+}
+
+.placeBetButton:hover {
+  background: var(--lime-bright);
+  transform: translateY(-1px);
+}
+/* Add these missing CSS classes to your page.module.css file */
+
+/* Wallet Overview Section */
+.walletOverview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.walletCard {
+  padding: 1.5rem;
+  background: var(--bg-card);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  transition: all var(--transition);
+}
+
+.walletCard:hover {
+  transform: translateY(-2px);
+  border-color: var(--lime-green);
+}
+
+.walletCard h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: var(--font-size-lg);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.walletCard p {
+  margin: 0;
+  font-size: var(--font-size-3xl);
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+/* Wallet Card Variants */
+.walletCard.balance {
+  border-color: var(--lime-green);
+}
+
+.walletCard.balance:hover {
+  background: var(--lime-green);
+  color: var(--text-black);
+}
+
+.walletCard.balance:hover h3,
+.walletCard.balance:hover p {
+  color: var(--text-black);
+}
+
+.walletCard.portfolio {
+  border-color: var(--soft-blue);
+}
+
+.walletCard.portfolio:hover {
+  background: var(--soft-blue);
+}
+
+.walletCard.pnl {
+  border-color: var(--warning);
+}
+
+.walletCard.pnl.positive {
+  border-color: var(--lime-green);
+}
+
+.walletCard.pnl.negative {
+  border-color: var(--coral-red);
+}
+
+.walletCard.pnl.positive p {
+  color: var(--lime-green);
+}
+
+.walletCard.pnl.negative p {
+  color: var(--coral-red);
+}
+
+.walletCard.bets {
+  border-color: var(--warning);
+}
+
+.walletCard.bets:hover {
+  background: var(--warning);
+  color: var(--text-black);
+}
+
+.walletCard.bets:hover h3,
+.walletCard.bets:hover p {
+  color: var(--text-black);
+}
+
+/* Opinion Pricing */
+.opinionPricing {
+  text-align: right;
+  min-width: 120px;
+}
+
+.opinionPricing p {
+  margin: 0 0 4px 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.opinionPricing p:last-child {
+  font-weight: 700;
+  font-size: var(--font-size-base);
+}
+
+/* Bet Type and Status Badges */
+.betType {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.betType.portfolio_bet {
+  background: var(--soft-blue);
+  color: var(--text-primary);
+}
+
+.betType.short_bet {
+  background: var(--warning);
+  color: var(--text-black);
+}
+
+.betStatus {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.betStatus.active {
+  background: var(--lime-green);
+  color: var(--text-black);
+}
+
+.betStatus.won {
+  background: var(--lime-bright);
+  color: var(--text-black);
+}
+
+.betStatus.lost {
+  background: var(--coral-red);
+  color: var(--text-primary);
+}
+
+.betStatus.expired {
+  background: var(--border-primary);
+  color: var(--text-tertiary);
+}
+
+/* Activity Amount */
+.activityAmount {
+  font-weight: 700;
+  font-size: var(--font-size-lg);
+}
+
+/* Positive/Negative Modifiers */
+.positive {
+  color: var(--lime-green);
+}
+
+.negative {
+  color: var(--coral-red);
+}
+
+/* Responsive adjustments for wallet overview */
+@media (max-width: 768px) {
+  .walletOverview {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+  
+  .walletCard {
+    padding: 1rem;
+  }
+  
+  .walletCard h3 {
+    font-size: var(--font-size-base);
+  }
+  
+  .walletCard p {
+    font-size: var(--font-size-2xl);
+  }
+}
+
+@media (max-width: 480px) {
+  .walletOverview {
+    grid-template-columns: 1fr;
+  }
+}

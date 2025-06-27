@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Sidebar from './components/Sidebar';
-import styles from './page.module.css';
-import './global.css'; 
+import { useParams, useRouter } from 'next/navigation';
+import Sidebar from '../../components/Sidebar';
+import styles from '../page.module.css';
 
 interface UserProfile {
   username: string;
@@ -22,14 +22,19 @@ interface OpinionAsset {
   quantity: number;
 }
 
-interface Transaction {
+interface ShortPosition {
   id: string;
-  type: 'buy' | 'sell' | 'earn' | 'short_win' | 'short_loss' | 'short_place';
-  opinionId?: string;
-  opinionText?: string;
-  shortId?: string;
-  amount: number;
-  date: string;
+  opinionText: string;
+  opinionId: string;
+  betAmount: number;
+  targetDropPercentage: number;
+  startingPrice: number;
+  targetPrice: number;
+  potentialWinnings: number;
+  expirationDate: string;
+  createdDate: string;
+  status: 'active' | 'won' | 'lost' | 'expired';
+  botId?: string;
 }
 
 interface AdvancedBet {
@@ -50,21 +55,15 @@ interface AdvancedBet {
   volatilityRating: 'Low' | 'Medium' | 'High';
 }
 
-interface ShortPosition {
+interface Transaction {
   id: string;
-  opinionText: string;
-  opinionId: string;
-  betAmount: number;
-  targetDropPercentage: number;
-  startingPrice: number;
-  targetPrice: number;
-  potentialWinnings: number;
-  expirationDate: string;
-  createdDate: string;
-  status: 'active' | 'won' | 'lost' | 'expired';
+  type: 'buy' | 'sell' | 'earn' | 'bet_win' | 'bet_loss' | 'bet_place' | 'short_place' | 'short_win' | 'short_loss';
+  amount: number;
+  date: string;
+  description?: string;
+  opinionText?: string;
 }
 
-// Combined betting activity type
 interface BettingActivity {
   id: string;
   type: 'portfolio_bet' | 'short_bet';
@@ -81,40 +80,37 @@ interface BettingActivity {
   volatilityRating?: string;
   targetUser?: string;
   opinionText?: string;
-  progress?: number; // For shorts, percentage towards target
+  progress?: number;
 }
 
-export default function UserProfile() {
-  const [userProfile, setUserProfile] = useState<UserProfile>({
-    username: 'OpinionTrader123',
-    balance: 10000,
-    joinDate: new Date().toLocaleDateString(),
-    totalEarnings: 0,
-    totalLosses: 0
-  });
-
+export default function UserDetailPage() {
+  const { username } = useParams();
+  const router = useRouter();
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
-  const [myBets, setMyBets] = useState<AdvancedBet[]>([]);
-  const [myShorts, setMyShorts] = useState<ShortPosition[]>([]);
   const [combinedBettingActivity, setCombinedBettingActivity] = useState<BettingActivity[]>([]);
-  const [botsRunning, setBotsRunning] = useState<boolean>(false);
+  const [isBot, setIsBot] = useState(false);
+  const [botId, setBotId] = useState<string | null>(null);
 
-  // Get current price for an opinion
+  const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
+    if (!text || typeof text !== 'string') return 'Unknown text';
+    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
+  };
+
   const getCurrentPrice = (opinionText: string): number => {
     try {
       const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
       if (marketData[opinionText]) {
         return marketData[opinionText].currentPrice;
       }
-      return 10; // Default base price
+      return 10;
     } catch (error) {
       return 10;
     }
   };
 
-  // Calculate days remaining
   const getDaysRemaining = (expiryDate: string): number => {
     const expiry = new Date(expiryDate);
     const now = new Date();
@@ -123,21 +119,42 @@ export default function UserProfile() {
     return Math.max(0, diffDays);
   };
 
-  // Calculate hours remaining for shorts
-  const getHoursRemaining = (expiryDate: string): number => {
-    const expiry = new Date(expiryDate);
+  const getHoursRemaining = (expirationDate: string): number => {
+    const expiry = new Date(expirationDate);
     const now = new Date();
     const diffTime = expiry.getTime() - now.getTime();
     const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
     return Math.max(0, diffHours);
   };
 
-  // Combine betting activities
-  const combineBettingActivities = () => {
+  const getUserShorts = (username: string, botId?: string): ShortPosition[] => {
+    try {
+      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      return shorts.filter((short: ShortPosition) => {
+        if (botId) {
+          return short.botId === botId;
+        } else {
+          return !short.botId && username === decodeURIComponent(username as string);
+        }
+      });
+    } catch {
+      return [];
+    }
+  };
+
+  const getUserBets = (username: string): AdvancedBet[] => {
+    try {
+      const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      return bets.filter((bet: AdvancedBet) => bet.bettor === username);
+    } catch {
+      return [];
+    }
+  };
+
+  const combineBettingActivities = (bets: AdvancedBet[], shorts: ShortPosition[]) => {
     const activities: BettingActivity[] = [];
 
-    // Add portfolio bets
-    myBets.forEach(bet => {
+    bets.forEach(bet => {
       activities.push({
         id: `bet_${bet.id}`,
         type: 'portfolio_bet',
@@ -156,8 +173,7 @@ export default function UserProfile() {
       });
     });
 
-    // Add short positions
-    myShorts.forEach(short => {
+    shorts.forEach(short => {
       const currentPrice = getCurrentPrice(short.opinionText);
       const progress = ((short.startingPrice - currentPrice) / (short.startingPrice - short.targetPrice)) * 100;
       const hoursRemaining = short.status === 'active' ? getHoursRemaining(short.expirationDate) : 0;
@@ -179,148 +195,158 @@ export default function UserProfile() {
       });
     });
 
-    // Sort by date (most recent first)
     activities.sort((a, b) => new Date(b.placedDate).getTime() - new Date(a.placedDate).getTime());
-    
-    setCombinedBettingActivity(activities);
+    return activities;
   };
 
-  // Load data from localStorage
-  useEffect(() => {
+  const getUserBotTransactions = (botId: string): Transaction[] => {
     try {
-      // Load existing opinions for sidebar - FILTER OUT NULL VALUES
-      const stored = localStorage.getItem('opinions');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
-          setAllOpinions(validOpinions);
+      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      return botTransactions
+        .filter((t: any) => t.botId === botId)
+        .map((t: any) => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          date: t.date,
+          description: t.opinionText || t.description,
+          opinionText: t.opinionText
+        }))
+        .slice(0, 10);
+    } catch {
+      return [];
+    }
+  };
+
+  const loadUserData = async () => {
+    const targetUsername = decodeURIComponent(username as string);
+    
+    try {
+      const bots = JSON.parse(localStorage.getItem('autonomousBots') || '[]');
+      const bot = bots.find((b: any) => b.username === targetUsername);
+      
+      if (bot) {
+        setIsBot(true);
+        setBotId(bot.id);
+        setUserProfile({
+          username: bot.username,
+          balance: bot.balance,
+          joinDate: bot.joinDate,
+          totalEarnings: bot.totalEarnings,
+          totalLosses: bot.totalLosses
+        });
+
+        const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
+        const userOpinions = botOpinions
+          .filter((opinion: any) => opinion.botId === bot.id)
+          .map((opinion: any) => ({
+            id: opinion.id,
+            text: opinion.text,
+            purchasePrice: opinion.purchasePrice,
+            currentPrice: getCurrentPrice(opinion.text),
+            purchaseDate: opinion.purchaseDate,
+            quantity: opinion.quantity
+          }));
+        setOwnedOpinions(userOpinions);
+        setRecentTransactions(getUserBotTransactions(bot.id));
+      } else {
+        const currentUserProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        if (currentUserProfile.username === targetUsername) {
+          setUserProfile(currentUserProfile);
+          
+          const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
+          const updatedOpinions = ownedOpinions.map((opinion: OpinionAsset) => ({
+            ...opinion,
+            currentPrice: getCurrentPrice(opinion.text)
+          }));
+          setOwnedOpinions(updatedOpinions);
+
+          const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+          setRecentTransactions(transactions.slice(0, 10));
         }
       }
 
-      // Load user profile
-      const storedProfile = localStorage.getItem('userProfile');
-      if (storedProfile) {
-        setUserProfile(JSON.parse(storedProfile));
-      }
+      const userBets = getUserBets(targetUsername);
+      const userShorts = getUserShorts(targetUsername, bot?.id);
+      const activities = combineBettingActivities(userBets, userShorts);
+      setCombinedBettingActivity(activities);
 
-      // Load owned opinions
-      const storedAssets = localStorage.getItem('ownedOpinions');
-      if (storedAssets) {
-        setOwnedOpinions(JSON.parse(storedAssets));
-      }
-
-      // Load transactions
-      const storedTransactions = localStorage.getItem('transactions');
-      if (storedTransactions) {
-        setRecentTransactions(JSON.parse(storedTransactions));
-      }
-
-      // Load my bets
-      const storedBets = localStorage.getItem('advancedBets');
-      if (storedBets) {
-        const allBets = JSON.parse(storedBets);
-        // Filter to only show current user's bets
-        const userBets = allBets.filter((bet: AdvancedBet) => bet.bettor === userProfile.username);
-        setMyBets(userBets);
-      }
-
-      // Load short positions
-      const storedShorts = localStorage.getItem('shortPositions');
-      if (storedShorts) {
-        const allShorts = JSON.parse(storedShorts) as ShortPosition[];
-        setMyShorts(allShorts);
-      }
     } catch (error) {
       console.error('Error loading user data:', error);
     }
-  }, [userProfile.username]);
+  };
 
-  // Update combined activities when bets or shorts change
   useEffect(() => {
-    combineBettingActivities();
-  }, [myBets, myShorts]);
+    const stored = localStorage.getItem('opinions');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
+      setAllOpinions(validOpinions);
+    }
 
-  // Monitor bot status (simplified version)
-  useEffect(() => {
-    const checkBotStatus = () => {
-      const botsEnabled = localStorage.getItem('botsAutoStart') === 'true';
-      setBotsRunning(botsEnabled);
-    };
+    if (username) {
+      loadUserData();
+    }
+  }, [username]);
 
-    checkBotStatus();
-    const interval = setInterval(checkBotStatus, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  if (!userProfile) {
+    return (
+      <div className="page-container">
+        <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
+        <main className="main-content">
+          <div style={{ textAlign: 'center', padding: '40px' }}>
+            <p>Loading user profile...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
-  // Save user profile to localStorage
-  const saveUserProfile = (profile: UserProfile) => {
-    setUserProfile(profile);
-    localStorage.setItem('userProfile', JSON.stringify(profile));
-  };
-
-  // Simplified bot control handlers
-  const handleStartBots = () => {
-    localStorage.setItem('botsAutoStart', 'true');
-    setBotsRunning(true);
-    console.log('🤖 Bots enabled globally');
-  };
-
-  const handleStopBots = () => {
-    localStorage.setItem('botsAutoStart', 'false');
-    setBotsRunning(false);
-    console.log('🛑 Bots disabled globally');
-  };
-
-  // Calculate portfolio value
   const portfolioValue = ownedOpinions.reduce((total, opinion) => 
     total + (opinion.currentPrice * opinion.quantity), 0
   );
 
-  // Calculate total gains/losses
   const totalGainsLosses = ownedOpinions.reduce((total, opinion) => 
     total + ((opinion.currentPrice - opinion.purchasePrice) * opinion.quantity), 0
   );
 
-  // Calculate total active bets (both portfolio and shorts)
   const totalActiveBets = combinedBettingActivity.filter(activity => activity.status === 'active').length;
-
-  // SAFE SLICE FUNCTION - prevents null errors
-  const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
-    if (!text || typeof text !== 'string') return 'Unknown text';
-    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-  };
 
   return (
     <div className="page-container">
-      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
+      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
       
       <main className="main-content">
-        {/* Header with Navigation Buttons */}
         <div className="header-section">
-          {/* User Header */}
           <div className="user-header">
             <div className="user-avatar">
               {userProfile.username[0].toUpperCase()}
             </div>
             <div className="user-info">
-              <h1>{userProfile.username}</h1>
+              <h1>{isBot ? '🤖 ' : ''}{userProfile.username}</h1>
               <p>Member since {userProfile.joinDate}</p>
-              <p>Opinion Trader & Collector</p>
-              {/* Bot status indicator */}
-              <p style={{ 
-                fontSize: '12px', 
-                color: botsRunning ? '#10b981' : '#ef4444',
-                fontWeight: '600',
-                marginTop: '4px'
-              }}>
-                🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
-              </p>
+              <p>{isBot ? 'Autonomous Trading Bot' : 'Opinion Trader & Collector'}</p>
+              {isBot && (
+                <p style={{ 
+                  fontSize: '12px', 
+                  color: '#10b981',
+                  fontWeight: '600',
+                  marginTop: '4px'
+                }}>
+                  🤖 Algorithmic Trading Strategies
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Navigation Buttons */}
           <div className="navigation-buttons">
+            <button
+              onClick={() => router.back()}
+              className="nav-button"
+              style={{ backgroundColor: '#6b7280' }}
+            >
+              ← Back
+            </button>
             <a href="/users" className="nav-button traders">
               📊 View Traders
             </a>
@@ -330,61 +356,12 @@ export default function UserProfile() {
             <a href="/generate" className="nav-button generate">
               ✨ Generate Opinions
             </a>
-            {/* Bot Control button */}
-            <a href="/admin" className="nav-button admin" style={{ 
-              backgroundColor: '#8b5cf6',
-              color: 'white',
-              textDecoration: 'none'
-            }}>
-              🤖 Bot Control
-            </a>
           </div>
         </div>
 
-        {/* Global Bot Controls */}
-        <div style={{
-          display: 'flex',
-          gap: '10px',
-          marginBottom: '20px',
-          padding: '12px',
-          backgroundColor: botsRunning ? '#f0fdf4' : '#fef2f2',
-          borderRadius: '8px',
-          border: `1px solid ${botsRunning ? '#bbf7d0' : '#fecaca'}`
-        }}>
-          <button
-            onClick={botsRunning ? handleStopBots : handleStartBots}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: '600',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              backgroundColor: botsRunning ? '#ef4444' : '#10b981',
-              color: 'white',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {botsRunning ? '⏹️ Stop Global Bots' : '▶️ Start Global Bots'}
-          </button>
-          <span style={{
-            display: 'flex',
-            alignItems: 'center',
-            fontSize: '14px',
-            color: '#64748b',
-            marginLeft: '10px'
-          }}>
-            {botsRunning ? 
-              '🟢 AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
-              '🔴 AI traders are paused globally'
-            }
-          </span>
-        </div>
-
-        {/* Wallet Overview */}
         <div className={styles.walletOverview}>
           <div className={`${styles.walletCard} ${styles.balance}`}>
-            <h3>💰 Wallet Balance</h3>
+            <h3>💰 {isBot ? 'Bot Balance' : 'Wallet Balance'}</h3>
             <p>${userProfile.balance.toLocaleString()}</p>
           </div>
 
@@ -404,27 +381,19 @@ export default function UserProfile() {
           </div>
         </div>
 
-        {/* Opinion Portfolio */}
         <section className="section">
-          <h2 className="section-title">💼 Your Opinion Portfolio</h2>
+          <h2 className="section-title">💼 {isBot ? 'Bot' : 'User'} Opinion Portfolio</h2>
           
           {ownedOpinions.length === 0 ? (
             <div className="empty-state">
-              <p>You don't own any opinions yet!</p>
-              <p>Start by buying some opinions from the marketplace.</p>
-              {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are creating market activity across the platform right now!
-                </p>
-              )}
+              <p>{isBot ? 'This bot doesn\'t own any opinions yet!' : 'This user doesn\'t own any opinions yet!'}</p>
+              <p>{isBot ? 'The bot is still learning and will start trading soon.' : 'They haven\'t started buying opinions from the marketplace.'}</p>
             </div>
           ) : (
             <div className="grid grid-2">
               {ownedOpinions.map((opinion) => {
                 const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
                 const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
-                
-                // Find the opinion index in allOpinions array for proper routing
                 const opinionIndex = allOpinions.findIndex(op => op === opinion.text);
                 const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
                 
@@ -450,19 +419,13 @@ export default function UserProfile() {
           )}
         </section>
 
-        {/* Enhanced My Betting Activity */}
         <section className="section">
-          <h2 className="section-title">🎲 My Portfolio Bets & Short Positions</h2>
+          <h2 className="section-title">🎲 {isBot ? 'Bot' : 'User'} Portfolio Bets & Short Positions</h2>
           
           {combinedBettingActivity.length === 0 ? (
             <div className="empty-state">
-              <p>You haven't placed any bets or short positions yet!</p>
-              <p>Visit the <a href="/users">Traders page</a> to bet on portfolios or short specific opinions.</p>
-              {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are actively placing bets and shorts - check the Live Feed to see their activity!
-                </p>
-              )}
+              <p>{isBot ? 'This bot hasn\'t placed any bets or short positions yet!' : 'This user hasn\'t placed any bets or short positions yet!'}</p>
+              <p>{isBot ? 'The bot will start making strategic bets as it develops confidence.' : 'They can bet on portfolios or short specific opinions.'}</p>
             </div>
           ) : (
             <div className="grid grid-2">
@@ -494,7 +457,6 @@ export default function UserProfile() {
                           {activity.subtitle}
                         </p>
                         
-                        {/* Show opinion text for shorts */}
                         {activity.type === 'short_bet' && activity.opinionText && (
                           <p className="card-subtitle" style={{ 
                             fontStyle: 'italic', 
@@ -508,7 +470,6 @@ export default function UserProfile() {
                           </p>
                         )}
                         
-                        {/* Progress bar for active shorts */}
                         {activity.type === 'short_bet' && activity.status === 'active' && activity.progress !== undefined && (
                           <div style={{ marginTop: '8px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
@@ -563,21 +524,20 @@ export default function UserProfile() {
           
           {combinedBettingActivity.length > 10 && (
             <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <a href="/users" className="btn btn-secondary">View all {combinedBettingActivity.length} bets →</a>
+              <p className="btn btn-secondary">Showing 10 of {combinedBettingActivity.length} total bets</p>
             </div>
           )}
         </section>
 
-        {/* Recent Activity */}
         <section className="section">
           <h2 className="section-title">📋 Recent Activity</h2>
           
           {recentTransactions.length === 0 ? (
             <div>
               <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
-              {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#8b5cf6' }}>Live Feed</a> to see all activity!
+              {isBot && (
+                <p style={{ color: '#10b981', fontSize: '14px', marginTop: '10px' }}>
+                  🤖 This bot will start trading once the market becomes active!
                 </p>
               )}
             </div>
@@ -612,6 +572,18 @@ export default function UserProfile() {
                     emoji = '💸';
                     activityText = 'Lost Short Bet';
                     break;
+                  case 'bet_place':
+                    emoji = '🎲';
+                    activityText = 'Placed Portfolio Bet';
+                    break;
+                  case 'bet_win':
+                    emoji = '🎉';
+                    activityText = 'Won Portfolio Bet';
+                    break;
+                  case 'bet_loss':
+                    emoji = '💸';
+                    activityText = 'Lost Portfolio Bet';
+                    break;
                   default:
                     emoji = '📝';
                     activityText = 'Transaction';
@@ -625,7 +597,7 @@ export default function UserProfile() {
                           {emoji} {activityText}
                         </p>
                         <p className="card-subtitle">
-                          {transaction.opinionText || 'Opinion activity'} • {transaction.date}
+                          {transaction.opinionText || transaction.description || 'Transaction activity'} • {transaction.date}
                         </p>
                       </div>
                       <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
@@ -638,6 +610,22 @@ export default function UserProfile() {
             </div>
           )}
         </section>
+
+        {isBot && (
+          <div style={{ 
+            marginTop: '20px', 
+            padding: '15px', 
+            backgroundColor: '#f0f9ff', 
+            border: '1px solid #e0f2fe', 
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <p style={{ margin: 0, color: '#0369a1' }}>
+              🤖 This is an <strong>Autonomous Trading Bot</strong> with algorithmic strategies • 
+              Portfolio updates automatically based on market conditions
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );

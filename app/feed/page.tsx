@@ -8,9 +8,10 @@ import styles from './page.module.css';
 
 interface ActivityFeedItem {
   id: string;
-  type: 'buy' | 'sell' | 'bet_place' | 'bet_win' | 'bet_loss' | 'earn' | 'generate';
+  type: 'buy' | 'sell' | 'bet_place' | 'bet_win' | 'bet_loss' | 'earn' | 'generate' | 'short_place' | 'short_win' | 'short_loss';
   username: string;
   opinionText?: string;
+  opinionId?: string;
   amount: number;
   price?: number;
   quantity?: number;
@@ -18,6 +19,13 @@ interface ActivityFeedItem {
   betType?: 'increase' | 'decrease';
   targetPercentage?: number;
   timeframe?: number;
+  shortDetails?: {
+    targetDropPercentage: number;
+    startingPrice: number;
+    targetPrice: number;
+    potentialWinnings: number;
+    timeLimit: number;
+  };
   timestamp: string;
   relativeTime: string;
   isBot?: boolean;
@@ -33,6 +41,7 @@ interface TransactionDetail {
   type: string;
   username: string;
   opinionText?: string;
+  opinionId?: string;
   amount: number;
   price?: number;
   quantity?: number;
@@ -40,6 +49,13 @@ interface TransactionDetail {
   betType?: 'increase' | 'decrease';
   targetPercentage?: number;
   timeframe?: number;
+  shortDetails?: {
+    targetDropPercentage: number;
+    startingPrice: number;
+    targetPrice: number;
+    potentialWinnings: number;
+    timeLimit: number;
+  };
   timestamp: string;
   isBot?: boolean;
   fullDescription: string;
@@ -49,6 +65,7 @@ interface TransactionDetail {
     volatilityRating?: string;
     expiryDate?: string;
     betStatus?: string;
+    shortProgress?: number;
   };
 }
 
@@ -60,7 +77,7 @@ export default function FeedPage() {
     username: 'OpinionTrader123',
     balance: 10000
   });
-  const [filter, setFilter] = useState<'all' | 'trades' | 'bets' | 'generates'>('all');
+  const [filter, setFilter] = useState<'all' | 'trades' | 'bets' | 'generates' | 'shorts'>('all');
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionDetail | null>(null);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
@@ -102,6 +119,19 @@ export default function FeedPage() {
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
     if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
+  };
+
+  // Get current price for an opinion
+  const getCurrentPrice = (opinionText: string): number => {
+    try {
+      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+      if (marketData[opinionText]) {
+        return marketData[opinionText].currentPrice;
+      }
+      return 10; // Default base price
+    } catch (error) {
+      return 10;
+    }
   };
 
   // Get bot usernames for identification
@@ -160,6 +190,29 @@ export default function FeedPage() {
         } catch (error) {
           console.error('Error loading bet details:', error);
         }
+      } else if (activity.type.includes('short')) {
+        // Try to find the short position
+        try {
+          const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+          const short = shorts.find((s: any) => 
+            s.opinionText === activity.opinionText &&
+            Math.abs(s.betAmount - Math.abs(activity.amount)) < 1
+          );
+          
+          if (short && activity.shortDetails) {
+            const currentPrice = getCurrentPrice(activity.opinionText || '');
+            const progress = ((activity.shortDetails.startingPrice - currentPrice) / 
+                            (activity.shortDetails.startingPrice - activity.shortDetails.targetPrice)) * 100;
+            
+            return {
+              shortProgress: Math.max(0, Math.min(100, progress)),
+              potentialPayout: activity.shortDetails.potentialWinnings,
+              expiryDate: short.expirationDate
+            };
+          }
+        } catch (error) {
+          console.error('Error loading short details:', error);
+        }
       }
       return {};
     };
@@ -176,7 +229,7 @@ export default function FeedPage() {
 
   // Get full transaction description for modal
   const getFullTransactionDescription = (activity: ActivityFeedItem): string => {
-    const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, isBot } = activity;
+    const { type, username, opinionText, opinionId, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, shortDetails, isBot } = activity;
     
     const userPrefix = isBot ? '🤖 Bot' : '👤 User';
     
@@ -190,6 +243,18 @@ export default function FeedPage() {
         const sellQuantity = quantity || Math.max(1, Math.floor(amount / (price || 50)));
         const sellPrice = price || Math.floor(amount / sellQuantity);
         return `${userPrefix} ${username} sold ${sellQuantity} ${sellQuantity === 1 ? 'share' : 'shares'} of the opinion "${opinionText}" at $${sellPrice} per share, receiving a total of $${amount}.`;
+      
+      case 'short_place':
+        if (shortDetails) {
+          return `${userPrefix} ${username} placed a $${Math.abs(amount)} short bet on opinion #${opinionId}. They are betting that the price will drop ${shortDetails.targetDropPercentage}% from $${shortDetails.startingPrice} to $${shortDetails.targetPrice} within ${shortDetails.timeLimit} hours, with potential winnings of $${shortDetails.potentialWinnings}.`;
+        }
+        return `${userPrefix} ${username} placed a short bet of $${Math.abs(amount)} on the opinion "${opinionText}".`;
+      
+      case 'short_win':
+        return `${userPrefix} ${username} won $${amount} from a successful short bet on the opinion "${opinionText}"! The price dropped to their target level.`;
+      
+      case 'short_loss':
+        return `${userPrefix} ${username} lost $${Math.abs(amount)} on a short bet for the opinion "${opinionText}". The price did not reach their target drop within the time limit.`;
       
       case 'bet_place':
         return `${userPrefix} ${username} placed a $${Math.abs(amount)} bet on ${targetUser}'s portfolio. They are betting that the portfolio will ${betType} by ${targetPercentage}% within ${timeframe} days.`;
@@ -245,10 +310,64 @@ export default function FeedPage() {
         });
       });
 
-      // 2. Load from global activity feed (manual entries)
+      // 2. Load short positions and their transactions
+      const shortPositions = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      console.log(`📉 Loading ${shortPositions.length} short positions`);
+      
+      shortPositions.forEach((short: any) => {
+        // Add short placement activity
+        const placementExists = activities.some(a => a.id === `short_place_${short.id}`);
+        if (!placementExists) {
+          activities.push({
+            id: `short_place_${short.id}`,
+            type: 'short_place',
+            username: currentUser.username, // Assuming user placed the short
+            opinionText: short.opinionText,
+            opinionId: short.opinionId,
+            amount: -short.betAmount,
+            shortDetails: {
+              targetDropPercentage: short.targetDropPercentage,
+              startingPrice: short.startingPrice,
+              targetPrice: short.targetPrice,
+              potentialWinnings: short.potentialWinnings,
+              timeLimit: Math.ceil((new Date(short.expirationDate).getTime() - new Date(short.createdDate).getTime()) / (1000 * 60 * 60))
+            },
+            timestamp: new Date(short.createdDate).toISOString(),
+            relativeTime: getRelativeTime(new Date(short.createdDate).toISOString()),
+            isBot: false
+          });
+        }
+
+        // Add short result if resolved
+        if (short.status === 'won' || short.status === 'lost') {
+          const resultExists = activities.some(a => a.id === `short_result_${short.id}`);
+          if (!resultExists) {
+            activities.push({
+              id: `short_result_${short.id}`,
+              type: short.status === 'won' ? 'short_win' : 'short_loss',
+              username: currentUser.username,
+              opinionText: short.opinionText,
+              opinionId: short.opinionId,
+              amount: short.status === 'won' ? short.potentialWinnings : -short.betAmount,
+              shortDetails: {
+                targetDropPercentage: short.targetDropPercentage,
+                startingPrice: short.startingPrice,
+                targetPrice: short.targetPrice,
+                potentialWinnings: short.potentialWinnings,
+                timeLimit: Math.ceil((new Date(short.expirationDate).getTime() - new Date(short.createdDate).getTime()) / (1000 * 60 * 60))
+              },
+              timestamp: new Date().toISOString(),
+              relativeTime: getRelativeTime(new Date().toISOString()),
+              isBot: false
+            });
+          }
+        }
+      });
+
+      // 3. Load from global activity feed (manual entries)
       const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
       globalFeed.forEach((activity: any) => {
-        // Only add if not already added from bot transactions
+        // Only add if not already added from bot transactions or shorts
         const exists = activities.some(a => a.id === activity.id);
         if (!exists) {
           activities.push({
@@ -259,7 +378,7 @@ export default function FeedPage() {
         }
       });
 
-      // 3. Load user's personal transactions
+      // 4. Load user's personal transactions (including short transactions)
       const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
       userTransactions.forEach((t: any) => {
         // Only add if not already in activities
@@ -278,7 +397,7 @@ export default function FeedPage() {
         }
       });
 
-      // 4. Load betting activity from advancedBets
+      // 5. Load betting activity from advancedBets
       const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
       bets.forEach((bet: any) => {
         // Add bet placement activity
@@ -317,7 +436,7 @@ export default function FeedPage() {
         }
       });
 
-      // 5. If still no activity, show some demo data
+      // 6. If still no activity, show some demo data
       if (activities.length === 0) {
         console.log('📝 No real activity found, generating demo data');
         const demoBot = 'DemoBot_Alpha';
@@ -355,7 +474,7 @@ export default function FeedPage() {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 100); // Keep only last 100 activities
 
-    console.log(`📈 Loaded ${uniqueActivities.length} unique activities (${uniqueActivities.filter(a => a.isBot).length} bot activities)`);
+    console.log(`📈 Loaded ${uniqueActivities.length} unique activities (${uniqueActivities.filter(a => a.isBot).length} bot activities, ${uniqueActivities.filter(a => a.type.includes('short')).length} short activities)`);
     return uniqueActivities;
   };
 
@@ -367,6 +486,9 @@ export default function FeedPage() {
       case 'bet_place': return styles.betPlace;
       case 'bet_win': return styles.betWin;
       case 'bet_loss': return styles.betLoss;
+      case 'short_place': return styles.shortPlace;
+      case 'short_win': return styles.shortWin;
+      case 'short_loss': return styles.shortLoss;
       case 'earn':
       case 'generate': return styles.generate;
       default: return styles.buy;
@@ -381,6 +503,9 @@ export default function FeedPage() {
       case 'bet_place': return '🎲';
       case 'bet_win': return '🎉';
       case 'bet_loss': return '😞';
+      case 'short_place': return '📉';
+      case 'short_win': return '💹';
+      case 'short_loss': return '📈';
       case 'earn':
       case 'generate': return '✨';
       default: return '📊';
@@ -389,7 +514,7 @@ export default function FeedPage() {
 
   // Format activity description with clickable username
   const formatActivityDescription = (activity: ActivityFeedItem) => {
-    const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, isBot } = activity;
+    const { type, username, opinionText, opinionId, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, shortDetails, isBot } = activity;
     
     const userPrefix = isBot ? '🤖 ' : '';
     const UsernameLink = ({ username, isBot }: { username: string; isBot?: boolean }) => (
@@ -424,6 +549,28 @@ export default function FeedPage() {
           <span>
             {userPrefix}<UsernameLink username={username} isBot={isBot} /> sold {sellQuantity} {sellQuantity === 1 ? 'share' : 'shares'} of{' '}
             <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${sellPrice}</strong> each
+          </span>
+        );
+      case 'short_place':
+        return (
+          <span>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> placed <strong>${Math.abs(amount)}</strong> short bet on{' '}
+            <em>Opinion #{opinionId}</em> targeting {shortDetails?.targetDropPercentage}% drop{' '}
+            {shortDetails?.timeLimit && `in ${shortDetails.timeLimit}h`}
+          </span>
+        );
+      case 'short_win':
+        return (
+          <span>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> won <strong>${amount}</strong> from short bet on{' '}
+            <em>Opinion #{opinionId}</em>! Price hit target 📉
+          </span>
+        );
+      case 'short_loss':
+        return (
+          <span>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> lost <strong>${Math.abs(amount)}</strong> on short bet{' '}
+            <em>Opinion #{opinionId}</em> - target not reached
           </span>
         );
       case 'bet_place':
@@ -474,6 +621,8 @@ export default function FeedPage() {
         return activities.filter(a => a.type === 'buy' || a.type === 'sell');
       case 'bets':
         return activities.filter(a => a.type === 'bet_place' || a.type === 'bet_win' || a.type === 'bet_loss');
+      case 'shorts':
+        return activities.filter(a => a.type === 'short_place' || a.type === 'short_win' || a.type === 'short_loss');
       case 'generates':
         return activities.filter(a => a.type === 'generate' || a.type === 'earn');
       default:
@@ -490,6 +639,8 @@ export default function FeedPage() {
         return activityFeed.filter(a => a.type === 'buy' || a.type === 'sell').length;
       case 'bets':
         return activityFeed.filter(a => a.type.includes('bet')).length;
+      case 'shorts':
+        return activityFeed.filter(a => a.type.includes('short')).length;
       case 'generates':
         return activityFeed.filter(a => a.type === 'generate' || a.type === 'earn').length;
       default:
@@ -570,6 +721,7 @@ export default function FeedPage() {
   const filteredActivities = filterActivities(activityFeed);
   const botActivityCount = activityFeed.filter(a => a.isBot).length;
   const humanActivityCount = activityFeed.filter(a => !a.isBot).length;
+  const shortActivityCount = activityFeed.filter(a => a.type.includes('short')).length;
 
   return (
     <div className="page-container">
@@ -583,7 +735,7 @@ export default function FeedPage() {
               📡 Live Trading Feed
             </h1>
             <p className={styles.headerSubtitle}>
-              Real-time marketplace activity from all traders & bots ({botActivityCount} bot, {humanActivityCount} human)
+              Real-time marketplace activity from all traders & bots ({botActivityCount} bot, {humanActivityCount} human, {shortActivityCount} shorts)
             </p>
           </div>
           
@@ -615,7 +767,7 @@ export default function FeedPage() {
         {/* Filter Controls */}
         <div className={styles.filterControls}>
           <span className={styles.filterLabel}>Filter:</span>
-          {(['all', 'trades', 'bets', 'generates'] as const).map(filterType => (
+          {(['all', 'trades', 'bets', 'shorts', 'generates'] as const).map(filterType => (
             <button
               key={filterType}
               onClick={() => setFilter(filterType)}
@@ -624,6 +776,7 @@ export default function FeedPage() {
               {filterType === 'all' ? `All Activity (${getFilterCount(filterType)})` :
                filterType === 'trades' ? `Trades (${getFilterCount(filterType)})` :
                filterType === 'bets' ? `Bets (${getFilterCount(filterType)})` :
+               filterType === 'shorts' ? `Shorts (${getFilterCount(filterType)})` :
                `Generates (${getFilterCount(filterType)})`}
             </button>
           ))}
@@ -665,11 +818,12 @@ export default function FeedPage() {
               filteredActivities.map((activity, index) => {
                 const isUserActivity = activity.username === currentUser.username;
                 const isBotActivity = activity.isBot;
+                const isShortActivity = activity.type.includes('short');
                 
                 return (
                   <div 
                     key={activity.id}
-                    className={`${styles.activityItem} ${isUserActivity ? styles.userActivity : ''} ${isBotActivity ? styles.botActivity : ''}`}
+                    className={`${styles.activityItem} ${isUserActivity ? styles.userActivity : ''} ${isBotActivity ? styles.botActivity : ''} ${isShortActivity ? styles.shortActivity : ''}`}
                     onClick={() => handleTransactionClick(activity)}
                     style={{ cursor: 'pointer' }}
                   >
@@ -691,6 +845,11 @@ export default function FeedPage() {
                           {isBotActivity && (
                             <span className={styles.botBadge}>
                               BOT
+                            </span>
+                          )}
+                          {isShortActivity && (
+                            <span className={styles.shortBadge}>
+                              SHORT
                             </span>
                           )}
                         </div>
@@ -747,6 +906,9 @@ export default function FeedPage() {
                     {selectedTransaction.isBot && (
                       <span className={styles.botTag}>🤖 BOT</span>
                     )}
+                    {selectedTransaction.type.includes('short') && (
+                      <span className={styles.shortTag}>📉 SHORT</span>
+                    )}
                   </div>
                   <div className={styles.transactionAmount}>
                     <span className={getAmountClass(selectedTransaction.amount)}>
@@ -790,6 +952,13 @@ export default function FeedPage() {
                     <div className={styles.detailRow}>
                       <span className={styles.detailLabel}>Opinion:</span>
                       <span className={styles.opinionText}>"{selectedTransaction.opinionText}"</span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.opinionId && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Opinion ID:</span>
+                      <span>#{selectedTransaction.opinionId}</span>
                     </div>
                   )}
 
@@ -844,6 +1013,40 @@ export default function FeedPage() {
                     </div>
                   )}
 
+                  {/* Short-specific details */}
+                  {selectedTransaction.shortDetails && (
+                    <>
+                      <div className={styles.detailRow}>
+                        <span className={styles.detailLabel}>Target Drop:</span>
+                        <span>{selectedTransaction.shortDetails.targetDropPercentage}%</span>
+                      </div>
+
+                      <div className={styles.detailRow}>
+                        <span className={styles.detailLabel}>Starting Price:</span>
+                        <span>${selectedTransaction.shortDetails.startingPrice}</span>
+                      </div>
+
+                      <div className={styles.detailRow}>
+                        <span className={styles.detailLabel}>Target Price:</span>
+                        <span>${selectedTransaction.shortDetails.targetPrice}</span>
+                      </div>
+
+                      <div className={styles.detailRow}>
+                        <span className={styles.detailLabel}>Time Limit:</span>
+                        <span>{selectedTransaction.shortDetails.timeLimit} hours</span>
+                      </div>
+
+                      {selectedTransaction.additionalDetails?.shortProgress !== undefined && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Progress:</span>
+                          <span>
+                            {selectedTransaction.additionalDetails.shortProgress.toFixed(1)}% towards target
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+
                   {/* Additional Bet Details */}
                   {selectedTransaction.additionalDetails && (
                     <>
@@ -873,7 +1076,7 @@ export default function FeedPage() {
                       {selectedTransaction.additionalDetails.expiryDate && (
                         <div className={styles.detailRow}>
                           <span className={styles.detailLabel}>Expires:</span>
-                          <span>{selectedTransaction.additionalDetails.expiryDate}</span>
+                          <span>{isClient ? new Date(selectedTransaction.additionalDetails.expiryDate).toLocaleString() : 'Loading...'}</span>
                         </div>
                       )}
 
@@ -901,6 +1104,18 @@ export default function FeedPage() {
                       className={styles.viewUserButton}
                     >
                       👤 View {selectedTransaction.isBot ? 'Bot' : 'User'} Profile
+                    </button>
+                  )}
+                  
+                  {selectedTransaction.opinionId && (
+                    <button
+                      onClick={() => {
+                        router.push(`/opinion/${selectedTransaction.opinionId}`);
+                        setShowTransactionModal(false);
+                      }}
+                      className={styles.viewOpinionButton}
+                    >
+                      💬 View Opinion
                     </button>
                   )}
                   
@@ -939,7 +1154,14 @@ export default function FeedPage() {
             <div className={`${styles.statNumber} ${styles.bets}`}>
               {activityFeed.filter(a => a.type.includes('bet')).length}
             </div>
-            <div className={styles.statLabel}>Active Bets</div>
+            <div className={styles.statLabel}>Portfolio Bets</div>
+          </div>
+
+          <div className={`${styles.statCard} ${styles.shorts}`}>
+            <div className={`${styles.statNumber} ${styles.shorts}`}>
+              {shortActivityCount}
+            </div>
+            <div className={styles.statLabel}>Short Positions</div>
           </div>
           
           <div className={`${styles.statCard} ${styles.volume}`}>
@@ -950,21 +1172,24 @@ export default function FeedPage() {
           </div>
         </div>
 
-        {/* Bot Activity Status */}
-        {botActivityCount > 0 && (
-          <div style={{ 
-            marginTop: '20px', 
-            padding: '15px', 
-            backgroundColor: '#f0f9ff', 
-            border: '1px solid #e0f2fe', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <p style={{ margin: 0, color: '#0369a1' }}>
-              🤖 <strong>{botActivityCount}</strong> bot activities detected • Bots are actively trading!
-            </p>
-          </div>
-        )}
+        {/* Activity Status */}
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '15px', 
+          backgroundColor: '#f0f9ff', 
+          border: '1px solid #e0f2fe', 
+          borderRadius: '8px',
+          textAlign: 'center'
+        }}>
+          <p style={{ margin: 0, color: '#0369a1' }}>
+            🤖 <strong>{botActivityCount}</strong> bot activities • 
+            👥 <strong>{humanActivityCount}</strong> human activities • 
+            📉 <strong>{shortActivityCount}</strong> short positions
+          </p>
+          <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#64748b' }}>
+            Live feed updates automatically every 5 seconds
+          </p>
+        </div>
       </main>
 
       {/* Add custom styles for the new features */}
@@ -972,6 +1197,29 @@ export default function FeedPage() {
         .clickableUsername:hover {
           opacity: 0.8;
           text-decoration: underline !important;
+        }
+
+        .shortBadge {
+          background: #fef3c7;
+          color: #92400e;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 600;
+          margin-left: 8px;
+        }
+
+        .shortActivity {
+          border-left: 4px solid #f59e0b !important;
+        }
+
+        .shortTag {
+          padding: 2px 8px;
+          background: #fef3c7;
+          color: #92400e;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 500;
         }
 
         .transactionModal {
@@ -1035,6 +1283,7 @@ export default function FeedPage() {
           display: flex;
           gap: 8px;
           align-items: center;
+          flex-wrap: wrap;
         }
 
         .typeTag {
@@ -1051,6 +1300,9 @@ export default function FeedPage() {
         .typeTag.bet_place { background: #ddd6fe; color: #6b21a8; }
         .typeTag.bet_win { background: #dcfce7; color: #166534; }
         .typeTag.bet_loss { background: #fecaca; color: #991b1b; }
+        .typeTag.short_place { background: #fef3c7; color: #92400e; }
+        .typeTag.short_win { background: #dcfce7; color: #166534; }
+        .typeTag.short_loss { background: #fecaca; color: #991b1b; }
         .typeTag.earn, .typeTag.generate { background: #e0f2fe; color: #0c4a6e; }
 
         .botTag {
@@ -1127,9 +1379,10 @@ export default function FeedPage() {
           justify-content: flex-end;
           padding-top: 16px;
           border-top: 1px solid #e5e7eb;
+          flex-wrap: wrap;
         }
 
-        .viewUserButton {
+        .viewUserButton, .viewOpinionButton {
           padding: 8px 16px;
           background: #3b82f6;
           color: white;
@@ -1140,7 +1393,7 @@ export default function FeedPage() {
           transition: background 0.2s;
         }
 
-        .viewUserButton:hover {
+        .viewUserButton:hover, .viewOpinionButton:hover {
           background: #2563eb;
         }
 

@@ -22,6 +22,21 @@ interface OpinionAsset {
   quantity: number;
 }
 
+interface ShortPosition {
+  id: string;
+  opinionText: string;
+  opinionId: string;
+  betAmount: number;
+  targetDropPercentage: number;
+  startingPrice: number;
+  targetPrice: number;
+  potentialWinnings: number;
+  expirationDate: string;
+  createdDate: string;
+  status: 'active' | 'won' | 'lost' | 'expired';
+  botId?: string;
+}
+
 interface PublicUserData {
   username: string;
   portfolioValue: number;
@@ -36,6 +51,10 @@ interface PublicUserData {
   isCurrentUser?: boolean;
   isBot?: boolean;
   botId?: string;
+  activeBetsCount?: number;
+  activeShortsCount?: number;
+  shortExposure?: number;
+  betExposure?: number;
 }
 
 interface AdvancedBet {
@@ -58,10 +77,18 @@ interface AdvancedBet {
 
 interface Transaction {
   id: string;
-  type: 'buy' | 'sell' | 'earn' | 'bet_win' | 'bet_loss' | 'bet_place';
+  type: 'buy' | 'sell' | 'earn' | 'bet_win' | 'bet_loss' | 'bet_place' | 'short_place' | 'short_win' | 'short_loss';
   amount: number;
   date: string;
   description?: string;
+}
+
+interface DetailedUserView {
+  user: PublicUserData;
+  portfolio: OpinionAsset[];
+  activeBets: AdvancedBet[];
+  activeShorts: ShortPosition[];
+  recentTransactions: Transaction[];
 }
 
 export default function UsersPage() {
@@ -76,6 +103,8 @@ export default function UsersPage() {
   const [publicUsers, setPublicUsers] = useState<PublicUserData[]>([]);
   const [selectedUser, setSelectedUser] = useState<PublicUserData | null>(null);
   const [showBetModal, setShowBetModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailedUserView, setDetailedUserView] = useState<DetailedUserView | null>(null);
   const [activeBets, setActiveBets] = useState<AdvancedBet[]>([]);
   const [message, setMessage] = useState('');
   const [sortBy, setSortBy] = useState<'value' | 'performance' | 'volatility'>('value');
@@ -105,6 +134,94 @@ export default function UsersPage() {
     } catch {
       return { currentPrice: 10, timesPurchased: 0 };
     }
+  };
+
+  const getCurrentPrice = (opinionText: string): number => {
+    try {
+      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+      if (marketData[opinionText]) {
+        return marketData[opinionText].currentPrice;
+      }
+      return 10; // Default base price
+    } catch (error) {
+      return 10;
+    }
+  };
+
+  // Get user's active short positions
+  const getUserShorts = (username: string, botId?: string): ShortPosition[] => {
+    try {
+      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      return shorts.filter((short: ShortPosition) => {
+        if (botId) {
+          return short.botId === botId && short.status === 'active';
+        } else {
+          // For human users, assume shorts without botId belong to the current user
+          return !short.botId && short.status === 'active' && username === currentUser.username;
+        }
+      });
+    } catch {
+      return [];
+    }
+  };
+
+  // Get user's active bets (bets they placed)
+  const getUserBets = (username: string): AdvancedBet[] => {
+    try {
+      const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      return bets.filter((bet: AdvancedBet) => bet.bettor === username && bet.status === 'active');
+    } catch {
+      return [];
+    }
+  };
+
+  // Get user's bot transactions
+  const getUserBotTransactions = (botId: string): Transaction[] => {
+    try {
+      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      return botTransactions
+        .filter((t: any) => t.botId === botId)
+        .map((t: any) => ({
+          id: t.id,
+          type: t.type,
+          amount: t.amount,
+          date: t.date,
+          description: t.opinionText || t.description
+        }))
+        .slice(0, 10); // Recent 10 transactions
+    } catch {
+      return [];
+    }
+  };
+
+  // Calculate portfolio value including short exposure and bet exposure
+  const calculateEnhancedPortfolioValue = (
+    portfolio: OpinionAsset[], 
+    activeShorts: ShortPosition[], 
+    activeBets: AdvancedBet[]
+  ): { 
+    portfolioValue: number; 
+    shortExposure: number; 
+    betExposure: number; 
+    adjustedValue: number;
+  } => {
+    // Traditional opinion holdings value
+    const portfolioValue = portfolio.reduce((total, asset) => {
+      const marketData = getOpinionMarketData(asset.text);
+      const currentPrice = marketData.currentPrice || asset.currentPrice;
+      return total + (currentPrice * asset.quantity);
+    }, 0);
+
+    // Short positions exposure (money at risk)
+    const shortExposure = activeShorts.reduce((total, short) => total + short.betAmount, 0);
+
+    // Bet exposure (money at risk)
+    const betExposure = activeBets.reduce((total, bet) => total + bet.amount, 0);
+
+    // Adjusted portfolio value (traditional value minus money tied up in shorts/bets)
+    const adjustedValue = portfolioValue - shortExposure - betExposure;
+
+    return { portfolioValue, shortExposure, betExposure, adjustedValue };
   };
 
   const calculatePortfolioVolatility = (opinions: OpinionAsset[]): number => {
@@ -191,17 +308,20 @@ export default function UsersPage() {
     isBot: boolean = false,
     botId?: string
   ): PublicUserData => {
-    let totalValue = 0;
-    let totalCost = 0;
+    // Get user's active shorts and bets
+    const activeShorts = getUserShorts(username, botId);
+    const activeBets = getUserBets(username);
 
+    // Calculate enhanced portfolio values
+    const { portfolioValue, shortExposure, betExposure, adjustedValue } = 
+      calculateEnhancedPortfolioValue(portfolio, activeShorts, activeBets);
+
+    let totalCost = 0;
     portfolio.forEach(asset => {
-      const marketData = getOpinionMarketData(asset.text);
-      const currentPrice = marketData.currentPrice || asset.currentPrice;
-      totalValue += currentPrice * asset.quantity;
       totalCost += asset.purchasePrice * asset.quantity;
     });
 
-    const gainsLosses = totalValue - totalCost;
+    const gainsLosses = portfolioValue - totalCost;
     const performancePercentage = totalCost > 0 ? ((gainsLosses / totalCost) * 100) : 0;
     const volatility = calculatePortfolioVolatility(portfolio);
     const recentPerformance = calculate7DayPerformance(performancePercentage, isBot);
@@ -218,7 +338,7 @@ export default function UsersPage() {
 
     return {
       username,
-      portfolioValue: totalValue,
+      portfolioValue: adjustedValue, // Use adjusted value that accounts for short/bet exposure
       totalGainsLosses: gainsLosses,
       opinionsCount: portfolio.length,
       joinDate,
@@ -229,8 +349,43 @@ export default function UsersPage() {
       rank: 0,
       isCurrentUser,
       isBot,
-      botId
+      botId,
+      activeBetsCount: activeBets.length,
+      activeShortsCount: activeShorts.length,
+      shortExposure,
+      betExposure
     };
+  };
+
+  // Show detailed user view
+  const showUserDetails = (user: PublicUserData) => {
+    const portfolio = user.isBot && user.botId ? getBotPortfolio(user.botId) : 
+                     user.isCurrentUser ? getCurrentUserPortfolio() : [];
+    
+    const activeShorts = getUserShorts(user.username, user.botId);
+    const activeBets = getUserBets(user.username);
+    
+    // Get recent transactions
+    let recentTransactions: Transaction[] = [];
+    if (user.isBot && user.botId) {
+      recentTransactions = getUserBotTransactions(user.botId);
+    } else if (user.isCurrentUser) {
+      try {
+        const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+        recentTransactions = transactions.slice(0, 10);
+      } catch {
+        recentTransactions = [];
+      }
+    }
+
+    setDetailedUserView({
+      user,
+      portfolio,
+      activeBets,
+      activeShorts,
+      recentTransactions
+    });
+    setShowDetailModal(true);
   };
 
   const getAllUsers = (): PublicUserData[] => {
@@ -239,7 +394,7 @@ export default function UsersPage() {
     console.log('🔄 Loading all users (real + bots)...');
 
     const currentUserPortfolio = getCurrentUserPortfolio();
-    if (currentUserPortfolio.length > 0) {
+    if (currentUserPortfolio.length > 0 || currentUser.username) {
       const currentUserData = convertToPublicUserData(
         currentUser.username,
         currentUserPortfolio,
@@ -457,6 +612,37 @@ export default function UsersPage() {
     return 'low';
   };
 
+  const getHoursRemaining = (expirationDate: string): number => {
+    const expiry = new Date(expirationDate);
+    const now = new Date();
+    const diffTime = expiry.getTime() - now.getTime();
+    const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
+    return Math.max(0, diffHours);
+  };
+
+  const getDaysRemaining = (expiryDate: string): number => {
+    const expiry = new Date(expiryDate);
+    const now = new Date();
+    const diffTime = expiry.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays);
+  };
+
+  const getTransactionIcon = (type: string) => {
+    switch (type) {
+      case 'buy': return '🛒';
+      case 'sell': return '💰';
+      case 'short_place': return '📉';
+      case 'short_win': return '💹';
+      case 'short_loss': return '📈';
+      case 'bet_place': return '🎲';
+      case 'bet_win': return '🎉';
+      case 'bet_loss': return '😞';
+      case 'earn': return '✨';
+      default: return '📊';
+    }
+  };
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem('opinions');
@@ -625,10 +811,6 @@ export default function UsersPage() {
                 <div 
                   key={user.username} 
                   className={`${styles.userCard} ${user.isCurrentUser ? styles.currentUserCard : ''} ${user.isBot ? styles.botUserCard : ''}`}
-                  onClick={() => {
-                    setSelectedUser(user);
-                    setShowBetModal(true);
-                  }}
                 >
                   <div className={styles.userCardHeader}>
                     <div className={styles.userInfo}>
@@ -641,6 +823,13 @@ export default function UsersPage() {
                           {user.isCurrentUser && <span className={styles.youLabel}> (You)</span>}
                         </h3>
                         <p>{user.opinionsCount} opinions • Joined {user.joinDate}</p>
+                        {(user.activeBetsCount || user.activeShortsCount) && (
+                          <p style={{ fontSize: '12px', color: '#666' }}>
+                            {user.activeBetsCount ? `${user.activeBetsCount} bets` : ''} 
+                            {user.activeBetsCount && user.activeShortsCount ? ' • ' : ''}
+                            {user.activeShortsCount ? `${user.activeShortsCount} shorts` : ''}
+                          </p>
+                        )}
                       </div>
                     </div>
                     
@@ -652,6 +841,11 @@ export default function UsersPage() {
                         {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
                         ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
                       </p>
+                      {(user.shortExposure || user.betExposure) && (
+                        <p style={{ fontSize: '12px', color: '#f59e0b' }}>
+                          Exposure: ${(user.shortExposure || 0) + (user.betExposure || 0)}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -689,12 +883,280 @@ export default function UsersPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Action buttons */}
+                  <div className={styles.userCardActions}>
+                    <button
+                      onClick={() => {
+                        // Navigate to user detail page instead of modal
+                        const userParam = encodeURIComponent(user.username);
+                        window.location.href = `/users/${userParam}`;
+                      }}
+                      className={styles.viewDetailsButton}
+                    >
+                      👁️ Details
+                    </button>
+                    
+                    {!user.isCurrentUser && (
+                      <button
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setShowBetModal(true);
+                        }}
+                        className={styles.placeBetButton}
+                      >
+                        🎯 Bet
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
 
+        {/* Detailed User View Modal */}
+        {showDetailModal && detailedUserView && (
+          <div 
+            className={styles.modalOverlay}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowDetailModal(false);
+                setDetailedUserView(null);
+              }
+            }}
+          >
+            <div className={styles.detailModalContent}>
+              <div className={styles.modalHeader}>
+                <h2 className={styles.modalTitle}>
+                  {detailedUserView.user.isBot ? '🤖 ' : '👤 '}{detailedUserView.user.username} - Portfolio Details
+                  {detailedUserView.user.isCurrentUser && <span> (You)</span>}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDetailModal(false);
+                    setDetailedUserView(null);
+                  }}
+                  className={styles.closeButton}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className={styles.detailModalBody}>
+                {/* Portfolio Summary */}
+                <div className={styles.portfolioSummarySection}>
+                  <h3>📊 Portfolio Summary</h3>
+                  <div className={styles.summaryGrid}>
+                    <div className={styles.summaryCard}>
+                      <p>Total Value</p>
+                      <p className={styles.summaryValue}>${detailedUserView.user.portfolioValue.toLocaleString()}</p>
+                    </div>
+                    <div className={styles.summaryCard}>
+                      <p>P&L</p>
+                      <p className={`${styles.summaryValue} ${getPerformanceClass(detailedUserView.user.totalGainsLosses)}`}>
+                        {detailedUserView.user.totalGainsLosses >= 0 ? '+' : ''}${detailedUserView.user.totalGainsLosses.toFixed(0)}
+                      </p>
+                    </div>
+                    <div className={styles.summaryCard}>
+                      <p>Active Positions</p>
+                      <p className={styles.summaryValue}>{detailedUserView.portfolio.length}</p>
+                    </div>
+                    <div className={styles.summaryCard}>
+                      <p>Active Bets</p>
+                      <p className={styles.summaryValue}>{detailedUserView.activeBets.length}</p>
+                    </div>
+                    <div className={styles.summaryCard}>
+                      <p>Short Positions</p>
+                      <p className={styles.summaryValue}>{detailedUserView.activeShorts.length}</p>
+                    </div>
+                    <div className={styles.summaryCard}>
+                      <p>Total Exposure</p>
+                      <p className={styles.summaryValue}>
+                        ${((detailedUserView.user.shortExposure || 0) + (detailedUserView.user.betExposure || 0)).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Opinion Portfolio */}
+                <div className={styles.portfolioSection}>
+                  <h3>💼 Opinion Portfolio ({detailedUserView.portfolio.length})</h3>
+                  {detailedUserView.portfolio.length === 0 ? (
+                    <div className={styles.emptySection}>
+                      <p>📭 No opinion holdings</p>
+                    </div>
+                  ) : (
+                    <div className={styles.portfolioGrid}>
+                      {detailedUserView.portfolio.map((opinion, index) => {
+                        const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
+                        const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
+                        
+                        return (
+                          <div key={index} className={styles.opinionCard}>
+                            <div className={styles.opinionContent}>
+                              <p className={styles.opinionText}>
+                                &quot;{safeSlice(opinion.text, 80)}&quot;
+                              </p>
+                              <div className={styles.opinionMeta}>
+                                <span>Qty: {opinion.quantity}</span>
+                                <span>Purchased: {opinion.purchaseDate}</span>
+                              </div>
+                            </div>
+                            <div className={styles.opinionStats}>
+                              <div className={styles.priceInfo}>
+                                <p>Bought: ${opinion.purchasePrice}</p>
+                                <p>Current: ${opinion.currentPrice}</p>
+                              </div>
+                              <p className={`${styles.opinionGainLoss} ${getPerformanceClass(gainLoss)}`}>
+                                {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Active Bets */}
+                <div className={styles.portfolioSection}>
+                  <h3>🎲 Active Portfolio Bets ({detailedUserView.activeBets.length})</h3>
+                  {detailedUserView.activeBets.length === 0 ? (
+                    <div className={styles.emptySection}>
+                      <p>🎯 No active bets</p>
+                    </div>
+                  ) : (
+                    <div className={styles.betsGrid}>
+                      {detailedUserView.activeBets.map((bet) => (
+                        <div key={bet.id} className={styles.betCard}>
+                          <div className={styles.betContent}>
+                            <div className={styles.betHeader}>
+                              <span className={styles.betType}>
+                                {bet.betType === 'increase' ? '📈' : '📉'} {bet.betType.toUpperCase()}
+                              </span>
+                              <span className={styles.betAmount}>${bet.amount}</span>
+                            </div>
+                            <p className={styles.betDescription}>
+                              Target: {bet.targetUser} portfolio {bet.betType} by {bet.targetPercentage}%
+                            </p>
+                            <div className={styles.betMeta}>
+                              <span>{getDaysRemaining(bet.expiryDate)} days remaining</span>
+                              <span>{bet.volatilityRating} volatility</span>
+                            </div>
+                          </div>
+                          <div className={styles.betStats}>
+                            <p>Potential: ${bet.potentialPayout}</p>
+                            <p>Multiplier: {bet.multiplier}x</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Short Positions */}
+                <div className={styles.portfolioSection}>
+                  <h3>📉 Short Positions ({detailedUserView.activeShorts.length})</h3>
+                  {detailedUserView.activeShorts.length === 0 ? (
+                    <div className={styles.emptySection}>
+                      <p>📈 No active short positions</p>
+                    </div>
+                  ) : (
+                    <div className={styles.shortsGrid}>
+                      {detailedUserView.activeShorts.map((short) => {
+                        const currentPrice = getCurrentPrice(short.opinionText);
+                        const progress = ((short.startingPrice - currentPrice) / (short.startingPrice - short.targetPrice)) * 100;
+                        const hoursRemaining = getHoursRemaining(short.expirationDate);
+                        
+                        return (
+                          <div key={short.id} className={styles.shortCard}>
+                            <div className={styles.shortContent}>
+                              <div className={styles.shortHeader}>
+                                <span className={styles.shortBadge}>📉 SHORT</span>
+                                <span className={styles.shortAmount}>${short.betAmount}</span>
+                              </div>
+                              <p className={styles.shortOpinion}>
+                                &quot;{safeSlice(short.opinionText, 60)}&quot;
+                              </p>
+                              <div className={styles.shortDetails}>
+                                <div className={styles.shortPrices}>
+                                  <span>Start: ${short.startingPrice}</span>
+                                  <span>Target: ${short.targetPrice}</span>
+                                  <span>Current: ${currentPrice}</span>
+                                </div>
+                                <div className={styles.shortMeta}>
+                                  <span>Target: {short.targetDropPercentage}% drop</span>
+                                  <span>{hoursRemaining}h remaining</span>
+                                </div>
+                              </div>
+                              
+                              {/* Progress bar */}
+                              <div className={styles.shortProgress}>
+                                <div className={styles.progressLabel}>
+                                  Progress: {Math.max(0, Math.min(100, progress)).toFixed(1)}%
+                                </div>
+                                <div className={styles.progressBar}>
+                                  <div 
+                                    className={styles.progressFill}
+                                    style={{
+                                      width: `${Math.max(0, Math.min(100, progress))}%`,
+                                      backgroundColor: progress >= 100 ? '#10b981' : progress >= 50 ? '#f59e0b' : '#ef4444'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div className={styles.shortStats}>
+                              <p>Potential: ${short.potentialWinnings}</p>
+                              <p className={progress >= 100 ? styles.positive : styles.negative}>
+                                {progress >= 100 ? 'Target Hit!' : 'In Progress'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recent Transactions */}
+                <div className={styles.portfolioSection}>
+                  <h3>📋 Recent Activity ({detailedUserView.recentTransactions.length})</h3>
+                  {detailedUserView.recentTransactions.length === 0 ? (
+                    <div className={styles.emptySection}>
+                      <p>📊 No recent activity</p>
+                    </div>
+                  ) : (
+                    <div className={styles.transactionsGrid}>
+                      {detailedUserView.recentTransactions.map((transaction) => (
+                        <div key={transaction.id} className={styles.transactionCard}>
+                          <div className={styles.transactionIcon}>
+                            {getTransactionIcon(transaction.type)}
+                          </div>
+                          <div className={styles.transactionContent}>
+                            <p className={styles.transactionType}>
+                              {transaction.type.replace('_', ' ').toUpperCase()}
+                            </p>
+                            <p className={styles.transactionDescription}>
+                              {transaction.description || 'Transaction'}
+                            </p>
+                            <p className={styles.transactionDate}>{transaction.date}</p>
+                          </div>
+                          <div className={`${styles.transactionAmount} ${getPerformanceClass(transaction.amount)}`}>
+                            {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Betting Modal (existing) */}
         {showBetModal && selectedUser && (
           <div 
             className={styles.modalOverlay}
@@ -955,6 +1417,363 @@ export default function UsersPage() {
           </div>
         )}
       </main>
+
+      {/* Additional CSS for new components */}
+      <style jsx>{`
+        .userCardActions {
+          display: flex;
+          gap: 8px;
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid #e5e7eb;
+        }
+
+        .viewDetailsButton, .placeBetButton {
+          flex: 1;
+          padding: 6px 12px;
+          border: none;
+          border-radius: 6px;
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          min-height: 32px;
+        }
+
+        .viewDetailsButton {
+          background: #f3f4f6;
+          color: #374151;
+          border: 1px solid #d1d5db;
+        }
+
+        .viewDetailsButton:hover {
+          background: #e5e7eb;
+          border-color: #9ca3af;
+        }
+
+        .placeBetButton {
+          background: #3b82f6;
+          color: white;
+          border: 1px solid #3b82f6;
+        }
+
+        .placeBetButton:hover {
+          background: #2563eb;
+          border-color: #2563eb;
+        }
+
+        .detailModalContent {
+          background: white;
+          border-radius: 16px;
+          padding: 0;
+          max-width: 900px;
+          width: 95%;
+          max-height: 90vh;
+          overflow-y: auto;
+        }
+
+        .detailModalBody {
+          padding: 24px;
+          max-height: calc(90vh - 80px);
+          overflow-y: auto;
+        }
+
+        .portfolioSummarySection {
+          margin-bottom: 32px;
+        }
+
+        .summaryGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 16px;
+          margin-top: 16px;
+        }
+
+        .summaryCard {
+          background: #f8fafc;
+          padding: 16px;
+          border-radius: 8px;
+          text-align: center;
+          border: 1px solid #e2e8f0;
+        }
+
+        .summaryCard p:first-child {
+          font-size: 14px;
+          color: #64748b;
+          margin: 0 0 8px 0;
+        }
+
+        .summaryValue {
+          font-size: 18px;
+          font-weight: 600;
+          margin: 0;
+          color: #1e293b;
+        }
+
+        .portfolioSection {
+          margin-bottom: 32px;
+        }
+
+        .portfolioSection h3 {
+          margin: 0 0 16px 0;
+          color: #1e293b;
+          font-size: 18px;
+        }
+
+        .emptySection {
+          text-align: center;
+          padding: 40px 20px;
+          background: #f8fafc;
+          border-radius: 8px;
+          color: #64748b;
+        }
+
+        .portfolioGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+          gap: 16px;
+        }
+
+        .opinionCard {
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 16px;
+          transition: all 0.2s;
+        }
+
+        .opinionCard:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .opinionContent {
+          margin-bottom: 12px;
+        }
+
+        .opinionText {
+          font-size: 14px;
+          line-height: 1.4;
+          margin: 0 0 8px 0;
+          color: #374151;
+        }
+
+        .opinionMeta {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .opinionStats {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .priceInfo {
+          font-size: 12px;
+          color: #64748b;
+        }
+
+        .priceInfo p {
+          margin: 0 0 2px 0;
+        }
+
+        .opinionGainLoss {
+          font-weight: 600;
+          font-size: 14px;
+        }
+
+        .betsGrid, .shortsGrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+          gap: 16px;
+        }
+
+        .betCard, .shortCard {
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 16px;
+          transition: all 0.2s;
+        }
+
+        .betCard:hover, .shortCard:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .betHeader, .shortHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+
+        .betType, .shortBadge {
+          font-size: 12px;
+          font-weight: 600;
+          padding: 4px 8px;
+          border-radius: 4px;
+          background: #ddd6fe;
+          color: #6b21a8;
+        }
+
+        .shortBadge {
+          background: #fef3c7;
+          color: #92400e;
+        }
+
+        .betAmount, .shortAmount {
+          font-weight: 600;
+          color: #374151;
+        }
+
+        .betDescription, .shortOpinion {
+          font-size: 14px;
+          margin: 8px 0;
+          color: #374151;
+          line-height: 1.4;
+        }
+
+        .betMeta, .shortMeta {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          color: #64748b;
+          margin-bottom: 12px;
+        }
+
+        .shortDetails {
+          margin: 12px 0;
+        }
+
+        .shortPrices {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          color: #64748b;
+          margin-bottom: 8px;
+        }
+
+        .shortProgress {
+          margin: 12px 0;
+        }
+
+        .progressLabel {
+          font-size: 12px;
+          color: #64748b;
+          margin-bottom: 4px;
+        }
+
+        .progressBar {
+          width: 100%;
+          height: 6px;
+          background: #e5e7eb;
+          border-radius: 3px;
+          overflow: hidden;
+        }
+
+        .progressFill {
+          height: 100%;
+          transition: width 0.3s ease;
+          border-radius: 3px;
+        }
+
+        .betStats, .shortStats {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 12px;
+          padding-top: 12px;
+          border-top: 1px solid #f1f5f9;
+        }
+
+        .betStats p, .shortStats p {
+          margin: 0;
+          font-weight: 500;
+        }
+
+        .transactionsGrid {
+          display: grid;
+          gap: 12px;
+        }
+
+        .transactionCard {
+          display: flex;
+          align-items: center;
+          background: white;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 12px;
+          transition: all 0.2s;
+        }
+
+        .transactionCard:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .transactionIcon {
+          font-size: 20px;
+          margin-right: 12px;
+          width: 32px;
+          text-align: center;
+        }
+
+        .transactionContent {
+          flex: 1;
+        }
+
+        .transactionType {
+          font-weight: 600;
+          margin: 0 0 4px 0;
+          font-size: 14px;
+          color: #374151;
+        }
+
+        .transactionDescription {
+          font-size: 12px;
+          color: #64748b;
+          margin: 0 0 2px 0;
+        }
+
+        .transactionDate {
+          font-size: 11px;
+          color: #9ca3af;
+          margin: 0;
+        }
+
+        .transactionAmount {
+          font-weight: 600;
+          font-size: 14px;
+          text-align: right;
+          min-width: 80px;
+        }
+
+        .positive {
+          color: #059669;
+        }
+
+        .negative {
+          color: #dc2626;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+      `}</style>
     </div>
   );
 }
