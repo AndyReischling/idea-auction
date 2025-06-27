@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
@@ -27,7 +28,32 @@ interface UserProfile {
   balance: number;
 }
 
+interface TransactionDetail {
+  id: string;
+  type: string;
+  username: string;
+  opinionText?: string;
+  amount: number;
+  price?: number;
+  quantity?: number;
+  targetUser?: string;
+  betType?: 'increase' | 'decrease';
+  targetPercentage?: number;
+  timeframe?: number;
+  timestamp: string;
+  isBot?: boolean;
+  fullDescription: string;
+  additionalDetails?: {
+    multiplier?: number;
+    potentialPayout?: number;
+    volatilityRating?: string;
+    expiryDate?: string;
+    betStatus?: string;
+  };
+}
+
 export default function FeedPage() {
+  const router = useRouter();
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
   const [opinions, setOpinions] = useState<{ id: string; text: string }[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
@@ -36,6 +62,14 @@ export default function FeedPage() {
   });
   const [filter, setFilter] = useState<'all' | 'trades' | 'bets' | 'generates'>('all');
   const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionDetail | null>(null);
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  // Fix hydration by ensuring client-side only rendering for time-sensitive content
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Function to add activity to global feed
   const addToGlobalFeed = (activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) => {
@@ -87,6 +121,92 @@ export default function FeedPage() {
            username.includes('AI_') || 
            username.includes('Bot') || 
            username.includes('bot_');
+  };
+
+  // Handle username click - navigate to users page with user filter
+  const handleUsernameClick = (username: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    // Store the selected user in localStorage so the users page can highlight them
+    localStorage.setItem('selectedUserFromFeed', username);
+    
+    // Navigate to users page
+    router.push('/users');
+  };
+
+  // Handle transaction click - show transaction details modal
+  const handleTransactionClick = (activity: ActivityFeedItem) => {
+    // Get additional details based on transaction type
+    const getAdditionalDetails = () => {
+      if (activity.type.includes('bet')) {
+        // Try to find the bet in localStorage
+        try {
+          const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+          const bet = bets.find((b: any) => 
+            b.bettor === activity.username && 
+            b.targetUser === activity.targetUser &&
+            Math.abs(b.amount - Math.abs(activity.amount)) < 1
+          );
+          
+          if (bet) {
+            return {
+              multiplier: bet.multiplier,
+              potentialPayout: bet.potentialPayout,
+              volatilityRating: bet.volatilityRating,
+              expiryDate: bet.expiryDate,
+              betStatus: bet.status
+            };
+          }
+        } catch (error) {
+          console.error('Error loading bet details:', error);
+        }
+      }
+      return {};
+    };
+
+    const transactionDetail: TransactionDetail = {
+      ...activity,
+      fullDescription: getFullTransactionDescription(activity),
+      additionalDetails: getAdditionalDetails()
+    };
+
+    setSelectedTransaction(transactionDetail);
+    setShowTransactionModal(true);
+  };
+
+  // Get full transaction description for modal
+  const getFullTransactionDescription = (activity: ActivityFeedItem): string => {
+    const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, isBot } = activity;
+    
+    const userPrefix = isBot ? '🤖 Bot' : '👤 User';
+    
+    switch (type) {
+      case 'buy':
+        const buyQuantity = quantity || Math.max(1, Math.floor(Math.abs(amount) / (price || 50)));
+        const buyPrice = price || Math.floor(Math.abs(amount) / buyQuantity);
+        return `${userPrefix} ${username} purchased ${buyQuantity} ${buyQuantity === 1 ? 'share' : 'shares'} of the opinion "${opinionText}" at $${buyPrice} per share, spending a total of $${Math.abs(amount)}.`;
+      
+      case 'sell':
+        const sellQuantity = quantity || Math.max(1, Math.floor(amount / (price || 50)));
+        const sellPrice = price || Math.floor(amount / sellQuantity);
+        return `${userPrefix} ${username} sold ${sellQuantity} ${sellQuantity === 1 ? 'share' : 'shares'} of the opinion "${opinionText}" at $${sellPrice} per share, receiving a total of $${amount}.`;
+      
+      case 'bet_place':
+        return `${userPrefix} ${username} placed a $${Math.abs(amount)} bet on ${targetUser}'s portfolio. They are betting that the portfolio will ${betType} by ${targetPercentage}% within ${timeframe} days.`;
+      
+      case 'bet_win':
+        return `${userPrefix} ${username} won $${amount} from a successful portfolio bet on ${targetUser}! Their prediction about the portfolio performance was correct.`;
+      
+      case 'bet_loss':
+        return `${userPrefix} ${username} lost $${Math.abs(amount)} on a portfolio bet against ${targetUser}. Their prediction about the portfolio performance was incorrect.`;
+      
+      case 'earn':
+      case 'generate':
+        return `${userPrefix} ${username} generated a new opinion: "${opinionText}" and earned $${amount} as a reward for contributing content to the platform.`;
+      
+      default:
+        return `${userPrefix} ${username} performed a ${type} transaction involving $${Math.abs(amount)}.`;
+    }
   };
 
   // Load all real activity from various sources
@@ -267,11 +387,25 @@ export default function FeedPage() {
     }
   };
 
-  // Format activity description
+  // Format activity description with clickable username
   const formatActivityDescription = (activity: ActivityFeedItem) => {
     const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, isBot } = activity;
     
     const userPrefix = isBot ? '🤖 ' : '';
+    const UsernameLink = ({ username, isBot }: { username: string; isBot?: boolean }) => (
+      <span 
+        className={styles.clickableUsername}
+        onClick={(e) => handleUsernameClick(username, e)}
+        style={{ 
+          color: isBot ? '#10b981' : '#3b82f6', 
+          fontWeight: 'bold', 
+          cursor: 'pointer',
+          textDecoration: 'underline'
+        }}
+      >
+        {username}
+      </span>
+    );
     
     switch (type) {
       case 'buy':
@@ -279,7 +413,7 @@ export default function FeedPage() {
         const buyPrice = price || Math.floor(Math.abs(amount) / buyQuantity);
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> bought {buyQuantity} {buyQuantity === 1 ? 'share' : 'shares'} of{' '}
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> bought {buyQuantity} {buyQuantity === 1 ? 'share' : 'shares'} of{' '}
             <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${buyPrice}</strong> each
           </span>
         );
@@ -288,46 +422,46 @@ export default function FeedPage() {
         const sellPrice = price || Math.floor(amount / sellQuantity);
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> sold {sellQuantity} {sellQuantity === 1 ? 'share' : 'shares'} of{' '}
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> sold {sellQuantity} {sellQuantity === 1 ? 'share' : 'shares'} of{' '}
             <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${sellPrice}</strong> each
           </span>
         );
       case 'bet_place':
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> bet <strong>${Math.abs(amount)}</strong> that{' '}
-            <strong>{targetUser}</strong>'s portfolio will {betType} by {targetPercentage}% in {timeframe} days
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> bet <strong>${Math.abs(amount)}</strong> that{' '}
+            <UsernameLink username={targetUser || 'Unknown'} /> portfolio will {betType} by {targetPercentage}% in {timeframe} days
           </span>
         );
       case 'bet_win':
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> won <strong>${amount}</strong> from a portfolio bet on{' '}
-            <strong>{targetUser}</strong>! 🎉
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> won <strong>${amount}</strong> from a portfolio bet on{' '}
+            <UsernameLink username={targetUser || 'Unknown'} />! 🎉
           </span>
         );
       case 'bet_loss':
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> lost <strong>${Math.abs(amount)}</strong> on a portfolio bet
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> lost <strong>${Math.abs(amount)}</strong> on a portfolio bet
           </span>
         );
       case 'earn':
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> generated opinion: <em>"{opinionText?.slice(0, 40)}..."</em> and earned <strong>${amount}</strong>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> generated opinion: <em>"{opinionText?.slice(0, 40)}..."</em> and earned <strong>${amount}</strong>
           </span>
         );
       case 'generate':
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> generated a new opinion and earned <strong>${amount}</strong>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> generated a new opinion and earned <strong>${amount}</strong>
           </span>
         );
       default:
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> performed an action for <strong>${Math.abs(amount)}</strong>
+            {userPrefix}<UsernameLink username={username} isBot={isBot} /> performed an action for <strong>${Math.abs(amount)}</strong>
           </span>
         );
     }
@@ -500,7 +634,7 @@ export default function FeedPage() {
           {/* Feed Header */}
           <div className={styles.feedHeader}>
             <div className={styles.liveIndicator}></div>
-            LIVE • {filteredActivities.length} Recent Activities • Last refresh: {new Date(lastRefresh).toLocaleTimeString()}
+            LIVE • {filteredActivities.length} Recent Activities • Last refresh: {isClient ? new Date(lastRefresh).toLocaleTimeString() : '--:--:--'}
           </div>
 
           {/* Feed Content */}
@@ -536,6 +670,8 @@ export default function FeedPage() {
                   <div 
                     key={activity.id}
                     className={`${styles.activityItem} ${isUserActivity ? styles.userActivity : ''} ${isBotActivity ? styles.botActivity : ''}`}
+                    onClick={() => handleTransactionClick(activity)}
+                    style={{ cursor: 'pointer' }}
                   >
                     <div className={styles.activityLayout}>
                       {/* Activity Icon */}
@@ -573,6 +709,215 @@ export default function FeedPage() {
             )}
           </div>
         </div>
+
+        {/* Transaction Details Modal */}
+        {showTransactionModal && selectedTransaction && (
+          <div 
+            className={styles.modalOverlay}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowTransactionModal(false);
+                setSelectedTransaction(null);
+              }
+            }}
+          >
+            <div className={styles.transactionModal}>
+              <div className={styles.modalHeader}>
+                <h2>
+                  {getActivityIcon(selectedTransaction.type)} Transaction Details
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowTransactionModal(false);
+                    setSelectedTransaction(null);
+                  }}
+                  className={styles.closeButton}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className={styles.modalContent}>
+                {/* Transaction Type & User */}
+                <div className={styles.transactionHeader}>
+                  <div className={styles.transactionType}>
+                    <span className={`${styles.typeTag} ${styles[selectedTransaction.type]}`}>
+                      {selectedTransaction.type.toUpperCase().replace('_', ' ')}
+                    </span>
+                    {selectedTransaction.isBot && (
+                      <span className={styles.botTag}>🤖 BOT</span>
+                    )}
+                  </div>
+                  <div className={styles.transactionAmount}>
+                    <span className={getAmountClass(selectedTransaction.amount)}>
+                      {selectedTransaction.amount >= 0 ? '+' : ''}${Math.abs(selectedTransaction.amount).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Full Description */}
+                <div className={styles.transactionDescription}>
+                  <p>{selectedTransaction.fullDescription}</p>
+                </div>
+
+                {/* Transaction Details */}
+                <div className={styles.transactionDetails}>
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>User:</span>
+                    <span 
+                      className={styles.clickableUsername}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUsernameClick(selectedTransaction.username, e);
+                        setShowTransactionModal(false);
+                      }}
+                      style={{ 
+                        color: selectedTransaction.isBot ? '#10b981' : '#3b82f6', 
+                        cursor: 'pointer',
+                        textDecoration: 'underline'
+                      }}
+                    >
+                      {selectedTransaction.isBot ? '🤖 ' : '👤 '}{selectedTransaction.username}
+                    </span>
+                  </div>
+                  
+                  <div className={styles.detailRow}>
+                    <span className={styles.detailLabel}>Time:</span>
+                    <span>{isClient ? new Date(selectedTransaction.timestamp).toLocaleString() : 'Loading...'}</span>
+                  </div>
+
+                  {selectedTransaction.opinionText && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Opinion:</span>
+                      <span className={styles.opinionText}>"{selectedTransaction.opinionText}"</span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.quantity && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Quantity:</span>
+                      <span>{selectedTransaction.quantity} {selectedTransaction.quantity === 1 ? 'share' : 'shares'}</span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.price && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Price per Share:</span>
+                      <span>${selectedTransaction.price}</span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.targetUser && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Target User:</span>
+                      <span 
+                        className={styles.clickableUsername}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUsernameClick(selectedTransaction.targetUser!, e);
+                          setShowTransactionModal(false);
+                        }}
+                        style={{ 
+                          color: '#3b82f6', 
+                          cursor: 'pointer',
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        {selectedTransaction.targetUser}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.betType && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Bet Direction:</span>
+                      <span>
+                        {selectedTransaction.betType === 'increase' ? '📈 Increase' : '📉 Decrease'} by {selectedTransaction.targetPercentage}%
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedTransaction.timeframe && (
+                    <div className={styles.detailRow}>
+                      <span className={styles.detailLabel}>Timeframe:</span>
+                      <span>{selectedTransaction.timeframe} days</span>
+                    </div>
+                  )}
+
+                  {/* Additional Bet Details */}
+                  {selectedTransaction.additionalDetails && (
+                    <>
+                      {selectedTransaction.additionalDetails.multiplier && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Multiplier:</span>
+                          <span>{selectedTransaction.additionalDetails.multiplier}x</span>
+                        </div>
+                      )}
+
+                      {selectedTransaction.additionalDetails.potentialPayout && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Potential Payout:</span>
+                          <span className={styles.positive}>${selectedTransaction.additionalDetails.potentialPayout.toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {selectedTransaction.additionalDetails.volatilityRating && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Volatility:</span>
+                          <span className={`${styles.volatility} ${styles[selectedTransaction.additionalDetails.volatilityRating.toLowerCase()]}`}>
+                            {selectedTransaction.additionalDetails.volatilityRating}
+                          </span>
+                        </div>
+                      )}
+
+                      {selectedTransaction.additionalDetails.expiryDate && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Expires:</span>
+                          <span>{selectedTransaction.additionalDetails.expiryDate}</span>
+                        </div>
+                      )}
+
+                      {selectedTransaction.additionalDetails.betStatus && (
+                        <div className={styles.detailRow}>
+                          <span className={styles.detailLabel}>Status:</span>
+                          <span className={`${styles.status} ${styles[selectedTransaction.additionalDetails.betStatus]}`}>
+                            {selectedTransaction.additionalDetails.betStatus.toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className={styles.modalActions}>
+                  {selectedTransaction.username !== currentUser.username && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleUsernameClick(selectedTransaction.username, e);
+                        setShowTransactionModal(false);
+                      }}
+                      className={styles.viewUserButton}
+                    >
+                      👤 View {selectedTransaction.isBot ? 'Bot' : 'User'} Profile
+                    </button>
+                  )}
+                  
+                  <button
+                    onClick={() => {
+                      setShowTransactionModal(false);
+                      setSelectedTransaction(null);
+                    }}
+                    className={styles.closeModalButton}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Market Stats */}
         <div className={styles.marketStats}>
@@ -621,6 +966,213 @@ export default function FeedPage() {
           </div>
         )}
       </main>
+
+      {/* Add custom styles for the new features */}
+      <style jsx>{`
+        .clickableUsername:hover {
+          opacity: 0.8;
+          text-decoration: underline !important;
+        }
+
+        .transactionModal {
+          background: white;
+          border-radius: 16px;
+          padding: 0;
+          max-width: 600px;
+          width: 90%;
+          max-height: 80vh;
+          overflow-y: auto;
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .modalHeader {
+          padding: 20px 24px;
+          border-bottom: 1px solid #e5e7eb;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f8fafc;
+          border-radius: 16px 16px 0 0;
+        }
+
+        .modalHeader h2 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 600;
+          color: #1f2937;
+        }
+
+        .closeButton {
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #6b7280;
+          padding: 4px;
+          border-radius: 4px;
+          transition: all 0.2s;
+        }
+
+        .closeButton:hover {
+          background: #e5e7eb;
+          color: #374151;
+        }
+
+        .modalContent {
+          padding: 24px;
+        }
+
+        .transactionHeader {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 20px;
+          padding-bottom: 16px;
+          border-bottom: 1px solid #f3f4f6;
+        }
+
+        .transactionType {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .typeTag {
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .typeTag.buy { background: #dcfce7; color: #166534; }
+        .typeTag.sell { background: #fef3c7; color: #92400e; }
+        .typeTag.bet_place { background: #ddd6fe; color: #6b21a8; }
+        .typeTag.bet_win { background: #dcfce7; color: #166534; }
+        .typeTag.bet_loss { background: #fecaca; color: #991b1b; }
+        .typeTag.earn, .typeTag.generate { background: #e0f2fe; color: #0c4a6e; }
+
+        .botTag {
+          padding: 2px 8px;
+          background: #f0f9ff;
+          color: #0369a1;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+
+        .transactionAmount {
+          font-size: 24px;
+          font-weight: 700;
+        }
+
+        .transactionDescription {
+          margin-bottom: 20px;
+          padding: 16px;
+          background: #f8fafc;
+          border-radius: 8px;
+          border-left: 4px solid #3b82f6;
+        }
+
+        .transactionDescription p {
+          margin: 0;
+          line-height: 1.6;
+          color: #374151;
+        }
+
+        .transactionDetails {
+          display: grid;
+          gap: 12px;
+          margin-bottom: 24px;
+        }
+
+        .detailRow {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 8px 0;
+          border-bottom: 1px solid #f3f4f6;
+        }
+
+        .detailRow:last-child {
+          border-bottom: none;
+        }
+
+        .detailLabel {
+          font-weight: 500;
+          color: #6b7280;
+          min-width: 120px;
+        }
+
+        .opinionText {
+          font-style: italic;
+          color: #374151;
+          max-width: 300px;
+          text-align: right;
+        }
+
+        .volatility.high { color: #dc2626; }
+        .volatility.medium { color: #ea580c; }
+        .volatility.low { color: #16a34a; }
+
+        .status.active { color: #3b82f6; }
+        .status.won { color: #16a34a; }
+        .status.lost { color: #dc2626; }
+        .status.expired { color: #6b7280; }
+
+        .modalActions {
+          display: flex;
+          gap: 12px;
+          justify-content: flex-end;
+          padding-top: 16px;
+          border-top: 1px solid #e5e7eb;
+        }
+
+        .viewUserButton {
+          padding: 8px 16px;
+          background: #3b82f6;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: 500;
+          transition: background 0.2s;
+        }
+
+        .viewUserButton:hover {
+          background: #2563eb;
+        }
+
+        .closeModalButton {
+          padding: 8px 16px;
+          background: #6b7280;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-weight: 500;
+          transition: background 0.2s;
+        }
+
+        .closeModalButton:hover {
+          background: #4b5563;
+        }
+
+        .modalOverlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+        }
+      `}</style>
     </div>
   );
 }
