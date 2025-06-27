@@ -7,7 +7,7 @@ import styles from './page.module.css';
 
 interface ActivityFeedItem {
   id: string;
-  type: 'buy' | 'sell' | 'bet_place' | 'bet_win' | 'bet_loss' | 'generate';
+  type: 'buy' | 'sell' | 'bet_place' | 'bet_win' | 'bet_loss' | 'earn' | 'generate';
   username: string;
   opinionText?: string;
   amount: number;
@@ -19,6 +19,7 @@ interface ActivityFeedItem {
   timeframe?: number;
   timestamp: string;
   relativeTime: string;
+  isBot?: boolean;
 }
 
 interface UserProfile {
@@ -34,6 +35,7 @@ export default function FeedPage() {
     balance: 10000
   });
   const [filter, setFilter] = useState<'all' | 'trades' | 'bets' | 'generates'>('all');
+  const [lastRefresh, setLastRefresh] = useState(Date.now());
 
   // Function to add activity to global feed
   const addToGlobalFeed = (activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) => {
@@ -46,8 +48,8 @@ export default function FeedPage() {
     // Get existing global feed
     const existingFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
     
-    // Add new activity to beginning and keep last 100 items
-    const updatedFeed = [newActivity, ...existingFeed].slice(0, 100);
+    // Add new activity to beginning and keep last 200 items
+    const updatedFeed = [newActivity, ...existingFeed].slice(0, 200);
     
     // Save back to localStorage
     localStorage.setItem('globalActivityFeed', JSON.stringify(updatedFeed));
@@ -68,35 +70,95 @@ export default function FeedPage() {
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
+  // Get bot usernames for identification
+  const getBotUsernames = (): string[] => {
+    try {
+      const bots = JSON.parse(localStorage.getItem('autonomousBots') || '[]');
+      return bots.map((bot: any) => bot.username);
+    } catch {
+      return [];
+    }
+  };
+
+  // Check if username is a bot
+  const isBot = (username: string): boolean => {
+    const botUsernames = getBotUsernames();
+    return botUsernames.includes(username) || 
+           username.includes('AI_') || 
+           username.includes('Bot') || 
+           username.includes('bot_');
+  };
+
   // Load all real activity from various sources
   const loadRealActivity = (): ActivityFeedItem[] => {
     const activities: ActivityFeedItem[] = [];
 
     try {
-      // 1. Load from global activity feed (where bots and real activity should be stored)
-      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
-      activities.push(...globalFeed);
+      // 1. Load real bot transactions
+      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      console.log(`📊 Loading ${botTransactions.length} bot transactions`);
+      
+      botTransactions.forEach((transaction: any) => {
+        const botName = getBotUsernames().find(name => 
+          transaction.botId && transaction.botId.includes(name.replace(/[^a-zA-Z0-9]/g, ''))
+        ) || `Bot_${transaction.botId?.slice(-3) || 'Unknown'}`;
 
-      // 2. Load user's personal transactions if not already in global feed
-      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-      userTransactions.forEach((t: any) => {
-        // Only add if not already in global feed
-        const exists = activities.some(a => a.id === t.id);
+        let activityType = transaction.type;
+        let amount = transaction.amount || 0;
+        let opinionText = transaction.opinionText;
+
+        // Convert transaction types to feed types
+        if (transaction.type === 'bet') {
+          activityType = 'bet_place';
+          amount = -Math.abs(amount); // Bets are expenses
+        }
+
+        activities.push({
+          id: transaction.id || `bot_${Date.now()}_${Math.random()}`,
+          type: activityType,
+          username: botName,
+          opinionText: opinionText,
+          amount: amount,
+          timestamp: new Date(transaction.date || Date.now()).toISOString(),
+          relativeTime: getRelativeTime(new Date(transaction.date || Date.now()).toISOString()),
+          isBot: true
+        });
+      });
+
+      // 2. Load from global activity feed (manual entries)
+      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      globalFeed.forEach((activity: any) => {
+        // Only add if not already added from bot transactions
+        const exists = activities.some(a => a.id === activity.id);
         if (!exists) {
           activities.push({
-            id: t.id || `user_${Date.now()}`,
-            type: t.type,
-            username: currentUser.username,
-            opinionText: t.opinionText || t.description,
-            amount: t.amount,
-            timestamp: new Date(t.date || Date.now()).toISOString(),
-            relativeTime: getRelativeTime(new Date(t.date || Date.now()).toISOString()),
-            targetUser: t.description?.includes('bet on') ? 'Target User' : undefined
+            ...activity,
+            isBot: isBot(activity.username),
+            relativeTime: getRelativeTime(activity.timestamp)
           });
         }
       });
 
-      // 3. Load betting activity
+      // 3. Load user's personal transactions
+      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      userTransactions.forEach((t: any) => {
+        // Only add if not already in activities
+        const exists = activities.some(a => a.id === t.id);
+        if (!exists) {
+          activities.push({
+            id: t.id || `user_${Date.now()}_${Math.random()}`,
+            type: t.type,
+            username: currentUser.username,
+            opinionText: t.opinionText || t.description?.replace(/^(Bought|Sold|Generated) /, ''),
+            amount: t.amount,
+            timestamp: new Date(t.date || Date.now()).toISOString(),
+            relativeTime: getRelativeTime(new Date(t.date || Date.now()).toISOString()),
+            isBot: false
+          });
+        }
+      });
+
+      // 4. Load betting activity from advancedBets
       const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
       bets.forEach((bet: any) => {
         // Add bet placement activity
@@ -112,7 +174,8 @@ export default function FeedPage() {
             targetPercentage: bet.targetPercentage,
             timeframe: bet.timeFrame,
             timestamp: new Date(bet.placedDate).toISOString(),
-            relativeTime: getRelativeTime(new Date(bet.placedDate).toISOString())
+            relativeTime: getRelativeTime(new Date(bet.placedDate).toISOString()),
+            isBot: isBot(bet.bettor)
           });
         }
 
@@ -126,38 +189,35 @@ export default function FeedPage() {
               username: bet.bettor,
               amount: bet.status === 'won' ? bet.potentialPayout : -bet.amount,
               targetUser: bet.targetUser,
-              timestamp: new Date().toISOString(), // Use current time as resolution time
-              relativeTime: getRelativeTime(new Date().toISOString())
+              timestamp: new Date().toISOString(),
+              relativeTime: getRelativeTime(new Date().toISOString()),
+              isBot: isBot(bet.bettor)
             });
           }
         }
       });
 
-      // 4. Simulate some bot activity if the global feed is empty (for demo purposes)
-      if (activities.length < 10) {
-        const botUsernames = ['AI_Trader_001', 'AI_Trader_042', 'Bot_Alpha', 'Bot_Beta', 'SmartBot_99'];
+      // 5. If still no activity, show some demo data
+      if (activities.length === 0) {
+        console.log('📝 No real activity found, generating demo data');
+        const demoBot = 'DemoBot_Alpha';
+        const now = new Date();
         
-        for (let i = 0; i < 20; i++) {
-          const botUsername = botUsernames[Math.floor(Math.random() * botUsernames.length)];
-          const timestamp = new Date(Date.now() - Math.random() * 2 * 60 * 60 * 1000).toISOString(); // Last 2 hours
+        for (let i = 0; i < 5; i++) {
+          const timestamp = new Date(now.getTime() - (i * 10 * 60 * 1000)).toISOString(); // 10 min intervals
           const opinionIndex = Math.floor(Math.random() * opinions.length);
           const opinion = opinions[opinionIndex];
           
           if (opinion) {
-            const isBuy = Math.random() > 0.5;
-            const price = Math.floor(Math.random() * 50) + 10;
-            const quantity = Math.floor(Math.random() * 3) + 1;
-            
             activities.push({
-              id: `bot_${i}_${timestamp}`,
-              type: isBuy ? 'buy' : 'sell',
-              username: botUsername,
+              id: `demo_${i}`,
+              type: Math.random() > 0.5 ? 'buy' : 'sell',
+              username: demoBot,
               opinionText: opinion.text,
-              amount: isBuy ? -price * quantity : price * quantity,
-              price,
-              quantity,
+              amount: Math.random() > 0.5 ? -150 : 200,
               timestamp,
-              relativeTime: getRelativeTime(timestamp)
+              relativeTime: getRelativeTime(timestamp),
+              isBot: true
             });
           }
         }
@@ -172,8 +232,10 @@ export default function FeedPage() {
       .filter((activity, index, self) => 
         index === self.findIndex(a => a.id === activity.id)
       )
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 100); // Keep only last 100 activities
 
+    console.log(`📈 Loaded ${uniqueActivities.length} unique activities (${uniqueActivities.filter(a => a.isBot).length} bot activities)`);
     return uniqueActivities;
   };
 
@@ -185,6 +247,7 @@ export default function FeedPage() {
       case 'bet_place': return styles.betPlace;
       case 'bet_win': return styles.betWin;
       case 'bet_loss': return styles.betLoss;
+      case 'earn':
       case 'generate': return styles.generate;
       default: return styles.buy;
     }
@@ -198,6 +261,7 @@ export default function FeedPage() {
       case 'bet_place': return '🎲';
       case 'bet_win': return '🎉';
       case 'bet_loss': return '😞';
+      case 'earn':
       case 'generate': return '✨';
       default: return '📊';
     }
@@ -205,24 +269,27 @@ export default function FeedPage() {
 
   // Format activity description
   const formatActivityDescription = (activity: ActivityFeedItem) => {
-    const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe } = activity;
+    const { type, username, opinionText, amount, price, quantity, targetUser, betType, targetPercentage, timeframe, isBot } = activity;
     
-    const isBot = username.includes('AI_') || username.includes('Bot_');
     const userPrefix = isBot ? '🤖 ' : '';
     
     switch (type) {
       case 'buy':
+        const buyQuantity = quantity || Math.max(1, Math.floor(Math.abs(amount) / (price || 50)));
+        const buyPrice = price || Math.floor(Math.abs(amount) / buyQuantity);
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> bought {quantity} {quantity === 1 ? 'share' : 'shares'} of{' '}
-            <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${price}</strong> each
+            {userPrefix}<strong>{username}</strong> bought {buyQuantity} {buyQuantity === 1 ? 'share' : 'shares'} of{' '}
+            <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${buyPrice}</strong> each
           </span>
         );
       case 'sell':
+        const sellQuantity = quantity || Math.max(1, Math.floor(amount / (price || 50)));
+        const sellPrice = price || Math.floor(amount / sellQuantity);
         return (
           <span>
-            {userPrefix}<strong>{username}</strong> sold {quantity} {quantity === 1 ? 'share' : 'shares'} of{' '}
-            <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${price}</strong> each
+            {userPrefix}<strong>{username}</strong> sold {sellQuantity} {sellQuantity === 1 ? 'share' : 'shares'} of{' '}
+            <em>"{opinionText?.slice(0, 40)}..."</em> for <strong>${sellPrice}</strong> each
           </span>
         );
       case 'bet_place':
@@ -243,6 +310,12 @@ export default function FeedPage() {
         return (
           <span>
             {userPrefix}<strong>{username}</strong> lost <strong>${Math.abs(amount)}</strong> on a portfolio bet
+          </span>
+        );
+      case 'earn':
+        return (
+          <span>
+            {userPrefix}<strong>{username}</strong> generated opinion: <em>"{opinionText?.slice(0, 40)}..."</em> and earned <strong>${amount}</strong>
           </span>
         );
       case 'generate':
@@ -268,7 +341,7 @@ export default function FeedPage() {
       case 'bets':
         return activities.filter(a => a.type === 'bet_place' || a.type === 'bet_win' || a.type === 'bet_loss');
       case 'generates':
-        return activities.filter(a => a.type === 'generate');
+        return activities.filter(a => a.type === 'generate' || a.type === 'earn');
       default:
         return activities;
     }
@@ -284,7 +357,7 @@ export default function FeedPage() {
       case 'bets':
         return activityFeed.filter(a => a.type.includes('bet')).length;
       case 'generates':
-        return activityFeed.filter(a => a.type === 'generate').length;
+        return activityFeed.filter(a => a.type === 'generate' || a.type === 'earn').length;
       default:
         return 0;
     }
@@ -295,12 +368,22 @@ export default function FeedPage() {
     return amount >= 0 ? styles.positive : styles.negative;
   };
 
+  // Force refresh activity feed
+  const forceRefreshFeed = () => {
+    console.log('🔄 Force refreshing activity feed...');
+    const newActivity = loadRealActivity();
+    setActivityFeed(newActivity);
+    setLastRefresh(Date.now());
+  };
+
   // Make addToGlobalFeed available globally for other components to use
   useEffect(() => {
     (window as any).addToGlobalFeed = addToGlobalFeed;
+    (window as any).forceRefreshFeed = forceRefreshFeed;
     
     return () => {
       delete (window as any).addToGlobalFeed;
+      delete (window as any).forceRefreshFeed;
     };
   }, []);
 
@@ -335,11 +418,14 @@ export default function FeedPage() {
       );
     }, 60000);
 
-    // Refresh activity every 10 seconds to pick up new activity
+    // Refresh activity every 5 seconds to pick up new bot activity
     const refreshInterval = setInterval(() => {
       const newActivity = loadRealActivity();
-      setActivityFeed(newActivity);
-    }, 10000);
+      if (newActivity.length !== activityFeed.length) {
+        console.log(`🔄 Activity update: ${newActivity.length} activities (was ${activityFeed.length})`);
+        setActivityFeed(newActivity);
+      }
+    }, 5000);
 
     return () => {
       clearInterval(interval);
@@ -348,6 +434,8 @@ export default function FeedPage() {
   }, [opinions, currentUser]);
 
   const filteredActivities = filterActivities(activityFeed);
+  const botActivityCount = activityFeed.filter(a => a.isBot).length;
+  const humanActivityCount = activityFeed.filter(a => !a.isBot).length;
 
   return (
     <div className="page-container">
@@ -361,11 +449,20 @@ export default function FeedPage() {
               📡 Live Trading Feed
             </h1>
             <p className={styles.headerSubtitle}>
-              Real-time marketplace activity from all traders & bots
+              Real-time marketplace activity from all traders & bots ({botActivityCount} bot, {humanActivityCount} human)
             </p>
           </div>
           
           <div className={styles.headerActions}>
+            {/* Refresh Button */}
+            <button 
+              onClick={forceRefreshFeed}
+              className="nav-button"
+              style={{ backgroundColor: '#8b5cf6' }}
+            >
+              🔄 Refresh
+            </button>
+
             {/* Generate Opinions Button */}
             <a href="/generate" className="nav-button generate">
               ✨ Generate Opinions
@@ -403,7 +500,7 @@ export default function FeedPage() {
           {/* Feed Header */}
           <div className={styles.feedHeader}>
             <div className={styles.liveIndicator}></div>
-            LIVE • {filteredActivities.length} Recent Activities • Updates every 10s
+            LIVE • {filteredActivities.length} Recent Activities • Last refresh: {new Date(lastRefresh).toLocaleTimeString()}
           </div>
 
           {/* Feed Content */}
@@ -411,15 +508,29 @@ export default function FeedPage() {
             {filteredActivities.length === 0 ? (
               <div className={styles.emptyFeed}>
                 <p>📭</p>
-                <p>No activity found. Start trading to see live activity!</p>
+                <p>No activity found matching your filter.</p>
                 <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>
-                  🤖 Enable bots from the homepage to see automated trading activity
+                  🤖 Enable bots from the admin panel to see automated trading activity
                 </p>
+                <button 
+                  onClick={forceRefreshFeed}
+                  style={{
+                    marginTop: '15px',
+                    padding: '8px 16px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔄 Force Refresh Feed
+                </button>
               </div>
             ) : (
               filteredActivities.map((activity, index) => {
                 const isUserActivity = activity.username === currentUser.username;
-                const isBotActivity = activity.username.includes('AI_') || activity.username.includes('Bot_');
+                const isBotActivity = activity.isBot;
                 
                 return (
                   <div 
@@ -493,6 +604,22 @@ export default function FeedPage() {
             <div className={styles.statLabel}>Total Volume</div>
           </div>
         </div>
+
+        {/* Bot Activity Status */}
+        {botActivityCount > 0 && (
+          <div style={{ 
+            marginTop: '20px', 
+            padding: '15px', 
+            backgroundColor: '#f0f9ff', 
+            border: '1px solid #e0f2fe', 
+            borderRadius: '8px',
+            textAlign: 'center'
+          }}>
+            <p style={{ margin: 0, color: '#0369a1' }}>
+              🤖 <strong>{botActivityCount}</strong> bot activities detected • Bots are actively trading!
+            </p>
+          </div>
+        )}
       </main>
     </div>
   );
