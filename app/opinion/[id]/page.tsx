@@ -205,22 +205,23 @@ export default function OpinionPage() {
     }
   };
 
-  // Enhanced pricing algorithm with smaller jumps to prevent arbitrage
+  // UPDATED: Enhanced pricing algorithm with ultra-micro movements (0.1% per purchase) - precise decimals
   const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10, volatility: number = 1): number => {
     const netDemand = timesPurchased - timesSold;
     
     let priceMultiplier;
     if (netDemand >= 0) {
-      // Smaller multiplier: 1.05 instead of 1.15 (5% vs 15% per purchase)
-      priceMultiplier = Math.pow(1.05, netDemand) * volatility;
+      // CHANGED: Ultra-micro multiplier: 1.001 (0.1% per purchase) to prevent arbitrage completely
+      priceMultiplier = Math.pow(1.001, netDemand) * volatility;
     } else {
-      // Slightly smaller decline: 0.95 instead of 0.9
-      priceMultiplier = Math.max(0.1, Math.pow(0.95, Math.abs(netDemand))) * volatility;
+      // CHANGED: Ultra-small decline: 0.999 (0.1% decrease per sale)
+      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand))) * volatility;
     }
     
     const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
     
-    return Math.round(calculatedPrice);
+    // Return precise decimal (rounded to 2 decimal places for currency)
+    return Math.round(calculatedPrice * 100) / 100;
   };
 
   // Calculate user's recent trading dominance
@@ -292,11 +293,12 @@ export default function OpinionPage() {
     return Math.min(penalty, 0.08);
   };
 
-  // Calculate sell price - Simple: always 95% of current market price
+  // Calculate sell price - Simple: always 95% of current market price (precise decimals)
   const calculateSellPrice = (currentMarketPrice: number, userPurchasePrice?: number): number => {
     // Always sell for 95% of current market price
-    // Anti-arbitrage is handled by smaller market price jumps instead
-    return Math.floor(currentMarketPrice * 0.95);
+    // Anti-arbitrage is handled by ultra-micro market price jumps (0.1%) instead
+    // Return precise decimal (rounded to 2 decimal places for currency)
+    return Math.round(currentMarketPrice * 0.95 * 100) / 100;
   };
 
   // Helper to get the user's purchase price for an opinion
@@ -448,7 +450,7 @@ export default function OpinionPage() {
       dailyVolume,
       manipulation_protection: manipulationProtection,
       priceHistory: [
-        ...currentData.priceHistory.slice(-19),
+        ...(currentData.priceHistory || []).slice(-19),
         { price: newPrice, timestamp: new Date().toISOString(), action }
       ]
     };
@@ -520,6 +522,35 @@ export default function OpinionPage() {
         // Check if expired
         if (currentTime > expirationTime) {
           updated = true;
+          
+          // HARSH PENALTY: User owes 100x current market price for expired shorts!
+          const penalty = Math.round(currentMarketData.currentPrice * 100 * 100) / 100; // 100x current price
+          
+          const updatedProfile = {
+            ...userProfile,
+            balance: userProfile.balance - penalty,
+            totalLosses: userProfile.totalLosses + penalty
+          };
+          setUserProfile(updatedProfile);
+          setToStorage('userProfile', updatedProfile);
+          
+          // Add penalty transaction
+          const penaltyTransaction: Transaction = {
+            id: Date.now().toString(),
+            type: 'short_loss',
+            shortId: short.id,
+            opinionText: short.opinionText.length > 50 ? short.opinionText.slice(0, 50) + '...' : short.opinionText,
+            amount: -penalty,
+            date: new Date().toLocaleDateString()
+          };
+          
+          const existingTransactions = getFromStorage('transactions', []);
+          const updatedTransactions = [penaltyTransaction, ...existingTransactions.slice(0, 9)];
+          setToStorage('transactions', updatedTransactions);
+          
+          setMessage(`💀 Short bet expired! Penalty: $${penalty.toFixed(2)} (100x current price of $${currentMarketData.currentPrice})`);
+          setTimeout(() => setMessage(''), 10000);
+          
           return { ...short, status: 'expired' as const };
         }
         
@@ -589,7 +620,7 @@ export default function OpinionPage() {
       return;
     }
     
-    const targetPrice = Math.round(currentPrice * (1 - shortSettings.targetDropPercentage / 100));
+    const targetPrice = Math.round((currentPrice * (1 - shortSettings.targetDropPercentage / 100)) * 100) / 100;
     const potentialWinnings = calculateShortWinnings(
       shortSettings.betAmount, 
       shortSettings.targetDropPercentage, 
@@ -840,21 +871,67 @@ export default function OpinionPage() {
     const oldPrice = currentPrice;
     setCurrentPrice(updatedMarketData.currentPrice);
     
-    // Update sell price based on user's purchase price (5% less than what they paid)
-    const userPurchasePrice = getUserPurchasePrice(opinion);
-    setSellPrice(calculateSellPrice(userPurchasePrice));
+    // Update sell price based on new market price (simple 95% calculation)
+    setSellPrice(calculateSellPrice(updatedMarketData.currentPrice));
     setTimesPurchased(updatedMarketData.timesPurchased);
     
-    setMessage(`Successfully purchased! Price: ${oldPrice} → ${updatedMarketData.currentPrice}. You can sell for: ${calculateSellPrice(currentPrice)}`);
+    setMessage(`Successfully purchased! Price: ${oldPrice} → ${updatedMarketData.currentPrice}. You can sell for: ${calculateSellPrice(updatedMarketData.currentPrice)}`);
     setTimeout(() => setMessage(''), 7000);
   };
 
   const sellOpinion = () => {
     if (!opinion || !alreadyOwned || ownedQuantity === 0) return;
 
-    // Get the actual sell price based on user's purchase price (5% less)
-    const userPurchasePrice = getUserPurchasePrice(opinion);
-    const actualSellPrice = calculateSellPrice(userPurchasePrice);
+    // Check if user has active short position - if so, they must buy units equal to target drop percentage
+    const activeShort = activeShorts.find(short => short.opinionText === opinion && short.status === 'active');
+    
+    if (activeShort) {
+      // User must buy units equal to their target drop percentage at current market price
+      const unitsToBuy = activeShort.targetDropPercentage; // e.g., 15% drop = must buy 15 units
+      const costPerUnit = currentPrice;
+      const totalPenaltyCost = Math.round(unitsToBuy * costPerUnit * 100) / 100;
+      
+      const updatedProfile = {
+        ...userProfile,
+        balance: userProfile.balance - totalPenaltyCost,
+        totalLosses: userProfile.totalLosses + totalPenaltyCost
+      };
+      setUserProfile(updatedProfile);
+      setToStorage('userProfile', updatedProfile);
+      
+      // Mark short as lost and add penalty transaction
+      const updatedShorts = activeShorts.map(short => 
+        short.id === activeShort.id ? { ...short, status: 'lost' as const } : short
+      );
+      setActiveShorts(updatedShorts);
+      
+      const allShorts = getFromStorage('shortPositions', []);
+      const updatedAllShorts = allShorts.map((short: ShortPosition) => 
+        short.id === activeShort.id ? { ...short, status: 'lost' as const } : short
+      );
+      setToStorage('shortPositions', updatedAllShorts);
+      
+      // Add penalty transaction
+      const penaltyTransaction: Transaction = {
+        id: Date.now().toString(),
+        type: 'short_loss',
+        shortId: activeShort.id,
+        opinionText: opinion.length > 50 ? opinion.slice(0, 50) + '...' : opinion,
+        amount: -totalPenaltyCost,
+        date: new Date().toLocaleDateString()
+      };
+      
+      const existingTransactions = getFromStorage('transactions', []);
+      setToStorage('transactions', [penaltyTransaction, ...existingTransactions.slice(0, 9)]);
+      
+      setHasActiveShort(false);
+      
+      setMessage(`⚠️ Short position cancelled! Must buy ${unitsToBuy} units at $${costPerUnit.toFixed(2)} each = $${totalPenaltyCost.toFixed(2)} penalty for early exit.`);
+      setTimeout(() => setMessage(''), 10000);
+    }
+
+    // Get the actual sell price based on current market price
+    const actualSellPrice = calculateSellPrice(currentPrice);
 
     const updatedMarketData = updateOpinionMarketDataRealistic(opinion, 'sell');
 
@@ -906,16 +983,21 @@ export default function OpinionPage() {
     
     // Update sell price for remaining shares (if any)
     if (newQuantity > 0) {
-      const remainingPurchasePrice = getUserPurchasePrice(opinion);
-      setSellPrice(calculateSellPrice(remainingPurchasePrice));
+      setSellPrice(calculateSellPrice(updatedMarketData.currentPrice));
     }
     setTimesSold(updatedMarketData.timesSold);
     
+    const userPurchasePrice = getUserPurchasePrice(opinion);
     const profitLoss = actualSellPrice - userPurchasePrice;
     const profitMessage = profitLoss > 0 ? `📈 Profit: +${profitLoss.toFixed(2)}` : profitLoss < 0 ? `📉 Loss: ${Math.abs(profitLoss).toFixed(2)}` : '📊 Break even';
     
-    setMessage(`Sold for ${actualSellPrice}! ${profitMessage} (Bought at ${userPurchasePrice}). Market: ${oldPrice} → ${updatedMarketData.currentPrice}`);
-    setTimeout(() => setMessage(''), 7000);
+    const baseMessage = `Sold for ${actualSellPrice}! ${profitMessage} (Bought at ${userPurchasePrice}). Market: ${oldPrice} → ${updatedMarketData.currentPrice}`;
+    
+    if (!activeShort) {
+      setMessage(baseMessage);
+      setTimeout(() => setMessage(''), 7000);
+    }
+    // If there was an active short, the penalty message was already set above
   };
 
   const getMarketTrend = () => {
@@ -1240,8 +1322,6 @@ export default function OpinionPage() {
                 <div className={styles.marketConditions}>
                   {(() => {
                     const userPurchasePrice = getUserPurchasePrice(opinion || '');
-                    const breakEvenPrice = Math.round(userPurchasePrice / 0.95);
-                    const isAtBreakEven = currentPrice >= breakEvenPrice;
                     
                     return (
                       <>
@@ -1250,10 +1330,10 @@ export default function OpinionPage() {
                         </p>
                         <p className={styles.liquidityInfo}>
                           {sellPrice > userPurchasePrice 
-                            ? `🎉 Profit potential: +${(sellPrice - userPurchasePrice).toFixed(2)}`
+                            ? `🎉 Profit potential: +$${(sellPrice - userPurchasePrice).toFixed(2)}`
                             : sellPrice === userPurchasePrice 
                             ? `📊 Break even - no profit or loss`
-                            : `📉 Loss: -${(userPurchasePrice - sellPrice).toFixed(2)} (5% transaction cost)`
+                            : `📉 Loss: -$${(userPurchasePrice - sellPrice).toFixed(2)} (5% transaction cost + small market moves)`
                           }
                         </p>
                       </>
@@ -1328,8 +1408,11 @@ export default function OpinionPage() {
               
               <div className={styles.modalContent}>
                 <p className={styles.shortExplanation}>
-                  Bet that this opinion's price will drop by your target percentage within the time limit. 
-                  Higher risk = higher potential rewards!
+                  ⚠️ <strong>EXTREME RISK:</strong> Bet that this opinion's price will drop by your target percentage within the time limit. 
+                  <br/><strong>PENALTIES:</strong> 
+                  <br/>• If time expires → owe 100x current market price!
+                  <br/>• If you sell shares early → must buy {shortSettings.targetDropPercentage} units at current price!
+                  <br/>• Only way to avoid penalties: reach target price in time!
                 </p>
                 
                 <div className={styles.shortSettings}>
@@ -1364,7 +1447,7 @@ export default function OpinionPage() {
                     />
                     <div className={styles.sliderValue}>
                       {shortSettings.targetDropPercentage}% 
-                      (${currentPrice} → ${Math.round(currentPrice * (1 - shortSettings.targetDropPercentage / 100))})
+                      (${currentPrice} → ${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)})
                     </div>
                   </div>
                   
@@ -1399,7 +1482,7 @@ export default function OpinionPage() {
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Target Price:</span>
-                      <span>${Math.round(currentPrice * (1 - shortSettings.targetDropPercentage / 100))}</span>
+                      <span>${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)}</span>
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Bet Amount:</span>
@@ -1414,6 +1497,18 @@ export default function OpinionPage() {
                     <div className={styles.summaryRow}>
                       <span>Multiplier:</span>
                       <span>{(calculateShortWinnings(shortSettings.betAmount, shortSettings.targetDropPercentage, shortSettings.timeLimit) / shortSettings.betAmount).toFixed(2)}x</span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Early Exit Penalty:</span>
+                      <span className={styles.penalty}>
+                        -${(shortSettings.targetDropPercentage * currentPrice).toFixed(2)} ({shortSettings.targetDropPercentage} units × ${currentPrice})
+                      </span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Expiration Penalty:</span>
+                      <span className={styles.penalty}>
+                        -${(currentPrice * 100).toFixed(2)} (100x current price)
+                      </span>
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Expires:</span>
@@ -1438,7 +1533,7 @@ export default function OpinionPage() {
                   >
                     {userProfile.balance < shortSettings.betAmount 
                       ? 'Insufficient Funds' 
-                      : `Place Short Bet ($${shortSettings.betAmount})`
+                      : `Place Short Bet (${shortSettings.betAmount})`
                     }
                   </button>
                 </div>
@@ -1456,24 +1551,25 @@ export default function OpinionPage() {
 
         {/* Enhanced Trading Info */}
         <div className={styles.tradingInfo}>
-          <p>💡 <strong>Sophisticated Trading System:</strong></p>
+          <p>💡 <strong>Ultra-Conservative Trading System with Extreme Short Risk:</strong></p>
           <div className={styles.tradingInfoGrid}>
             <div className={styles.tradingInfoSection}>
-              <strong>Smart Market Pricing:</strong>
+              <strong>Ultra-Micro Market Movements:</strong>
               <ul>
-                <li>Each purchase increases price by ~5% (was 15%)</li>
+                <li>Each purchase increases price by ~0.1% (prevents arbitrage completely)</li>
                 <li>Sell price = 95% of current market price</li>
-                <li>Smaller price jumps prevent instant arbitrage</li>
-                <li>Need multiple purchases to create meaningful profit opportunities</li>
+                <li>Ultra-tiny price jumps make instant arbitrage impossible</li>
+                <li>Need massive trading volume to create profit opportunities</li>
+                <li>Market movements are now 10x smaller than before</li>
               </ul>
             </div>
             <div className={styles.tradingInfoSection}>
-              <strong>Example Scenarios:</strong>
+              <strong>⚠️ SHORT POSITION PENALTIES:</strong>
               <ul>
-                <li>Buy $10 → Market $10.50 → Sell $9.97 (small loss)</li>
-                <li>Buy $10 → 3 more purchases → Market $11.58 → Sell $11.00 (profit!)</li>
-                <li>Requires genuine market activity to generate profits</li>
-                <li>Can't exploit single purchases for instant gains</li>
+                <li><strong>WIN:</strong> Target reached in time = earn potential winnings</li>
+                <li><strong>EARLY EXIT:</strong> Sell shares = buy X units at current price (X = target %)</li>
+                <li><strong>EXPIRE:</strong> Time runs out = pay 100x current market price!</li>
+                <li>Example: 20% drop bet, exit early at $15 = buy 20 units = $300 penalty</li>
               </ul>
             </div>
           </div>
