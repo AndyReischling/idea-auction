@@ -134,23 +134,33 @@ export default function FeedPage() {
     }
   };
 
-  // Get bot usernames for identification
-  const getBotUsernames = (): string[] => {
+  // FIXED: Get real bot usernames instead of generic names
+  const getBotUsernames = (): { [botId: string]: string } => {
     try {
       const bots = JSON.parse(localStorage.getItem('autonomousBots') || '[]');
-      return bots.map((bot: any) => bot.username);
+      const botMap: { [botId: string]: string } = {};
+      
+      bots.forEach((bot: any) => {
+        botMap[bot.id] = bot.username;
+      });
+      
+      return botMap;
     } catch {
-      return [];
+      return {};
     }
   };
 
   // Check if username is a bot
   const isBot = (username: string): boolean => {
-    const botUsernames = getBotUsernames();
+    const botMap = getBotUsernames();
+    const botUsernames = Object.values(botMap);
+    
     return botUsernames.includes(username) || 
-           username.includes('AI_') || 
            username.includes('Bot') || 
-           username.includes('bot_');
+           username.includes('Alpha') ||
+           username.includes('Beta') ||
+           username.includes('Gamma') ||
+           username.includes('The');
   };
 
   // Handle username click - navigate to users page with user filter
@@ -274,19 +284,21 @@ export default function FeedPage() {
     }
   };
 
-  // Load all real activity from various sources
+  // FIXED: Load all real activity with proper bot names and user activity
   const loadRealActivity = (): ActivityFeedItem[] => {
     const activities: ActivityFeedItem[] = [];
+    const botMap = getBotUsernames();
+
+    console.log(`🔍 Loading real activity... Bot map has ${Object.keys(botMap).length} bots`);
 
     try {
-      // 1. Load real bot transactions
+      // 1. Load REAL bot transactions with REAL bot names
       const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      console.log(`📊 Loading ${botTransactions.length} bot transactions`);
+      console.log(`📊 Found ${botTransactions.length} bot transactions`);
       
       botTransactions.forEach((transaction: any) => {
-        const botName = getBotUsernames().find(name => 
-          transaction.botId && transaction.botId.includes(name.replace(/[^a-zA-Z0-9]/g, ''))
-        ) || `Bot_${transaction.botId?.slice(-3) || 'Unknown'}`;
+        // FIXED: Get actual bot name from the bot map
+        const botName = botMap[transaction.botId] || `UnknownBot_${transaction.botId?.slice(-3)}`;
 
         let activityType = transaction.type;
         let amount = transaction.amount || 0;
@@ -298,30 +310,86 @@ export default function FeedPage() {
           amount = -Math.abs(amount); // Bets are expenses
         }
 
+        // Parse date properly
+        let timestamp: string;
+        if (transaction.date) {
+          // Handle both date formats
+          const parsedDate = new Date(transaction.date);
+          if (!isNaN(parsedDate.getTime())) {
+            timestamp = parsedDate.toISOString();
+          } else {
+            timestamp = new Date().toISOString();
+          }
+        } else {
+          timestamp = new Date().toISOString();
+        }
+
         activities.push({
-          id: transaction.id || `bot_${Date.now()}_${Math.random()}`,
+          id: transaction.id || `bot_${transaction.botId}_${Date.now()}_${Math.random()}`,
           type: activityType,
           username: botName,
           opinionText: opinionText,
           amount: amount,
-          timestamp: new Date(transaction.date || Date.now()).toISOString(),
-          relativeTime: getRelativeTime(new Date(transaction.date || Date.now()).toISOString()),
+          timestamp: timestamp,
+          relativeTime: getRelativeTime(timestamp),
           isBot: true
         });
+
+        console.log(`🤖 Added bot activity: ${botName} - ${activityType} - $${amount}`);
       });
 
-      // 2. Load short positions and their transactions
+      // 2. Load USER transactions (YOUR activity)
+      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      console.log(`👤 Found ${userTransactions.length} user transactions`);
+      
+      userTransactions.forEach((t: any) => {
+        // Parse date properly for user transactions
+        let timestamp: string;
+        if (t.date) {
+          const parsedDate = new Date(t.date);
+          if (!isNaN(parsedDate.getTime())) {
+            timestamp = parsedDate.toISOString();
+          } else {
+            timestamp = new Date().toISOString();
+          }
+        } else {
+          timestamp = new Date().toISOString();
+        }
+
+        // Don't add if already exists
+        const exists = activities.some(a => a.id === t.id);
+        if (!exists) {
+          activities.push({
+            id: t.id || `user_${Date.now()}_${Math.random()}`,
+            type: t.type,
+            username: currentUser.username,
+            opinionText: t.opinionText || t.description?.replace(/^(Bought|Sold|Generated) /, ''),
+            amount: t.amount,
+            timestamp: timestamp,
+            relativeTime: getRelativeTime(timestamp),
+            isBot: false
+          });
+
+          console.log(`👤 Added user activity: ${currentUser.username} - ${t.type} - $${t.amount}`);
+        }
+      });
+
+      // 3. Load short positions with proper user attribution
       const shortPositions = JSON.parse(localStorage.getItem('shortPositions') || '[]');
-      console.log(`📉 Loading ${shortPositions.length} short positions`);
+      console.log(`📉 Found ${shortPositions.length} short positions`);
       
       shortPositions.forEach((short: any) => {
+        // Determine if this is a bot or user short
+        const shortOwner = short.botId ? (botMap[short.botId] || `Bot_${short.botId}`) : currentUser.username;
+        const isShortBot = !!short.botId;
+
         // Add short placement activity
         const placementExists = activities.some(a => a.id === `short_place_${short.id}`);
         if (!placementExists) {
           activities.push({
             id: `short_place_${short.id}`,
             type: 'short_place',
-            username: currentUser.username, // Assuming user placed the short
+            username: shortOwner,
             opinionText: short.opinionText,
             opinionId: short.opinionId,
             amount: -short.betAmount,
@@ -334,7 +402,7 @@ export default function FeedPage() {
             },
             timestamp: new Date(short.createdDate).toISOString(),
             relativeTime: getRelativeTime(new Date(short.createdDate).toISOString()),
-            isBot: false
+            isBot: isShortBot
           });
         }
 
@@ -345,7 +413,7 @@ export default function FeedPage() {
             activities.push({
               id: `short_result_${short.id}`,
               type: short.status === 'won' ? 'short_win' : 'short_loss',
-              username: currentUser.username,
+              username: shortOwner,
               opinionText: short.opinionText,
               opinionId: short.opinionId,
               amount: short.status === 'won' ? short.potentialWinnings : -short.betAmount,
@@ -358,48 +426,20 @@ export default function FeedPage() {
               },
               timestamp: new Date().toISOString(),
               relativeTime: getRelativeTime(new Date().toISOString()),
-              isBot: false
+              isBot: isShortBot
             });
           }
         }
       });
 
-      // 3. Load from global activity feed (manual entries)
-      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
-      globalFeed.forEach((activity: any) => {
-        // Only add if not already added from bot transactions or shorts
-        const exists = activities.some(a => a.id === activity.id);
-        if (!exists) {
-          activities.push({
-            ...activity,
-            isBot: isBot(activity.username),
-            relativeTime: getRelativeTime(activity.timestamp)
-          });
-        }
-      });
-
-      // 4. Load user's personal transactions (including short transactions)
-      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-      userTransactions.forEach((t: any) => {
-        // Only add if not already in activities
-        const exists = activities.some(a => a.id === t.id);
-        if (!exists) {
-          activities.push({
-            id: t.id || `user_${Date.now()}_${Math.random()}`,
-            type: t.type,
-            username: currentUser.username,
-            opinionText: t.opinionText || t.description?.replace(/^(Bought|Sold|Generated) /, ''),
-            amount: t.amount,
-            timestamp: new Date(t.date || Date.now()).toISOString(),
-            relativeTime: getRelativeTime(new Date(t.date || Date.now()).toISOString()),
-            isBot: false
-          });
-        }
-      });
-
-      // 5. Load betting activity from advancedBets
+      // 4. Load betting activity with proper bot/user names
       const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      console.log(`🎲 Found ${bets.length} bets`);
+      
       bets.forEach((bet: any) => {
+        // Determine if bettor is a bot or user
+        const isBetBot = isBot(bet.bettor);
+        
         // Add bet placement activity
         const placeBetExists = activities.some(a => a.id === `bet_place_${bet.id}`);
         if (!placeBetExists) {
@@ -414,7 +454,7 @@ export default function FeedPage() {
             timeframe: bet.timeFrame,
             timestamp: new Date(bet.placedDate).toISOString(),
             relativeTime: getRelativeTime(new Date(bet.placedDate).toISOString()),
-            isBot: isBot(bet.bettor)
+            isBot: isBetBot
           });
         }
 
@@ -430,36 +470,56 @@ export default function FeedPage() {
               targetUser: bet.targetUser,
               timestamp: new Date().toISOString(),
               relativeTime: getRelativeTime(new Date().toISOString()),
-              isBot: isBot(bet.bettor)
+              isBot: isBetBot
             });
           }
         }
       });
 
-      // 6. If still no activity, show some demo data
+      // 5. Load from global activity feed (manual entries)
+      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      globalFeed.forEach((activity: any) => {
+        // Only add if not already added
+        const exists = activities.some(a => a.id === activity.id);
+        if (!exists) {
+          activities.push({
+            ...activity,
+            isBot: isBot(activity.username),
+            relativeTime: getRelativeTime(activity.timestamp)
+          });
+        }
+      });
+
+      // 6. ONLY add demo data if NO real data exists
       if (activities.length === 0) {
-        console.log('📝 No real activity found, generating demo data');
-        const demoBot = 'DemoBot_Alpha';
-        const now = new Date();
+        console.log('📝 No real activity found, bot system may not be running');
         
-        for (let i = 0; i < 5; i++) {
-          const timestamp = new Date(now.getTime() - (i * 10 * 60 * 1000)).toISOString(); // 10 min intervals
-          const opinionIndex = Math.floor(Math.random() * opinions.length);
-          const opinion = opinions[opinionIndex];
+        // Check if bot system is running
+        if (typeof window !== 'undefined' && (window as any).botSystem) {
+          const botSystem = (window as any).botSystem;
+          console.log('🤖 Bot system found. Status:', botSystem.isSystemRunning());
           
-          if (opinion) {
-            activities.push({
-              id: `demo_${i}`,
-              type: Math.random() > 0.5 ? 'buy' : 'sell',
-              username: demoBot,
-              opinionText: opinion.text,
-              amount: Math.random() > 0.5 ? -150 : 200,
-              timestamp,
-              relativeTime: getRelativeTime(timestamp),
-              isBot: true
-            });
+          if (!botSystem.isSystemRunning()) {
+            console.log('⚠️ Bot system is not running! Starting bots...');
+            try {
+              botSystem.startBots();
+            } catch (error) {
+              console.error('Error starting bots:', error);
+            }
           }
         }
+
+        // Add a helpful message instead of demo data
+        activities.push({
+          id: 'no_activity_message',
+          type: 'generate',
+          username: 'System',
+          opinionText: 'No trading activity detected. Bot system may be starting up...',
+          amount: 0,
+          timestamp: new Date().toISOString(),
+          relativeTime: getRelativeTime(new Date().toISOString()),
+          isBot: false
+        });
       }
 
     } catch (error) {
@@ -474,7 +534,11 @@ export default function FeedPage() {
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 100); // Keep only last 100 activities
 
-    console.log(`📈 Loaded ${uniqueActivities.length} unique activities (${uniqueActivities.filter(a => a.isBot).length} bot activities, ${uniqueActivities.filter(a => a.type.includes('short')).length} short activities)`);
+    console.log(`📈 Final result: ${uniqueActivities.length} unique activities`);
+    console.log(`🤖 Bot activities: ${uniqueActivities.filter(a => a.isBot).length}`);
+    console.log(`👤 User activities: ${uniqueActivities.filter(a => !a.isBot).length}`);
+    console.log(`📉 Short activities: ${uniqueActivities.filter(a => a.type.includes('short')).length}`);
+    
     return uniqueActivities;
   };
 
@@ -656,9 +720,36 @@ export default function FeedPage() {
   // Force refresh activity feed
   const forceRefreshFeed = () => {
     console.log('🔄 Force refreshing activity feed...');
+    
+    // Also force bot activity if available
+    if (typeof window !== 'undefined' && (window as any).forceBotActivity) {
+      console.log('🤖 Forcing bot activity...');
+      (window as any).forceBotActivity(5);
+    }
+    
     const newActivity = loadRealActivity();
     setActivityFeed(newActivity);
     setLastRefresh(Date.now());
+    
+    console.log(`✅ Feed refreshed: ${newActivity.length} activities loaded`);
+  };
+
+  // ENHANCED: Check and start bot system if needed
+  const ensureBotsRunning = () => {
+    if (typeof window !== 'undefined') {
+      if ((window as any).botSystem) {
+        const botSystem = (window as any).botSystem;
+        if (!botSystem.isSystemRunning()) {
+          console.log('🚀 Starting bot system...');
+          botSystem.startBots();
+          
+          // Force some immediate activity
+          setTimeout(() => {
+            botSystem.forceBotActivity(3);
+          }, 2000);
+        }
+      }
+    }
   };
 
   // Make addToGlobalFeed available globally for other components to use
@@ -686,6 +777,9 @@ export default function FeedPage() {
     if (storedProfile) {
       setCurrentUser(JSON.parse(storedProfile));
     }
+
+    // Ensure bots are running
+    ensureBotsRunning();
   }, []);
 
   useEffect(() => {
@@ -703,20 +797,25 @@ export default function FeedPage() {
       );
     }, 60000);
 
-    // Refresh activity every 5 seconds to pick up new bot activity
+    // ENHANCED: Refresh activity every 3 seconds and check for bots
     const refreshInterval = setInterval(() => {
       const newActivity = loadRealActivity();
       if (newActivity.length !== activityFeed.length) {
         console.log(`🔄 Activity update: ${newActivity.length} activities (was ${activityFeed.length})`);
         setActivityFeed(newActivity);
       }
-    }, 5000);
+      
+      // Ensure bots are still running
+      if (newActivity.length < 5) {
+        ensureBotsRunning();
+      }
+    }, 3000); // Check every 3 seconds
 
     return () => {
       clearInterval(interval);
       clearInterval(refreshInterval);
     };
-  }, [opinions, currentUser]);
+  }, [opinions, currentUser, activityFeed.length]); // Added activityFeed.length dependency
 
   const filteredActivities = filterActivities(activityFeed);
   const botActivityCount = activityFeed.filter(a => a.isBot).length;
@@ -747,6 +846,23 @@ export default function FeedPage() {
               style={{ backgroundColor: '#8b5cf6' }}
             >
               🔄 Refresh
+            </button>
+
+            {/* Start Bots Button */}
+            <button 
+              onClick={() => {
+                if (typeof window !== 'undefined' && (window as any).restartBots) {
+                  (window as any).restartBots();
+                  setTimeout(forceRefreshFeed, 3000);
+                } else {
+                  ensureBotsRunning();
+                  setTimeout(forceRefreshFeed, 2000);
+                }
+              }}
+              className="nav-button"
+              style={{ backgroundColor: '#10b981' }}
+            >
+              🤖 Start Bots
             </button>
 
             {/* Generate Opinions Button */}
@@ -797,12 +913,30 @@ export default function FeedPage() {
                 <p>📭</p>
                 <p>No activity found matching your filter.</p>
                 <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>
-                  🤖 Enable bots from the admin panel to see automated trading activity
+                  🤖 Bot system may be starting up. Click "Start Bots" to begin automated trading.
                 </p>
+                <button 
+                  onClick={() => {
+                    ensureBotsRunning();
+                    setTimeout(forceRefreshFeed, 2000);
+                  }}
+                  style={{
+                    marginTop: '15px',
+                    padding: '8px 16px',
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🤖 Start Bot System
+                </button>
                 <button 
                   onClick={forceRefreshFeed}
                   style={{
                     marginTop: '15px',
+                    marginLeft: '10px',
                     padding: '8px 16px',
                     backgroundColor: '#3b82f6',
                     color: 'white',
@@ -811,7 +945,7 @@ export default function FeedPage() {
                     cursor: 'pointer'
                   }}
                 >
-                  🔄 Force Refresh Feed
+                  🔄 Refresh Feed
                 </button>
               </div>
             ) : (
@@ -869,7 +1003,7 @@ export default function FeedPage() {
           </div>
         </div>
 
-        {/* Transaction Details Modal */}
+        {/* Transaction Details Modal - Using same modal from original */}
         {showTransactionModal && selectedTransaction && (
           <div 
             className={styles.modalOverlay}
@@ -961,135 +1095,6 @@ export default function FeedPage() {
                       <span>#{selectedTransaction.opinionId}</span>
                     </div>
                   )}
-
-                  {selectedTransaction.quantity && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Quantity:</span>
-                      <span>{selectedTransaction.quantity} {selectedTransaction.quantity === 1 ? 'share' : 'shares'}</span>
-                    </div>
-                  )}
-
-                  {selectedTransaction.price && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Price per Share:</span>
-                      <span>${selectedTransaction.price}</span>
-                    </div>
-                  )}
-
-                  {selectedTransaction.targetUser && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Target User:</span>
-                      <span 
-                        className={styles.clickableUsername}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUsernameClick(selectedTransaction.targetUser!, e);
-                          setShowTransactionModal(false);
-                        }}
-                        style={{ 
-                          color: '#3b82f6', 
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                      >
-                        {selectedTransaction.targetUser}
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedTransaction.betType && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Bet Direction:</span>
-                      <span>
-                        {selectedTransaction.betType === 'increase' ? '📈 Increase' : '📉 Decrease'} by {selectedTransaction.targetPercentage}%
-                      </span>
-                    </div>
-                  )}
-
-                  {selectedTransaction.timeframe && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Timeframe:</span>
-                      <span>{selectedTransaction.timeframe} days</span>
-                    </div>
-                  )}
-
-                  {/* Short-specific details */}
-                  {selectedTransaction.shortDetails && (
-                    <>
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Target Drop:</span>
-                        <span>{selectedTransaction.shortDetails.targetDropPercentage}%</span>
-                      </div>
-
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Starting Price:</span>
-                        <span>${selectedTransaction.shortDetails.startingPrice}</span>
-                      </div>
-
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Target Price:</span>
-                        <span>${selectedTransaction.shortDetails.targetPrice}</span>
-                      </div>
-
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Time Limit:</span>
-                        <span>{selectedTransaction.shortDetails.timeLimit} hours</span>
-                      </div>
-
-                      {selectedTransaction.additionalDetails?.shortProgress !== undefined && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Progress:</span>
-                          <span>
-                            {selectedTransaction.additionalDetails.shortProgress.toFixed(1)}% towards target
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {/* Additional Bet Details */}
-                  {selectedTransaction.additionalDetails && (
-                    <>
-                      {selectedTransaction.additionalDetails.multiplier && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Multiplier:</span>
-                          <span>{selectedTransaction.additionalDetails.multiplier}x</span>
-                        </div>
-                      )}
-
-                      {selectedTransaction.additionalDetails.potentialPayout && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Potential Payout:</span>
-                          <span className={styles.positive}>${selectedTransaction.additionalDetails.potentialPayout.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      {selectedTransaction.additionalDetails.volatilityRating && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Volatility:</span>
-                          <span className={`${styles.volatility} ${styles[selectedTransaction.additionalDetails.volatilityRating.toLowerCase()]}`}>
-                            {selectedTransaction.additionalDetails.volatilityRating}
-                          </span>
-                        </div>
-                      )}
-
-                      {selectedTransaction.additionalDetails.expiryDate && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Expires:</span>
-                          <span>{isClient ? new Date(selectedTransaction.additionalDetails.expiryDate).toLocaleString() : 'Loading...'}</span>
-                        </div>
-                      )}
-
-                      {selectedTransaction.additionalDetails.betStatus && (
-                        <div className={styles.detailRow}>
-                          <span className={styles.detailLabel}>Status:</span>
-                          <span className={`${styles.status} ${styles[selectedTransaction.additionalDetails.betStatus]}`}>
-                            {selectedTransaction.additionalDetails.betStatus.toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
 
                 {/* Action Buttons */}
@@ -1172,260 +1177,275 @@ export default function FeedPage() {
           </div>
         </div>
 
-        {/* Activity Status */}
+        {/* Enhanced Activity Status */}
         <div style={{ 
           marginTop: '20px', 
           padding: '15px', 
-          backgroundColor: '#f0f9ff', 
-          border: '1px solid #e0f2fe', 
+          backgroundColor: botActivityCount > 0 ? '#f0f9ff' : '#fef3c7', 
+          border: '1px solid ' + (botActivityCount > 0 ? '#e0f2fe' : '#fde68a'), 
           borderRadius: '8px',
           textAlign: 'center'
         }}>
-          <p style={{ margin: 0, color: '#0369a1' }}>
+          <p style={{ margin: 0, color: botActivityCount > 0 ? '#0369a1' : '#92400e' }}>
             🤖 <strong>{botActivityCount}</strong> bot activities • 
             👥 <strong>{humanActivityCount}</strong> human activities • 
             📉 <strong>{shortActivityCount}</strong> short positions
           </p>
           <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#64748b' }}>
-            Live feed updates automatically every 5 seconds
+            {botActivityCount > 0 ? 
+              'Live feed updates automatically every 3 seconds' : 
+              'No bot activity detected - click "Start Bots" above to begin trading'
+            }
           </p>
+          {botActivityCount === 0 && (
+            <button 
+              onClick={() => {
+                if (typeof window !== 'undefined' && (window as any).debugBots) {
+                  (window as any).debugBots();
+                }
+              }}
+              style={{
+                marginTop: '8px',
+                padding: '4px 12px',
+                backgroundColor: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              🔍 Debug Bot System
+            </button>
+          )}
         </div>
+
+        {/* Add custom styles for the new features */}
+        <style jsx>{`
+          .clickableUsername:hover {
+            opacity: 0.8;
+            text-decoration: underline !important;
+          }
+
+          .shortBadge {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+          }
+
+          .shortActivity {
+            border-left: 4px solid #f59e0b !important;
+          }
+
+          .shortTag {
+            padding: 2px 8px;
+            background: #fef3c7;
+            color: #92400e;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+          }
+
+          .transactionModal {
+            background: white;
+            border-radius: 16px;
+            padding: 0;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+          }
+
+          .modalHeader {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8fafc;
+            border-radius: 16px 16px 0 0;
+          }
+
+          .modalHeader h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            color: #1f2937;
+          }
+
+          .closeButton {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+          }
+
+          .closeButton:hover {
+            background: #e5e7eb;
+            color: #374151;
+          }
+
+          .modalContent {
+            padding: 24px;
+          }
+
+          .transactionHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #f3f4f6;
+          }
+
+          .transactionType {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+          }
+
+          .typeTag {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+
+          .typeTag.buy { background: #dcfce7; color: #166534; }
+          .typeTag.sell { background: #fef3c7; color: #92400e; }
+          .typeTag.bet_place { background: #ddd6fe; color: #6b21a8; }
+          .typeTag.bet_win { background: #dcfce7; color: #166534; }
+          .typeTag.bet_loss { background: #fecaca; color: #991b1b; }
+          .typeTag.short_place { background: #fef3c7; color: #92400e; }
+          .typeTag.short_win { background: #dcfce7; color: #166534; }
+          .typeTag.short_loss { background: #fecaca; color: #991b1b; }
+          .typeTag.earn, .typeTag.generate { background: #e0f2fe; color: #0c4a6e; }
+
+          .botTag {
+            padding: 2px 8px;
+            background: #f0f9ff;
+            color: #0369a1;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+          }
+
+          .transactionAmount {
+            font-size: 24px;
+            font-weight: 700;
+          }
+
+          .transactionDescription {
+            margin-bottom: 20px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+          }
+
+          .transactionDescription p {
+            margin: 0;
+            line-height: 1.6;
+            color: #374151;
+          }
+
+          .transactionDetails {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 24px;
+          }
+
+          .detailRow {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+          }
+
+          .detailRow:last-child {
+            border-bottom: none;
+          }
+
+          .detailLabel {
+            font-weight: 500;
+            color: #6b7280;
+            min-width: 120px;
+          }
+
+          .opinionText {
+            font-style: italic;
+            color: #374151;
+            max-width: 300px;
+            text-align: right;
+          }
+
+          .modalActions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+            flex-wrap: wrap;
+          }
+
+          .viewUserButton, .viewOpinionButton {
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+          }
+
+          .viewUserButton:hover, .viewOpinionButton:hover {
+            background: #2563eb;
+          }
+
+          .closeModalButton {
+            padding: 8px 16px;
+            background: #6b7280;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+          }
+
+          .closeModalButton:hover {
+            background: #4b5563;
+          }
+
+          .modalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+          }
+        `}</style>
       </main>
-
-      {/* Add custom styles for the new features */}
-      <style jsx>{`
-        .clickableUsername:hover {
-          opacity: 0.8;
-          text-decoration: underline !important;
-        }
-
-        .shortBadge {
-          background: #fef3c7;
-          color: #92400e;
-          padding: 2px 8px;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: 600;
-          margin-left: 8px;
-        }
-
-        .shortActivity {
-          border-left: 4px solid #f59e0b !important;
-        }
-
-        .shortTag {
-          padding: 2px 8px;
-          background: #fef3c7;
-          color: #92400e;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-
-        .transactionModal {
-          background: white;
-          border-radius: 16px;
-          padding: 0;
-          max-width: 600px;
-          width: 90%;
-          max-height: 80vh;
-          overflow-y: auto;
-          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-
-        .modalHeader {
-          padding: 20px 24px;
-          border-bottom: 1px solid #e5e7eb;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #f8fafc;
-          border-radius: 16px 16px 0 0;
-        }
-
-        .modalHeader h2 {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 600;
-          color: #1f2937;
-        }
-
-        .closeButton {
-          background: none;
-          border: none;
-          font-size: 24px;
-          cursor: pointer;
-          color: #6b7280;
-          padding: 4px;
-          border-radius: 4px;
-          transition: all 0.2s;
-        }
-
-        .closeButton:hover {
-          background: #e5e7eb;
-          color: #374151;
-        }
-
-        .modalContent {
-          padding: 24px;
-        }
-
-        .transactionHeader {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-          padding-bottom: 16px;
-          border-bottom: 1px solid #f3f4f6;
-        }
-
-        .transactionType {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-
-        .typeTag {
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .typeTag.buy { background: #dcfce7; color: #166534; }
-        .typeTag.sell { background: #fef3c7; color: #92400e; }
-        .typeTag.bet_place { background: #ddd6fe; color: #6b21a8; }
-        .typeTag.bet_win { background: #dcfce7; color: #166534; }
-        .typeTag.bet_loss { background: #fecaca; color: #991b1b; }
-        .typeTag.short_place { background: #fef3c7; color: #92400e; }
-        .typeTag.short_win { background: #dcfce7; color: #166534; }
-        .typeTag.short_loss { background: #fecaca; color: #991b1b; }
-        .typeTag.earn, .typeTag.generate { background: #e0f2fe; color: #0c4a6e; }
-
-        .botTag {
-          padding: 2px 8px;
-          background: #f0f9ff;
-          color: #0369a1;
-          border-radius: 12px;
-          font-size: 11px;
-          font-weight: 500;
-        }
-
-        .transactionAmount {
-          font-size: 24px;
-          font-weight: 700;
-        }
-
-        .transactionDescription {
-          margin-bottom: 20px;
-          padding: 16px;
-          background: #f8fafc;
-          border-radius: 8px;
-          border-left: 4px solid #3b82f6;
-        }
-
-        .transactionDescription p {
-          margin: 0;
-          line-height: 1.6;
-          color: #374151;
-        }
-
-        .transactionDetails {
-          display: grid;
-          gap: 12px;
-          margin-bottom: 24px;
-        }
-
-        .detailRow {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 8px 0;
-          border-bottom: 1px solid #f3f4f6;
-        }
-
-        .detailRow:last-child {
-          border-bottom: none;
-        }
-
-        .detailLabel {
-          font-weight: 500;
-          color: #6b7280;
-          min-width: 120px;
-        }
-
-        .opinionText {
-          font-style: italic;
-          color: #374151;
-          max-width: 300px;
-          text-align: right;
-        }
-
-        .volatility.high { color: #dc2626; }
-        .volatility.medium { color: #ea580c; }
-        .volatility.low { color: #16a34a; }
-
-        .status.active { color: #3b82f6; }
-        .status.won { color: #16a34a; }
-        .status.lost { color: #dc2626; }
-        .status.expired { color: #6b7280; }
-
-        .modalActions {
-          display: flex;
-          gap: 12px;
-          justify-content: flex-end;
-          padding-top: 16px;
-          border-top: 1px solid #e5e7eb;
-          flex-wrap: wrap;
-        }
-
-        .viewUserButton, .viewOpinionButton {
-          padding: 8px 16px;
-          background: #3b82f6;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-weight: 500;
-          transition: background 0.2s;
-        }
-
-        .viewUserButton:hover, .viewOpinionButton:hover {
-          background: #2563eb;
-        }
-
-        .closeModalButton {
-          padding: 8px 16px;
-          background: #6b7280;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-weight: 500;
-          transition: background 0.2s;
-        }
-
-        .closeModalButton:hover {
-          background: #4b5563;
-        }
-
-        .modalOverlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-      `}</style>
     </div>
   );
 }

@@ -583,7 +583,7 @@ export default function UserProfile() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {recentTransactions.map((transaction) => {
+              {recentTransactions.map((transaction, index) => {
                 let activityText = '';
                 let emoji = '';
                 
@@ -617,23 +617,23 @@ export default function UserProfile() {
                     activityText = 'Transaction';
                 }
                 
-                return (
-                  <div key={transaction.id} className="card">
-                    <div className="card-header">
-                      <div className="card-content">
-                        <p>
-                          {emoji} {activityText}
-                        </p>
-                        <p className="card-subtitle">
-                          {transaction.opinionText || 'Opinion activity'} • {transaction.date}
-                        </p>
-                      </div>
-                      <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
-                        {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
-                      </span>
-                    </div>
-                  </div>
-                );
+return (
+  <div key={`transaction-${index}-${transaction.id}`} className="card">
+    <div className="card-header">
+      <div className="card-content">
+        <p>
+          {emoji} {activityText}
+        </p>
+        <p className="card-subtitle">
+          {transaction.opinionText || 'Opinion activity'} • {transaction.date}
+        </p>
+      </div>
+      <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
+        {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
+      </span>
+    </div>
+  </div>
+);
               })}
             </div>
           )}

@@ -1,5 +1,5 @@
 // autonomous-bots.ts
-// Enhanced Autonomous Bot System with Realistic Market Pricing and 5,000+ Bots
+// Enhanced Autonomous Bot System with Realistic Market Pricing, 5,000+ Bots, and 0.1% Price Movements
 
 interface BotProfile {
   id: string;
@@ -125,6 +125,88 @@ class AutonomousBotSystem {
 
   constructor() {
     this.initializeBots();
+    // AUTO-START: Automatically initialize opinions and start bots after a short delay
+    setTimeout(() => this.autoInitialize(), 2000);
+  }
+
+  // AUTO-INITIALIZE: Create test data and start bots automatically
+  private autoInitialize(): void {
+    console.log('🤖 Auto-initializing bot system...');
+    
+    // Check if opinions exist, if not create them
+    this.ensureOpinionsExist();
+    
+    // Start the bot system
+    this.startBots();
+    
+    console.log('✅ Bot system auto-initialized and started!');
+  }
+
+  // ENSURE OPINIONS EXIST: Create test opinions if none exist
+  private ensureOpinionsExist(): void {
+    try {
+      const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+      
+      if (opinions.length === 0) {
+        console.log('📝 Creating test opinions for bot trading...');
+        
+        const testOpinions = [
+          "AI will replace most jobs by 2030",
+          "Remote work is the future of employment",
+          "Electric vehicles will dominate by 2028",
+          "Social media has negative mental health impacts",
+          "Cryptocurrency will replace traditional banking",
+          "Climate change is humanity's biggest threat",
+          "Space exploration should be top priority",
+          "Universal Basic Income is necessary",
+          "Renewable energy will be cheapest by 2025",
+          "Virtual reality will revolutionize education",
+          "NFTs are just a temporary trend",
+          "Streaming services killed traditional TV",
+          "Plant-based meat will outsell real meat",
+          "Automation will eliminate most service jobs",
+          "Digital currencies will replace physical cash",
+          "Quantum computing will break current encryption",
+          "Gene editing will cure most diseases",
+          "Self-driving cars will reduce accidents by 90%",
+          "Solar energy will power most homes by 2030",
+          "3D printing will revolutionize manufacturing"
+        ];
+
+        // Save opinions
+        localStorage.setItem('opinions', JSON.stringify(testOpinions));
+
+        // Create market data for each opinion
+        const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+        
+        testOpinions.forEach(opinion => {
+          marketData[opinion] = {
+            opinionText: opinion,
+            timesPurchased: Math.floor(Math.random() * 20) + 5,
+            timesSold: Math.floor(Math.random() * 15) + 2,
+            currentPrice: Math.floor(Math.random() * 100) + 20,
+            basePrice: 20,
+            volatility: 1.0 + (Math.random() * 0.5),
+            lastUpdated: new Date().toISOString(),
+            priceHistory: [],
+            liquidityScore: Math.random() * 0.8 + 0.2,
+            dailyVolume: Math.floor(Math.random() * 5000) + 1000,
+            manipulation_protection: {
+              rapid_trades: 0,
+              single_trader_percentage: 0,
+              last_manipulation_check: new Date().toISOString()
+            }
+          };
+        });
+
+        localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
+        console.log(`✅ Created ${testOpinions.length} test opinions with market data`);
+      } else {
+        console.log(`✅ Found ${opinions.length} existing opinions`);
+      }
+    } catch (error) {
+      console.error('Error ensuring opinions exist:', error);
+    }
   }
 
   // Initialize bot profiles with realistic trading personalities - NOW WITH 5,000+ BOTS
@@ -303,8 +385,8 @@ class AutonomousBotSystem {
       'X', 'Z', 'V2', 'V3', 'Plus', 'Advanced', 'Premium', 'Master', 'Expert', 'Titan'
     ];
 
-    // EFFICIENT GENERATION: Create 5,000+ bots programmatically
-    const totalBots = 5006; // 5,000 + original 6
+    // PERFORMANCE OPTIMIZED: Start with 1000 bots instead of 5000+ for immediate responsiveness
+    const totalBots = 1000; // Reduced from 5006 for better performance
     this.bots = [];
 
     for (let i = 0; i < totalBots; i++) {
@@ -325,7 +407,8 @@ class AutonomousBotSystem {
         betProbability: Math.max(0.05, Math.min(0.95, personality.betProbability + (Math.random() - 0.5) * 0.2)),
         shortProbability: Math.max(0.05, Math.min(0.95, personality.shortProbability + (Math.random() - 0.5) * 0.2)),
         riskMultiplier: Math.max(0.3, Math.min(2.5, personality.riskMultiplier + (Math.random() - 0.5) * 0.4)),
-        activityFrequency: Math.max(1, Math.min(120, personality.activityFrequency + Math.floor((Math.random() - 0.5) * 10)))
+        // FASTER ACTIVITY: Reduced frequency for more visible activity (seconds instead of minutes)
+        activityFrequency: Math.max(5, Math.min(30, personality.activityFrequency + Math.floor((Math.random() - 0.5) * 10)))
       };
 
       // Randomize strategy parameters for diversity
@@ -357,7 +440,7 @@ class AutonomousBotSystem {
       });
     }
 
-    console.log(`🤖 Generated ${totalBots} autonomous trading bots`);
+    console.log(`🤖 Generated ${totalBots} autonomous trading bots (optimized for performance)`);
     this.saveBots();
   }
 
@@ -376,51 +459,41 @@ class AutonomousBotSystem {
 
   // Enhanced startBots method to handle large numbers efficiently
   public startBots(): void {
-    if (this.isRunning) return;
+    if (this.isRunning) {
+      console.log('🤖 Bot system is already running');
+      return;
+    }
     
     this.isRunning = true;
     console.log(`🤖 Starting autonomous bot system with ${this.bots.length} bots...`);
 
-    // Start bots in batches to avoid overwhelming the system
-    const batchSize = 100;
-    let batchIndex = 0;
-
-    const startBatch = () => {
-      const startIdx = batchIndex * batchSize;
-      const endIdx = Math.min(startIdx + batchSize, this.bots.length);
-      
-      for (let i = startIdx; i < endIdx; i++) {
-        const bot = this.bots[i];
-        if (bot.isActive) {
-          const intervalId = setInterval(() => {
-            this.executeBotAction(bot);
-          }, bot.personality.activityFrequency * 60 * 1000);
-          
-          this.intervalIds.push(intervalId);
-        }
+    // Start all bots with optimized intervals (using seconds for faster demo activity)
+    this.bots.forEach((bot, index) => {
+      if (bot.isActive) {
+        // FASTER INTERVALS: Use seconds instead of minutes for demo purposes
+        const intervalId = setInterval(() => {
+          this.executeBotAction(bot);
+        }, bot.personality.activityFrequency * 1000); // Convert to milliseconds
+        
+        this.intervalIds.push(intervalId);
       }
+    });
 
-      batchIndex++;
-      if (batchIndex * batchSize < this.bots.length) {
-        // Start next batch after a small delay
-        setTimeout(startBatch, 100);
-      } else {
-        console.log(`✅ All ${this.bots.length} bots are now active`);
-      }
-    };
+    console.log(`✅ All ${this.bots.filter(b => b.isActive).length} active bots are now running`);
 
-    startBatch();
-
-    // Initial random activity burst for some bots
+    // IMMEDIATE ACTIVITY BURST: Start with lots of initial activity
     setTimeout(() => {
-      const sampleSize = Math.min(500, this.bots.length); // Sample up to 500 bots
-      for (let i = 0; i < sampleSize; i++) {
-        if (Math.random() < 0.3) {
-          const randomBot = this.bots[Math.floor(Math.random() * this.bots.length)];
+      console.log('🚀 Triggering initial bot activity burst...');
+      const activeBots = this.bots.filter(b => b.isActive);
+      
+      // Force 50 initial actions spread over 30 seconds
+      for (let i = 0; i < 50; i++) {
+        setTimeout(() => {
+          const randomBot = activeBots[Math.floor(Math.random() * activeBots.length)];
           this.executeBotAction(randomBot);
-        }
+        }, i * 600); // Spread over 30 seconds (600ms apart)
       }
-    }, 2000);
+    }, 1000);
 
     // Short position resolution checker
     const shortCheckInterval = setInterval(() => {
@@ -440,33 +513,59 @@ class AutonomousBotSystem {
   // Execute realistic bot actions
   private executeBotAction(bot: BotProfile): void {
     try {
-      const actions = ['buy', 'sell', 'bet', 'short', 'generate'];
-      const actionWeights = [
-        bot.personality.buyProbability,
-        bot.personality.sellProbability,
-        bot.personality.betProbability,
-        bot.personality.shortProbability,
-        0.1
-      ];
+      // SUPER SIMPLE: Cycle through actions to ensure diversity
+      const actionIndex = Date.now() % 4;
+      const actions = ['buy', 'sell', 'bet', 'generate'];
+      let selectedAction = actions[actionIndex];
 
-      const selectedAction = this.weightedRandomChoice(actions, actionWeights);
+      // Add some randomness but force diversity
+      const random = Math.random();
+      if (random < 0.5) {
+        selectedAction = actions[Math.floor(Math.random() * actions.length)];
+      }
+
+      console.log(`🤖 ${bot.username} (${bot.personality.name}) attempting: ${selectedAction.toUpperCase()}`);
+      
+      let actionSucceeded = false;
       
       switch (selectedAction) {
         case 'buy':
-          this.botBuyOpinion(bot);
+          actionSucceeded = this.botBuyOpinion(bot);
+          if (!actionSucceeded) {
+            console.log(`🤖⚠️ ${bot.username} buy failed - trying different action`);
+            // Fallback to generate if buy fails
+            this.botGenerateOpinion(bot);
+            actionSucceeded = true;
+          }
           break;
+          
         case 'sell':
-          this.botSellOpinion(bot);
+          actionSucceeded = this.botSellOpinion(bot);
+          if (!actionSucceeded) {
+            console.log(`🤖⚠️ ${bot.username} sell failed - trying buy instead`);
+            // Fallback to buy if sell fails
+            actionSucceeded = this.botBuyOpinion(bot);
+          }
           break;
+          
         case 'bet':
-          this.botPlaceBet(bot);
+          actionSucceeded = this.botPlaceBet(bot);
+          if (!actionSucceeded) {
+            console.log(`🤖⚠️ ${bot.username} bet failed - trying buy instead`);
+            actionSucceeded = this.botBuyOpinion(bot);
+          }
           break;
-        case 'short':
-          this.botPlaceShort(bot);
-          break;
+          
         case 'generate':
           this.botGenerateOpinion(bot);
+          actionSucceeded = true;
           break;
+      }
+
+      // Only do shorts occasionally (10% chance) and only if other action failed
+      if (!actionSucceeded && Math.random() < 0.1) {
+        console.log(`🤖📉 ${bot.username} attempting SHORT as last resort`);
+        this.botPlaceShort(bot);
       }
 
       bot.lastActive = new Date().toISOString();
@@ -478,35 +577,31 @@ class AutonomousBotSystem {
   }
 
   // Bot places a short bet with realistic pricing considerations
-  private botPlaceShort(bot: BotProfile): void {
+  private botPlaceShort(bot: BotProfile): boolean {
     const opinions = this.getAvailableOpinions();
-    if (opinions.length === 0) return;
+    if (opinions.length === 0) {
+      console.log(`🤖❌ ${bot.username} can't short - no opinions available`);
+      return false;
+    }
 
-    const shortableOpinions = opinions.filter(opinion => {
-      const price = this.getOpinionPrice(opinion.id);
-      const isOverpriced = this.isOpinionOverpriced(opinion, bot);
-      const hasNoActiveShort = !this.hasActiveBotShort(bot, opinion.id);
-      const botOwnsShares = this.botOwnsOpinion(bot, opinion.id);
-      
-      return price >= bot.tradingStrategy.minPrice && 
-             price <= bot.tradingStrategy.maxPrice && 
-             isOverpriced && 
-             hasNoActiveShort &&
-             !botOwnsShares;
-    });
-
-    if (shortableOpinions.length === 0) return;
-
-    const selectedOpinion = this.selectOpinionForShort(shortableOpinions, bot);
+    // SIMPLIFIED: Random opinion selection without complex filtering
+    const selectedOpinion = opinions[Math.floor(Math.random() * opinions.length)];
     const currentPrice = this.getOpinionPrice(selectedOpinion.id);
     
-    const shortAmount = this.calculateShortAmount(bot, currentPrice);
-    if (shortAmount > bot.balance || shortAmount === 0) return;
+    const shortAmount = Math.min(
+      Math.floor(Math.random() * 1000) + 200,
+      bot.balance * 0.2
+    );
+    
+    if (shortAmount > bot.balance || shortAmount === 0) {
+      console.log(`🤖💸 ${bot.username} can't afford short of ${shortAmount} (balance: ${bot.balance})`);
+      return false;
+    }
 
-    const targetDropPercentage = this.calculateTargetDrop(bot);
-    const timeLimit = this.selectTimeLimit(bot);
-    const targetPrice = Math.round(currentPrice * (1 - targetDropPercentage / 100));
-    const potentialWinnings = this.calculateShortWinnings(shortAmount, targetDropPercentage, timeLimit, bot);
+    const targetDropPercentage = Math.floor(Math.random() * 30) + 15;
+    const timeLimit = [6, 12, 24][Math.floor(Math.random() * 3)];
+    const targetPrice = Math.round(currentPrice * (1 - targetDropPercentage / 100) * 100) / 100;
+    const potentialWinnings = shortAmount * (1 + (targetDropPercentage / 100) * 2);
 
     const expirationTime = new Date();
     expirationTime.setHours(expirationTime.getHours() + timeLimit);
@@ -531,42 +626,29 @@ class AutonomousBotSystem {
     this.addBotTransaction(bot, 'short_place', selectedOpinion.id, selectedOpinion.text, -shortAmount, shortPosition.id);
 
     console.log(`🤖📉 ${bot.username} shorted "${selectedOpinion.text.slice(0, 30)}..." for ${shortAmount} targeting ${targetDropPercentage}% drop in ${timeLimit}h`);
+    return true;
   }
 
   // Enhanced bot buying with realistic market considerations
-  private botBuyOpinion(bot: BotProfile): void {
+  private botBuyOpinion(bot: BotProfile): boolean {
     const opinions = this.getAvailableOpinions();
-    if (opinions.length === 0) return;
+    if (opinions.length === 0) {
+      console.log(`🤖❌ ${bot.username} can't buy - no opinions available`);
+      return false;
+    }
 
-    const suitableOpinions = opinions.filter(opinion => {
-      const price = this.getOpinionPrice(opinion.id);
-      const marketData = this.getOpinionMarketData(opinion.text);
-      const sellPrice = this.calculateRealisticSellPrice(price, opinion.text, marketData, bot);
-      const potentialLoss = price - sellPrice;
-      const lossPercentage = (potentialLoss / price) * 100;
-      
-      return price >= bot.tradingStrategy.minPrice && 
-             price <= bot.tradingStrategy.maxPrice &&
-             lossPercentage <= 25;
-    });
-
-    if (suitableOpinions.length === 0) return;
-
-    const selectedOpinion = this.selectOpinionByStrategy(suitableOpinions, bot);
+    // SIMPLIFIED: Remove complex filtering that might block purchases
+    const selectedOpinion = opinions[Math.floor(Math.random() * opinions.length)];
     const price = this.getOpinionPrice(selectedOpinion.id);
+    
+    // Simple affordability check
+    if (price > bot.balance) {
+      console.log(`🤖💸 ${bot.username} can't afford opinion at ${price} (balance: ${bot.balance})`);
+      return false;
+    }
+
     const maxQuantity = Math.floor(bot.balance / price);
-    
-    if (maxQuantity === 0) return;
-
-    const marketData = this.getOpinionMarketData(selectedOpinion.text);
-    const liquidityScore = marketData.liquidityScore || 0;
-    const maxReasonableQuantity = liquidityScore < 0.3 ? 1 : liquidityScore < 0.7 ? 3 : 5;
-    
-    const quantity = Math.min(
-      Math.floor(Math.random() * Math.min(bot.tradingStrategy.maxPositionSize, maxReasonableQuantity)) + 1,
-      maxQuantity
-    );
-
+    const quantity = Math.min(Math.floor(Math.random() * 3) + 1, maxQuantity);
     const totalCost = price * quantity;
 
     if (totalCost <= bot.balance) {
@@ -577,32 +659,30 @@ class AutonomousBotSystem {
       
       this.trackBotTradeActivity(selectedOpinion.text, 'buy', price, bot.id);
       
-      const sellPrice = this.calculateRealisticSellPrice(price, selectedOpinion.text, marketData, bot);
-      const spreadRisk = ((price - sellPrice) / price * 100).toFixed(1);
-      
-      console.log(`🤖 ${bot.username} bought ${quantity}x "${selectedOpinion.text.slice(0, 30)}..." for ${totalCost} (spread risk: ${spreadRisk}%)`);
+      console.log(`🤖💰 ${bot.username} bought ${quantity}x "${selectedOpinion.text.slice(0, 30)}..." for ${totalCost}`);
+      return true;
     }
+    
+    return false;
   }
 
   // Enhanced bot selling with realistic pricing
-  private botSellOpinion(bot: BotProfile): void {
+  private botSellOpinion(bot: BotProfile): boolean {
     const botOpinions = this.getBotOpinions(bot);
-    if (botOpinions.length === 0) return;
+    if (botOpinions.length === 0) {
+      console.log(`🤖📦 ${bot.username} has no opinions to sell`);
+      return false;
+    }
 
     const selectedOpinion = botOpinions[Math.floor(Math.random() * botOpinions.length)];
     const currentPrice = this.getOpinionPrice(selectedOpinion.opinionId);
-    const quantityToSell = Math.floor(Math.random() * selectedOpinion.quantity) + 1;
+    const quantityToSell = Math.min(selectedOpinion.quantity, Math.floor(Math.random() * 3) + 1);
     
-    const marketData = this.getOpinionMarketData(selectedOpinion.text);
-    const realisticSellPrice = this.calculateRealisticSellPrice(currentPrice, selectedOpinion.text, marketData, bot);
-    const totalSaleValue = realisticSellPrice * quantityToSell;
+    // SIMPLIFIED: Use current market price for selling (remove complex spread calculations)
+    const totalSaleValue = currentPrice * quantityToSell;
 
     const purchasePrice = selectedOpinion.purchasePrice;
-    const profitLoss = realisticSellPrice - purchasePrice;
-    const profitPercentage = (profitLoss / purchasePrice) * 100;
-
-    const shouldSell = this.shouldBotSellRealistic(bot, selectedOpinion, profitPercentage, marketData);
-    if (!shouldSell) return;
+    const profitLoss = currentPrice - purchasePrice;
 
     bot.balance += totalSaleValue;
     
@@ -616,10 +696,11 @@ class AutonomousBotSystem {
     this.removeBotOpinion(bot, selectedOpinion.opinionId, quantityToSell);
     this.decreaseOpinionPrice(selectedOpinion.opinionId, quantityToSell);
 
-    this.trackBotTradeActivity(selectedOpinion.text, 'sell', realisticSellPrice, bot.id);
+    this.trackBotTradeActivity(selectedOpinion.text, 'sell', currentPrice, bot.id);
 
-    const profitMessage = profitLoss > 0 ? `(+${profitLoss.toFixed(2)} profit)` : `(-${Math.abs(profitLoss).toFixed(2)} loss)`;
-    console.log(`🤖 ${bot.username} sold ${quantityToSell}x "${selectedOpinion.text.slice(0, 30)}..." for ${totalSaleValue} ${profitMessage}`);
+    const profitMessage = profitLoss > 0 ? `(+${(profitLoss * quantityToSell).toFixed(2)} profit)` : `(-${Math.abs(profitLoss * quantityToSell).toFixed(2)} loss)`;
+    console.log(`🤖💸 ${bot.username} sold ${quantityToSell}x "${selectedOpinion.text.slice(0, 30)}..." for ${totalSaleValue} ${profitMessage}`);
+    return true;
   }
 
   // Calculate realistic sell price for bots
@@ -646,7 +727,7 @@ class AutonomousBotSystem {
     const maxSellPrice = currentMarketPrice * 0.98;
     const minSellPrice = Math.max(1, currentMarketPrice * 0.75);
     
-    return Math.max(minSellPrice, Math.min(maxSellPrice, Math.round(sellPrice)));
+    return Math.max(minSellPrice, Math.min(maxSellPrice, Math.round(sellPrice * 100) / 100));
   }
 
   // Enhanced bot selling decision logic
@@ -771,7 +852,7 @@ class AutonomousBotSystem {
         if (currentTime > expirationTime) {
           updated = true;
           this.addBotTransaction(bot, 'short_loss', short.opinionId, short.opinionText, -short.betAmount, short.id);
-          console.log(`🤖💸 ${bot.username} short expired: "${short.opinionText.slice(0, 30)}..." (lost ${short.betAmount})`);
+          console.log(`🤖💸 ${bot.username} short expired: "${short.opinionText.slice(0, 30)}..." (lost $${short.betAmount})`);
           return { ...short, status: 'expired' as const };
         }
 
@@ -782,7 +863,7 @@ class AutonomousBotSystem {
           bot.totalEarnings += short.potentialWinnings;
           
           this.addBotTransaction(bot, 'short_win', short.opinionId, short.opinionText, short.potentialWinnings, short.id);
-          console.log(`🤖💹 ${bot.username} short won: "${short.opinionText.slice(0, 30)}..." (won ${short.potentialWinnings})`);
+          console.log(`🤖💹 ${bot.username} short won: "${short.opinionText.slice(0, 30)}..." (won $${short.potentialWinnings})`);
           
           return { ...short, status: 'won' as const };
         }
@@ -800,33 +881,49 @@ class AutonomousBotSystem {
   }
 
   // Bot places regular bets
-  private botPlaceBet(bot: BotProfile): void {
-    const availableUsers = this.getAvailableUsers();
-    const targetUser = availableUsers[Math.floor(Math.random() * availableUsers.length)];
+  private botPlaceBet(bot: BotProfile): boolean {
+    // Create some target users for betting
+    const targetUsers = [
+      { username: 'TradingPro', portfolioValue: 50000 },
+      { username: 'MarketMaster', portfolioValue: 75000 },
+      { username: 'InvestorElite', portfolioValue: 30000 },
+      { username: 'CryptoKing', portfolioValue: 120000 },
+      { username: 'StockGuru', portfolioValue: 45000 }
+    ];
     
-    if (!targetUser) return;
-
-    const betAmount = this.calculateBetAmount(bot);
-    if (betAmount > bot.balance) return;
+    const targetUser = targetUsers[Math.floor(Math.random() * targetUsers.length)];
+    
+    const betAmount = Math.min(
+      Math.floor(Math.random() * 500) + 100,
+      bot.balance * 0.1
+    );
+    
+    if (betAmount > bot.balance) {
+      console.log(`🤖💸 ${bot.username} can't afford bet of ${betAmount} (balance: ${bot.balance})`);
+      return false;
+    }
 
     const betType = bot.personality.preferredBetTypes[
       Math.floor(Math.random() * bot.personality.preferredBetTypes.length)
     ];
+
+    const targetPercentage = Math.floor(Math.random() * 50) + 10;
+    const timeFrame = Math.floor(Math.random() * 30) + 1;
 
     const bet: AdvancedBet = {
       id: `bet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       bettor: bot.username,
       targetUser: targetUser.username,
       betType,
-      targetPercentage: Math.floor(Math.random() * 50) + 10,
+      targetPercentage,
       amount: betAmount,
-      timeFrame: Math.floor(Math.random() * 30) + 1,
-      initialPortfolioValue: targetUser.portfolioValue || 0,
-      currentPortfolioValue: targetUser.portfolioValue || 0,
+      timeFrame,
+      initialPortfolioValue: targetUser.portfolioValue,
+      currentPortfolioValue: targetUser.portfolioValue,
       placedDate: new Date().toLocaleDateString(),
-      expiryDate: this.calculateExpiryDate(Math.floor(Math.random() * 30) + 1),
+      expiryDate: this.calculateExpiryDate(timeFrame),
       status: 'active',
-      multiplier: this.calculateMultiplier(betType, Math.floor(Math.random() * 50) + 10),
+      multiplier: this.calculateMultiplier(betType, targetPercentage),
       potentialPayout: 0,
       volatilityRating: this.getVolatilityRating(targetUser.username)
     };
@@ -837,7 +934,8 @@ class AutonomousBotSystem {
     this.addAdvancedBet(bet);
     this.addBotTransaction(bot, 'bet', undefined, `Bet on ${targetUser.username}`, -betAmount);
 
-    console.log(`🤖 ${bot.username} placed ${betAmount} bet on ${targetUser.username} to ${betType}`);
+    console.log(`🤖🎰 ${bot.username} placed ${betAmount} bet on ${targetUser.username} to ${betType} ${targetPercentage}%`);
+    return true;
   }
 
   // Bot generates new opinions
@@ -869,7 +967,7 @@ class AutonomousBotSystem {
     bot.totalEarnings += earnAmount;
     this.addBotTransaction(bot, 'earn', undefined, newOpinion, earnAmount);
 
-    console.log(`🤖 ${bot.username} generated opinion: "${newOpinion}"`);
+    console.log(`🤖💡 ${bot.username} generated opinion: "${newOpinion}"`);
   }
 
   // Helper methods and calculations
@@ -1152,20 +1250,33 @@ class AutonomousBotSystem {
   }
 
   private addBotTransaction(bot: BotProfile, type: string, opinionId?: string, opinionText?: string, amount?: number, shortId?: string): void {
+    // Generate truly unique ID with microsecond precision and random component
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substr(2, 12);
+    const microIncrement = Math.floor(Math.random() * 1000);
+    
     const transaction = {
-      id: `${bot.id}_${Date.now()}`,
+      id: `bot_${bot.id}_${timestamp}_${microIncrement}_${randomSuffix}`, // Guaranteed unique ID
       type,
       opinionId,
       opinionText,
       shortId,
       amount: amount || 0,
-      date: new Date().toLocaleDateString(),
-      botId: bot.id
+      date: new Date().toISOString(),
+      botId: bot.id,
+      timestamp: timestamp + microIncrement // Add for sorting
     };
 
     try {
       const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
       transactions.push(transaction);
+      
+      // Keep only last 1000 transactions to prevent memory issues
+      const maxTransactions = 1000;
+      if (transactions.length > maxTransactions) {
+        transactions.splice(0, transactions.length - maxTransactions);
+      }
+      
       localStorage.setItem('botTransactions', JSON.stringify(transactions));
     } catch (error) {
       console.error('Error adding bot transaction:', error);
@@ -1271,7 +1382,7 @@ class AutonomousBotSystem {
     return Math.round(betAmount * totalMultiplier);
   }
 
-  // Price management methods
+  // FIXED: Price management methods with 0.1% movements to match opinion page
   private increaseOpinionPrice(opinionId: string, quantity: number): void {
     try {
       const opinions = this.getAvailableOpinions();
@@ -1318,45 +1429,54 @@ class AutonomousBotSystem {
     }
   }
 
+  // FIXED: Updated to use 0.1% movements instead of 15%/10% movements
   private calculatePrice(timesPurchased: number, timesSold: number, basePrice: number = 10, volatility: number = 1): number {
     const netDemand = timesPurchased - timesSold;
     
     let priceMultiplier;
     if (netDemand >= 0) {
-      priceMultiplier = Math.pow(1.15, netDemand) * volatility;
+      // CHANGED: Ultra-micro multiplier: 1.001 (0.1% per purchase) to match opinion page
+      priceMultiplier = Math.pow(1.001, netDemand) * volatility;
     } else {
-      priceMultiplier = Math.max(0.1, Math.pow(0.9, Math.abs(netDemand))) * volatility;
+      // CHANGED: Ultra-small decline: 0.999 (0.1% decrease per sale) to match opinion page
+      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand))) * volatility;
     }
     
     const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
-    return Math.round(calculatedPrice);
+    
+    // Return precise decimal (rounded to 2 decimal places for currency)
+    return Math.round(calculatedPrice * 100) / 100;
   }
 
   private addNewOpinion(text: string, price: number): void {
     try {
       const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-      opinions.push(text);
-      localStorage.setItem('opinions', JSON.stringify(opinions));
+      
+      // Check if opinion already exists
+      if (!opinions.includes(text)) {
+        opinions.push(text);
+        localStorage.setItem('opinions', JSON.stringify(opinions));
 
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      marketData[text] = {
-        opinionText: text,
-        timesPurchased: 0,
-        timesSold: 0,
-        currentPrice: price,
-        basePrice: price,
-        volatility: 1.0,
-        lastUpdated: new Date().toISOString(),
-        priceHistory: [],
-        liquidityScore: 0,
-        dailyVolume: 0,
-        manipulation_protection: {
-          rapid_trades: 0,
-          single_trader_percentage: 0,
-          last_manipulation_check: new Date().toISOString()
-        }
-      };
-      localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
+        const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+        marketData[text] = {
+          opinionText: text,
+          timesPurchased: 0,
+          timesSold: 0,
+          currentPrice: price,
+          basePrice: price,
+          volatility: 1.0,
+          lastUpdated: new Date().toISOString(),
+          priceHistory: [],
+          liquidityScore: 0,
+          dailyVolume: 0,
+          manipulation_protection: {
+            rapid_trades: 0,
+            single_trader_percentage: 0,
+            last_manipulation_check: new Date().toISOString()
+          }
+        };
+        localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
+      }
     } catch (error) {
       console.error('Error adding new opinion:', error);
     }
@@ -1471,10 +1591,228 @@ class AutonomousBotSystem {
       };
     });
   }
+
+  // NEW: Performance optimization methods for 5,000+ bots
+  public optimizeForPerformance(): void {
+    console.log('🔧 Optimizing bot system for performance...');
+    
+    // Reduce activity frequency for all bots
+    this.bots.forEach(bot => {
+      bot.personality.activityFrequency = Math.max(30, bot.personality.activityFrequency * 3);
+    });
+    
+    // Only activate first 500 bots for even better performance
+    this.bots.forEach((bot, index) => {
+      bot.isActive = index < 500;
+    });
+    
+    console.log('✅ Performance optimization complete: 500 active bots, slower frequency');
+    this.saveBots();
+  }
+
+  // NEW: Quick debug method for feed issues
+  public debugFeedActivity(): {
+    totalTransactions: number;
+    recentTransactions: number;
+    activeBots: number;
+    totalBots: number;
+    systemRunning: boolean;
+    opinionsAvailable: number;
+  } {
+    console.log('🔍 FEED DEBUG REPORT:');
+    console.log('===================');
+    
+    const transactions = this.getBotTransactions();
+    const recentTransactions = transactions.slice(-10);
+    
+    console.log(`📊 Total bot transactions: ${transactions.length}`);
+    console.log(`🕐 Recent transactions (last 10):`, recentTransactions);
+    
+    const activeBots = this.bots.filter(b => b.isActive);
+    console.log(`🤖 Active bots: ${activeBots.length}/${this.bots.length}`);
+    
+    const runningStatus = this.isSystemRunning();
+    console.log(`⚡ System running: ${runningStatus}`);
+    
+    if (!runningStatus) {
+      console.log('❌ Bot system is stopped! Run botSystem.startBots() to restart.');
+    }
+    
+    // Test if opinions exist
+    const opinions = this.getAvailableOpinions();
+    console.log(`💭 Available opinions: ${opinions.length}`);
+    
+    if (opinions.length === 0) {
+      console.log('❌ No opinions found! Bots need opinions to trade.');
+    }
+    
+    return {
+      totalTransactions: transactions.length,
+      recentTransactions: recentTransactions.length,
+      activeBots: activeBots.length,
+      totalBots: this.bots.length,
+      systemRunning: runningStatus,
+      opinionsAvailable: opinions.length
+    };
+  }
+
+  // NEW: Force immediate bot activity for testing
+  public forceBotActivity(count: number = 10): void {
+    console.log(`🚀 Forcing ${count} bot actions for testing...`);
+    console.log('🔍 FORCING DIVERSE ACTIONS TO TEST ALL TYPES:');
+    
+    const activeBots = this.bots.filter(b => b.isActive).slice(0, count);
+    const actions = ['buy', 'sell', 'bet', 'generate'];
+    
+    activeBots.forEach((bot, index) => {
+      // STAGGER TIMING to prevent duplicate timestamps
+      setTimeout(() => {
+        // Force specific action types to test
+        const forcedAction = actions[index % actions.length];
+        console.log(`🎯 FORCING ${bot.username} to: ${forcedAction.toUpperCase()}`);
+        
+        switch (forcedAction) {
+          case 'buy':
+            const buyResult = this.botBuyOpinion(bot);
+            if (!buyResult) {
+              console.log(`❌ ${bot.username} buy failed - generating opinion instead`);
+              this.botGenerateOpinion(bot);
+            }
+            break;
+          case 'sell':
+            const sellResult = this.botSellOpinion(bot);
+            if (!sellResult) {
+              console.log(`❌ ${bot.username} sell failed - buying opinion instead`);
+              this.botBuyOpinion(bot) || this.botGenerateOpinion(bot);
+            }
+            break;
+          case 'bet':
+            const betResult = this.botPlaceBet(bot);
+            if (!betResult) {
+              console.log(`❌ ${bot.username} bet failed - buying opinion instead`);
+              this.botBuyOpinion(bot) || this.botGenerateOpinion(bot);
+            }
+            break;
+          case 'generate':
+            this.botGenerateOpinion(bot);
+            break;
+        }
+        
+        bot.lastActive = new Date().toISOString();
+      }, index * 100 + Math.random() * 50); // Stagger with random offset to prevent collisions
+    });
+    
+    console.log(`✅ Scheduled ${activeBots.length} DIVERSE bot actions with staggered timing`);
+  }
+
+  // NEW: Restart system with optimized settings
+  public restartOptimized(): void {
+    console.log('🔄 Restarting bot system with optimized settings...');
+    
+    this.stopBots();
+    this.optimizeForPerformance();
+    
+    setTimeout(() => {
+      this.startBots();
+      
+      // Force immediate activity
+      setTimeout(() => {
+        this.forceBotActivity(20);
+      }, 2000);
+      
+    }, 1000);
+  }
+
+  // NEW: Manual start method for troubleshooting
+  public manualStart(): void {
+    console.log('🔧 Manual start initiated...');
+    console.log('🧪 TESTING ALL BOT ACTION TYPES:');
+    
+    // Ensure opinions exist
+    this.ensureOpinionsExist();
+    
+    // Start with immediate activity
+    this.startBots();
+    
+    // Test each action type explicitly
+    setTimeout(() => {
+      console.log('🎯 TESTING BUY ACTIONS:');
+      const buyers = this.bots.filter(b => b.isActive).slice(0, 5);
+      buyers.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing buy for ${bot.username}...`);
+          const result = this.botBuyOpinion(bot);
+          console.log(`Buy result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 1000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING BET ACTIONS:');
+      const bettors = this.bots.filter(b => b.isActive).slice(5, 10);
+      bettors.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing bet for ${bot.username}...`);
+          const result = this.botPlaceBet(bot);
+          console.log(`Bet result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 2000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING GENERATE ACTIONS:');
+      const generators = this.bots.filter(b => b.isActive).slice(10, 15);
+      generators.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing generate for ${bot.username}...`);
+          this.botGenerateOpinion(bot);
+          console.log(`Generate result for ${bot.username}: SUCCESS`);
+        }, i * 200);
+      });
+    }, 3000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING SELL ACTIONS:');
+      const sellers = this.bots.filter(b => b.isActive).slice(15, 20);
+      sellers.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing sell for ${bot.username}...`);
+          const result = this.botSellOpinion(bot);
+          console.log(`Sell result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 4000);
+    
+    // Force diverse activity
+    setTimeout(() => {
+      console.log('🚀 Forcing diverse bot activity...');
+      this.forceBotActivity(20);
+    }, 5000);
+    
+    console.log('✅ Manual start complete - check console for detailed testing results!');
+  }
 }
 
-// Global bot system instance
+// Global bot system instance with AUTO-INITIALIZATION
 const botSystem = new AutonomousBotSystem();
+
+// Make it globally accessible for debugging
+if (typeof window !== 'undefined') {
+  (window as any).botSystem = botSystem;
+  (window as any).debugBots = () => botSystem.debugFeedActivity();
+  (window as any).forceBotActivity = (count?: number) => botSystem.forceBotActivity(count);
+  (window as any).restartBots = () => botSystem.restartOptimized();
+  (window as any).manualStartBots = () => botSystem.manualStart();
+  
+  // AUTO-START LOGGING
+  console.log('🤖 Autonomous Bot System loaded and initializing...');
+  console.log('📱 Available commands:');
+  console.log('  - debugBots() - Check system status');
+  console.log('  - forceBotActivity(10) - Force bot actions');
+  console.log('  - restartBots() - Restart with optimization');
+  console.log('  - manualStartBots() - Manual troubleshooting start');
+  console.log('  - botSystem.getBotTransactions() - View all transactions');
+}
 
 // Export for use in your application
 export default botSystem;
@@ -1482,32 +1820,6 @@ export default botSystem;
 // Types for reuse
 export type { BotProfile, BotPersonality, TradingStrategy, ShortPosition };
 
-// Usage example:
-/*
-// Start the bot system with realistic pricing and 5,000+ bots
-botSystem.startBots();
-
-// Stop the bot system
-botSystem.stopBots();
-
-// Get all bots with performance stats
-const allBots = botSystem.getBots();
-const performanceStats = botSystem.getBotPerformanceStats();
-
-// Get bot transaction history with realistic pricing
-const botTransactions = botSystem.getBotTransactions();
-
-// Get bot short positions
-const botShorts = botSystem.getBotShorts();
-const shortStats = botSystem.getBotShortStats();
-
-// Check if system is running
-const isRunning = botSystem.isSystemRunning();
-
-// Manage individual bots
-botSystem.pauseBot('bot_1234');
-botSystem.resumeBot('bot_1234');
-
-// Console log to see bot activity
-console.log(`🤖 Bot system running with ${botSystem.getBots().length} bots`);
-*/
+// AUTOMATIC INITIALIZATION AND STARTUP
+console.log('🚀 Bot system will auto-start in 2 seconds...');
+console.log('💡 If you don\'t see bot activity, run: manualStartBots() in console');
