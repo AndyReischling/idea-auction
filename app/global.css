@@ -15,7 +15,7 @@
   --soft-red: #FF8282;
   --coral-bright: #ff5252;
   --soft-purple: #BFB6D7;
-  --accent-purple: #b794f6;
+  --accent-purple: #9F93C4;
   --soft-blue: #63b3ed;
   --soft-yellow: #FFD166;
   --soft-azure: #3A86FF;
@@ -84,6 +84,7 @@
   --spacing-8xl: 128px;
 
   /* Fonts */
+  --font-primary: 'Noto Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-opinion: 'Pirata One', 'Roboto', serif;
   --font-number: 'Newsreader', 'Roboto', sans-serif;
 }
@@ -116,50 +117,55 @@ a { color: inherit; text-decoration: none; }
   flex: 1;
   max-width: 1200px;
   margin: 0 auto;
+  margin-top: 95px;
 }
 
 /* 5️⃣  Header -------------------------------------------------------------- */
 .header-section {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: flex-end;
+  align-items: center;
   margin-bottom: 30px;
-  gap: 20px;
+  gap: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-primary);
+  position: fixed;
+  top: 0;
+  width: 100%;
+  max-width: 1200px;
+  background: var(--bg-card);
+  height: 95px;
+  z-index: 1000;
 }
 
 .user-header {
+  /* position: absolute; */
+  left:0;
   display: flex;
   align-items: center;
-  padding: 24px;
-  background: var(--lime-green);
-  border-radius: var(--radius-xl);
   flex: 1;
   max-width: 600px;
   transition: all var(--transition);
 }
 
-.user-header:hover {
-  background: var(--lime-bright);
-  transform: translateY(-2px);
-}
-
 .user-avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: var(--radius-lg);
+  width: 40px;
+  height: 40px;
   background: var(--bg-white);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--lime-green);
+  color: var(--accent-purple);
+  background: var(--soft-purple);
   font-size: var(--font-size-2xl);
   font-weight: 800;
   margin-right: 16px;
   border: 3px solid var(--bg-white);
 }
 
-.user-info h1 {
-  font-size: var(--font-size-3xl);
+.user-name {
+  display: flex !important;
+  gap: 8px;
+  font-size: var(--font-size-md);
   font-weight: 700;
   margin: 0 0 4px 0;
   color: var(--text-black);
@@ -167,16 +173,16 @@ a { color: inherit; text-decoration: none; }
 }
 
 .user-info p {
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-sm);
   margin: 2px 0;
   color: var(--text-black);
   line-height: 1.3;
   opacity: 0.8;
 }
-.user-info p:last-child { margin: 0; font-weight: 600; opacity: 1; }
+.user-info p:last-child { margin: 0; font-weight: 400; opacity: 1; }
 
 /* 6️⃣  Navigation ---------------------------------------------------------- */
-.navigation-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+.navigation-buttons { display: flex; gap: 0px; flex-wrap: wrap; padding: 24px 0; }
 
 .nav-button {
   padding: 0px 24px;
@@ -193,41 +199,77 @@ a { color: inherit; text-decoration: none; }
 .nav-button.traders   {  }
 .nav-button.feed      {  }
 .nav-button.generate  {  }
+.nav-button {
+  .admin{
+    padding: 12px 24px;}
+}
 
 /* 7️⃣  Cards --------------------------------------------------------------- */
 .card {
   padding: 20px;
   background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
   transition: all var(--transition);
+  background: none;
+  border-bottom: 1px solid lightgrey;
 }
+
+.card:last-child {
+  border-bottom: 1px solid var(--border-primary);
+}
+
 .card:hover {
-  border-color: var(--lime-green);
-  transform: translateY(-2px);
-  background: var(--bg-elevated);
+  background: #f9f9f9;
 }
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 12px;
+  gap: 0px;
 }
 .card-title    { font-size: var(--font-size-lg); font-weight: 700; margin: 0; }
 .card-subtitle { font-size: var(--font-size-sm); color: var(--text-tertiary); margin: 4px 0 0; }
 
-/* 8️⃣  Sections & grids ---------------------------------------------------- */
-.section { margin-bottom: 40px; }
-.section-title { font-size: var(--font-size-2xl); font-weight: 700; margin-bottom: 20px; }
+/* My Portfolio Card*/
+.p-grid{
+  border-top: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
+}
+.p-card{
+  border-left: 1px solid var(--border-primary);
+  background: white;
+}
+.p-card:hover{
+  background: var(--soft-purple);
+}
+.p-card-opinion-text{
+  font-family: var(--font-number);
+  margin: 0;
+}
+.p-card-header{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  font-size: var(--font-size-2xl);
+  /* border: 1px solid var(--border-primary); */
+  height: 100%;
+  background: var(--bg-card);
+  padding: 20px;
+}
 
-.grid       { display: grid; gap: 16px; }
+/* 8️⃣  Sections & grids ---------------------------------------------------- */
+/* .section { margin-bottom: 60px; } */
+.section-title { font-size: var(--font-size-xl); font-weight: 500; margin: 60px 0 20px 0 !important; border-top: 1px solid var(--border-primary); padding-top: 20px; color: var(--text-primary); }
+
+.grid       { display: grid; gap: 0px; }
 .grid-2     { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 .grid-3     { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
 .grid-4     { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 
 /* 9️⃣  Status colours ------------------------------------------------------ */
-.status-positive { color: var(--lime-green); }
+.status-positive { color: var(--emerald-green); }
 .status-negative { color: var(--coral-red); }
 .status-neutral  { color: var(--text-secondary); }
 
@@ -286,14 +328,11 @@ a { color: inherit; text-decoration: none; }
 .empty-state {
   padding: 40px 20px;
   text-align: center;
-  background: var(--bg-card);
-  border-radius: var(--radius-xl);
-  border: 2px solid var(--border-primary);
   color: var(--text-secondary);
 }
 .empty-state p { margin: 10px 0; font-size: var(--font-size-md); }
-.empty-state a { color: var(--lime-green); font-weight: 600; }
-.empty-state a:hover { text-decoration: underline; color: var(--lime-bright); }
+.empty-state a { color: var(--text-primary); font-weight: 600; }
+.empty-state a:hover { text-decoration: underline;}
 
 /* 14️⃣  Responsive tweaks -------------------------------------------------- */
 @media (max-width: 768px) {

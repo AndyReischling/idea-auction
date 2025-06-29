@@ -704,7 +704,7 @@ export default function UsersPage() {
           
           <div className={styles.headerActions}>
             <div className={styles.walletDisplay}>
-              <p>💰 Wallet</p>
+              <p>Wallet</p>
               <p>${currentUser.balance.toLocaleString()}</p>
             </div>
 
@@ -713,17 +713,17 @@ export default function UsersPage() {
               className="nav-button"
               style={{ backgroundColor: '#8b5cf6' }}
             >
-              🔄 Refresh
+              Refresh
             </button>
 
             <a href="/generate" className="nav-button generate">
-              ✨ Generate Opinions
+              Generate Opinions
             </a>
             <a href="/" className="nav-button traders">
-              👤 My Profile
+              My Profile
             </a>
             <a href="/feed" className="nav-button feed">
-              📡 Feed
+              Feed
             </a>
           </div>
         </div>

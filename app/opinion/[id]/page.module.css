@@ -63,7 +63,6 @@
 
 /* Main Opinion Card */
 .opinionCard {
-  margin-top: 95px;
   margin-bottom: var(--spacing-2xl);
   transition: all var(--transition);
   border-radius: var(--radius-xs);

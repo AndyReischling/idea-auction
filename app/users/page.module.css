@@ -5,8 +5,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
   gap: 1rem;
+  border-bottom: 1px solid var(--border-primary);
+  position: fixed;
+  top: 0;
+  width: 100%;
+  max-width: 1200px;
+  background: var(--bg-card);
+  z-index: 1000;
 }
 
 .headerTitle {
@@ -919,7 +925,11 @@
 
 /* Opinion Pricing */
 .opinionPricing {
-  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: left;
   min-width: 120px;
 }
 
@@ -930,7 +940,7 @@
 }
 
 .opinionPricing p:last-child {
-  font-weight: 700;
+  font-weight: 400;
   font-size: var(--font-size-base);
 }
 
