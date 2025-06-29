@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import styles from './page.module.css';
 
+// ... keeping all the interfaces the same ...
 interface UserProfile {
   username: string;
   balance: number;
@@ -44,6 +45,8 @@ interface Transaction {
   betId?: string;
   shortId?: string;
   amount: number;
+  price?: number;
+  quantity?: number;
   date: string;
 }
 
@@ -59,9 +62,8 @@ interface OpinionMarketData {
   timesSold: number;
   currentPrice: number;
   basePrice: number;
-  volatility: number;
   lastUpdated: string;
-  priceHistory: { price: number; timestamp: string; action: 'buy' | 'sell' }[];
+  priceHistory: { price: number; timestamp: string; action: 'buy' | 'sell' | 'create' }[];
   liquidityScore: number;
   dailyVolume: number;
   manipulation_protection: {
@@ -91,7 +93,7 @@ export default function OpinionPage() {
     totalLosses: 0
   });
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
-  const [currentPrice, setCurrentPrice] = useState<number>(10);
+  const [currentPrice, setCurrentPrice] = useState<number>(10.00);
   const [sellPrice, setSellPrice] = useState<number>(0);
   const [timesPurchased, setTimesPurchased] = useState<number>(0);
   const [timesSold, setTimesSold] = useState<number>(0);
@@ -99,19 +101,20 @@ export default function OpinionPage() {
   const [alreadyOwned, setAlreadyOwned] = useState<boolean>(false);
   const [ownedQuantity, setOwnedQuantity] = useState<number>(0);
   const [attribution, setAttribution] = useState<OpinionAttribution | null>(null);
+  const [isClient, setIsClient] = useState(false);
   
   // Short betting states
   const [showShortModal, setShowShortModal] = useState<boolean>(false);
   const [shortSettings, setShortSettings] = useState<ShortBetSettings>({
     betAmount: 100,
-    targetDropPercentage: 10,
+    targetDropPercentage: 25,
     timeLimit: 24
   });
   const [activeShorts, setActiveShorts] = useState<ShortPosition[]>([]);
   const [hasActiveShort, setHasActiveShort] = useState<boolean>(false);
 
-  // Helper function to safely access localStorage
-  const getFromStorage = (key: string, defaultValue: any = null) => {
+  // FIXED: Safe localStorage helpers to prevent SSR errors
+  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
     if (typeof window === 'undefined') return defaultValue;
     try {
       const item = localStorage.getItem(key);
@@ -122,8 +125,7 @@ export default function OpinionPage() {
     }
   };
 
-  // Helper function to safely set localStorage
-  const setToStorage = (key: string, value: any) => {
+  const safeSetToStorage = (key: string, value: any) => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -132,22 +134,36 @@ export default function OpinionPage() {
     }
   };
 
+  // Fix hydration by ensuring client-side only rendering
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   // Get attribution for an opinion
   const getOpinionAttribution = (opinionText: string, opinionIndex: number): OpinionAttribution => {
+    if (!isClient) {
+      return {
+        author: 'Anonymous',
+        isBot: false,
+        dateCreated: new Date().toLocaleDateString(),
+        source: 'user'
+      };
+    }
+
     try {
-      const attributions = getFromStorage('opinionAttributions', {});
+      const attributions = safeGetFromStorage('opinionAttributions', {});
       
       if (attributions[opinionText]) {
         return attributions[opinionText];
       }
       
-      const botTransactions = getFromStorage('botTransactions', []);
+      const botTransactions = safeGetFromStorage('botTransactions', []);
       const botGenerated = botTransactions.find((t: any) => 
         t.type === 'earn' && t.opinionText === opinionText
       );
       
       if (botGenerated) {
-        const bots = getFromStorage('autonomousBots', []);
+        const bots = safeGetFromStorage('autonomousBots', []);
         const bot = bots.find((b: any) => b.id === botGenerated.botId);
         
         return {
@@ -158,14 +174,14 @@ export default function OpinionPage() {
         };
       }
       
-      const transactions = getFromStorage('transactions', []);
+      const transactions = safeGetFromStorage('transactions', []);
       const aiGenerated = transactions.find((t: any) => 
         t.type === 'earn' && 
         (t.opinionText === opinionText || t.description?.includes(opinionText.slice(0, 30)))
       );
       
       if (aiGenerated) {
-        const currentUser = getFromStorage('userProfile', {});
+        const currentUser = safeGetFromStorage('userProfile', {});
         return {
           author: currentUser.username || 'OpinionTrader123',
           isBot: false,
@@ -174,7 +190,7 @@ export default function OpinionPage() {
         };
       }
       
-      const currentUser = getFromStorage('userProfile', {});
+      const currentUser = safeGetFromStorage('userProfile', {});
       return {
         author: currentUser.username || 'OpinionTrader123',
         isBot: false,
@@ -184,7 +200,7 @@ export default function OpinionPage() {
       
     } catch (error) {
       console.error('Error getting opinion attribution:', error);
-      const currentUser = getFromStorage('userProfile', {});
+      const currentUser = safeGetFromStorage('userProfile', {});
       return {
         author: currentUser.username || 'Anonymous',
         isBot: false,
@@ -196,38 +212,42 @@ export default function OpinionPage() {
 
   // Save attribution for an opinion
   const saveOpinionAttribution = (opinionText: string, attribution: OpinionAttribution) => {
+    if (!isClient) return;
+    
     try {
-      const attributions = getFromStorage('opinionAttributions', {});
+      const attributions = safeGetFromStorage('opinionAttributions', {});
       attributions[opinionText] = attribution;
-      setToStorage('opinionAttributions', attributions);
+      safeSetToStorage('opinionAttributions', attributions);
     } catch (error) {
       console.error('Error saving opinion attribution:', error);
     }
   };
 
-  // UPDATED: Enhanced pricing algorithm with ultra-micro movements (0.1% per purchase) - precise decimals
-  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10, volatility: number = 1): number => {
+  // UNIVERSAL PRICE CALCULATION - EXACT 0.1% movements (removed volatility)
+  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
     const netDemand = timesPurchased - timesSold;
     
     let priceMultiplier;
     if (netDemand >= 0) {
-      // CHANGED: Ultra-micro multiplier: 1.001 (0.1% per purchase) to prevent arbitrage completely
-      priceMultiplier = Math.pow(1.001, netDemand) * volatility;
+      // EXACT: 1.001 = 0.1% increase per purchase
+      priceMultiplier = Math.pow(1.001, netDemand);
     } else {
-      // CHANGED: Ultra-small decline: 0.999 (0.1% decrease per sale)
-      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand))) * volatility;
+      // EXACT: 0.999 = 0.1% decrease per sale
+      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
     }
     
     const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
     
-    // Return precise decimal (rounded to 2 decimal places for currency)
+    // CRITICAL: Always return exactly 2 decimal places
     return Math.round(calculatedPrice * 100) / 100;
   };
 
   // Calculate user's recent trading dominance
   const calculateUserDominance = (opinion: string, userTradeHistory?: any[]): number => {
+    if (!isClient) return 0;
+    
     try {
-      const recentTrades = getFromStorage('recentTradeActivity', {});
+      const recentTrades = safeGetFromStorage('recentTradeActivity', {});
       const opinionTrades = recentTrades[opinion] || [];
       const userTrades = opinionTrades.filter((trade: any) => trade.isCurrentUser);
       
@@ -239,8 +259,10 @@ export default function OpinionPage() {
 
   // Track rapid trading for manipulation detection
   const getRapidTradeCount = (opinion: string, timeWindowMinutes: number): number => {
+    if (!isClient) return 0;
+    
     try {
-      const rapidTrades = getFromStorage('rapidTrades', {});
+      const rapidTrades = safeGetFromStorage('rapidTrades', {});
       const opinionTrades = rapidTrades[opinion] || [];
       const cutoffTime = Date.now() - (timeWindowMinutes * 60 * 1000);
       
@@ -293,7 +315,7 @@ export default function OpinionPage() {
     return Math.min(penalty, 0.08);
   };
 
-  // Calculate sell price - Simple: always 95% of current market price (precise decimals)
+  // FIXED: Calculate sell price - Simple: always 95% of current market price (precise decimals)
   const calculateSellPrice = (currentMarketPrice: number, userPurchasePrice?: number): number => {
     // Always sell for 95% of current market price
     // Anti-arbitrage is handled by ultra-micro market price jumps (0.1%) instead
@@ -310,9 +332,11 @@ export default function OpinionPage() {
 
   // Track trade activity for manipulation detection
   const trackTradeActivity = (opinion: string, action: 'buy' | 'sell', price: number, isCurrentUser: boolean = true): void => {
+    if (!isClient) return;
+    
     try {
       // Track recent trade activity
-      const recentTrades = getFromStorage('recentTradeActivity', {});
+      const recentTrades = safeGetFromStorage('recentTradeActivity', {});
       if (!recentTrades[opinion]) recentTrades[opinion] = [];
       
       recentTrades[opinion].push({
@@ -324,10 +348,10 @@ export default function OpinionPage() {
       
       // Keep only last 20 trades per opinion
       recentTrades[opinion] = recentTrades[opinion].slice(-20);
-      setToStorage('recentTradeActivity', recentTrades);
+      safeSetToStorage('recentTradeActivity', recentTrades);
       
       // Track rapid trades
-      const rapidTrades = getFromStorage('rapidTrades', {});
+      const rapidTrades = safeGetFromStorage('rapidTrades', {});
       if (!rapidTrades[opinion]) rapidTrades[opinion] = [];
       
       rapidTrades[opinion].push(Date.now());
@@ -336,7 +360,7 @@ export default function OpinionPage() {
       const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
       rapidTrades[opinion] = rapidTrades[opinion].filter((timestamp: number) => timestamp > twoHoursAgo);
       
-      setToStorage('rapidTrades', rapidTrades);
+      safeSetToStorage('rapidTrades', rapidTrades);
     } catch (error) {
       console.error('Error tracking trade activity:', error);
     }
@@ -344,8 +368,10 @@ export default function OpinionPage() {
 
   // Calculate daily trading volume
   const calculateDailyVolume = (opinionText: string): number => {
+    if (!isClient) return 0;
+    
     try {
-      const marketData = getFromStorage('opinionMarketData', {});
+      const marketData = safeGetFromStorage('opinionMarketData', {});
       const data = marketData[opinionText];
       
       if (!data || !data.priceHistory) return 0;
@@ -361,49 +387,17 @@ export default function OpinionPage() {
     }
   };
 
-  // Calculate opinion volatility based on content
-  const calculateVolatility = (opinionText: string): number => {
-    const text = opinionText.toLowerCase();
-    let volatility = 1.0;
-    
-    if (text.includes('crypto') || text.includes('bitcoin') || text.includes('stock')) volatility += 0.5;
-    if (text.includes('controversial') || text.includes('hot take') || text.includes('unpopular')) volatility += 0.3;
-    if (text.includes('prediction') || text.includes('will') || text.includes('future')) volatility += 0.2;
-    if (text.includes('politics') || text.includes('election')) volatility += 0.4;
-    
-    if (text.includes('safe') || text.includes('boring') || text.includes('obvious')) volatility -= 0.2;
-    if (text.includes('traditional') || text.includes('conservative')) volatility -= 0.1;
-    
-    return Math.max(0.5, Math.min(2.0, volatility));
-  };
+  // REMOVED: calculateVolatility function - no longer needed
 
-  // Get market data for an opinion
+  // FIXED: Get market data for an opinion - GUARANTEED $10.00 start (removed volatility)
   const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
-    const marketData = getFromStorage('opinionMarketData', {});
-    
-    if (marketData[opinionText]) {
-      const data = marketData[opinionText];
-      return {
-        ...data,
-        liquidityScore: Math.min((data.timesPurchased + data.timesSold) / 20, 1),
-        dailyVolume: calculateDailyVolume(opinionText),
-        manipulation_protection: data.manipulation_protection || {
-          rapid_trades: 0,
-          single_trader_percentage: 0,
-          last_manipulation_check: new Date().toISOString()
-        }
-      };
-    } else {
-      const basePrice = 10;
-      const volatility = calculateVolatility(opinionText);
-      
+    if (!isClient) {
       return {
         opinionText,
         timesPurchased: 0,
         timesSold: 0,
-        currentPrice: basePrice,
-        basePrice,
-        volatility,
+        currentPrice: 10.00, // ALWAYS START AT $10.00
+        basePrice: 10.00,    // ALWAYS $10.00 BASE
         lastUpdated: new Date().toISOString(),
         priceHistory: [],
         liquidityScore: 0,
@@ -415,16 +409,82 @@ export default function OpinionPage() {
         }
       };
     }
+
+    const marketData = safeGetFromStorage('opinionMarketData', {});
+    
+    if (marketData[opinionText]) {
+      const data = marketData[opinionText];
+      
+      // CRITICAL FIX: Verify price consistency (removed volatility from calculation)
+      const expectedPrice = calculatePrice(data.timesPurchased, data.timesSold, data.basePrice || 10.00);
+      if (Math.abs(expectedPrice - data.currentPrice) > 0.01) {
+        console.warn(`Price inconsistency detected for "${opinionText}": Expected ${expectedPrice}, Got ${data.currentPrice}. Fixing...`);
+        data.currentPrice = expectedPrice;
+        marketData[opinionText] = data;
+        safeSetToStorage('opinionMarketData', marketData);
+      }
+      
+      // Ensure base price is always $10.00
+      if (data.basePrice !== 10.00) {
+        console.log(`🔧 FIXING BASE PRICE: "${opinionText.slice(0, 30)}..." - ${data.basePrice} → 10.00`);
+        data.basePrice = 10.00;
+        marketData[opinionText] = data;
+        safeSetToStorage('opinionMarketData', marketData);
+      }
+      
+      return {
+        ...data,
+        liquidityScore: Math.min((data.timesPurchased + data.timesSold) / 20, 1),
+        dailyVolume: calculateDailyVolume(opinionText),
+        manipulation_protection: data.manipulation_protection || {
+          rapid_trades: 0,
+          single_trader_percentage: 0,
+          last_manipulation_check: new Date().toISOString()
+        }
+      };
+    } else {
+      // CRITICAL FIX: Create new market data starting at EXACTLY $10.00 (removed volatility)
+      const basePrice = 10.00;
+      
+      const newMarketData: OpinionMarketData = {
+        opinionText,
+        timesPurchased: 0,
+        timesSold: 0,
+        currentPrice: 10.00, // EXACT $10.00 start
+        basePrice: 10.00,    // EXACT $10.00 base
+        lastUpdated: new Date().toISOString(),
+        priceHistory: [{ price: 10.00, timestamp: new Date().toISOString(), action: 'create' }],
+        liquidityScore: 0,
+        dailyVolume: 0,
+        manipulation_protection: {
+          rapid_trades: 0,
+          single_trader_percentage: 0,
+          last_manipulation_check: new Date().toISOString()
+        }
+      };
+      
+      // Save the new market data
+      marketData[opinionText] = newMarketData;
+      safeSetToStorage('opinionMarketData', newMarketData);
+      
+      console.log(`✅ Created market data for "${opinionText}" at exactly $10.00`);
+      
+      return newMarketData;
+    }
   };
 
-  // Update market data for an opinion with realistic tracking
+  // FIXED: Update market data for an opinion with realistic tracking (removed volatility)
   const updateOpinionMarketDataRealistic = (opinionText: string, action: 'buy' | 'sell'): OpinionMarketData => {
-    const marketData = getFromStorage('opinionMarketData', {});
+    if (!isClient) {
+      return getOpinionMarketData(opinionText);
+    }
+
+    const marketData = safeGetFromStorage('opinionMarketData', {});
     const currentData = getOpinionMarketData(opinionText);
     
     const newTimesPurchased = action === 'buy' ? currentData.timesPurchased + 1 : currentData.timesPurchased;
     const newTimesSold = action === 'sell' ? currentData.timesSold + 1 : currentData.timesSold;
-    const newPrice = calculatePrice(newTimesPurchased, newTimesSold, currentData.basePrice, currentData.volatility);
+    const newPrice = calculatePrice(newTimesPurchased, newTimesSold, currentData.basePrice);
     
     // Update liquidity score
     const totalVolume = newTimesPurchased + newTimesSold;
@@ -456,7 +516,7 @@ export default function OpinionPage() {
     };
     
     marketData[opinionText] = updatedData;
-    setToStorage('opinionMarketData', marketData);
+    safeSetToStorage('opinionMarketData', marketData);
     
     // Track this trade
     trackTradeActivity(opinionText, action, newPrice, true);
@@ -464,27 +524,42 @@ export default function OpinionPage() {
     return updatedData;
   };
 
-  // Calculate potential winnings for short bet
+  // Calculate potential winnings for short bet (enhanced for 1%-100% range)
   const calculateShortWinnings = (betAmount: number, targetDropPercentage: number, timeLimit: number): number => {
-    // Base multiplier based on drop percentage (higher drop = higher risk = higher reward)
-    const dropMultiplier = 1 + (targetDropPercentage / 100) * 2;
+    // Enhanced multiplier system for full 1%-100% range
+    let dropMultiplier;
+    
+    if (targetDropPercentage <= 5) {
+      // Very easy targets: 1-5% drops
+      dropMultiplier = 1 + (targetDropPercentage / 100) * 0.5; // Low multiplier
+    } else if (targetDropPercentage <= 20) {
+      // Easy-moderate targets: 6-20% drops
+      dropMultiplier = 1 + (targetDropPercentage / 100) * 1.5;
+    } else if (targetDropPercentage <= 50) {
+      // Moderate-hard targets: 21-50% drops
+      dropMultiplier = 1 + (targetDropPercentage / 100) * 3;
+    } else if (targetDropPercentage <= 80) {
+      // Very hard targets: 51-80% drops
+      dropMultiplier = 1 + (targetDropPercentage / 100) * 5;
+    } else {
+      // Extreme targets: 81-100% drops (price going near/to zero)
+      dropMultiplier = 1 + (targetDropPercentage / 100) * 10; // Massive multiplier
+    }
     
     // Time multiplier (shorter time = higher risk = higher reward)
     const timeMultiplier = timeLimit <= 6 ? 2.5 : timeLimit <= 12 ? 2.0 : timeLimit <= 24 ? 1.5 : 1.0;
     
-    // Market volatility factor (more volatile = easier to achieve drops)
-    const volatilityFactor = opinion ? calculateVolatility(opinion) : 1.0;
-    const volatilityMultiplier = 2.0 - (volatilityFactor - 0.5); // Lower volatility = higher multiplier
+    const totalMultiplier = dropMultiplier * timeMultiplier;
     
-    const totalMultiplier = dropMultiplier * timeMultiplier * volatilityMultiplier;
-    
-    return Math.round(betAmount * totalMultiplier);
+    return Math.round(betAmount * totalMultiplier * 100) / 100; // Ensure proper decimals
   };
 
   // Load short positions
   const loadShortPositions = () => {
+    if (!isClient) return;
+    
     try {
-      const storedShorts = getFromStorage('shortPositions', null);
+      const storedShorts = safeGetFromStorage('shortPositions', null);
       if (storedShorts) {
         const shorts = storedShorts as ShortPosition[];
         const activeShorts = shorts.filter(short => short.status === 'active');
@@ -503,10 +578,10 @@ export default function OpinionPage() {
 
   // Check and resolve expired/completed short positions
   const checkShortPositions = () => {
-    if (!opinion) return;
+    if (!opinion || !isClient) return;
     
     try {
-      const storedShorts = getFromStorage('shortPositions', null);
+      const storedShorts = safeGetFromStorage('shortPositions', null);
       if (!storedShorts) return;
       
       const shorts = storedShorts as ShortPosition[];
@@ -532,7 +607,7 @@ export default function OpinionPage() {
             totalLosses: userProfile.totalLosses + penalty
           };
           setUserProfile(updatedProfile);
-          setToStorage('userProfile', updatedProfile);
+          safeSetToStorage('userProfile', updatedProfile);
           
           // Add penalty transaction
           const penaltyTransaction: Transaction = {
@@ -544,11 +619,11 @@ export default function OpinionPage() {
             date: new Date().toLocaleDateString()
           };
           
-          const existingTransactions = getFromStorage('transactions', []);
+          const existingTransactions = safeGetFromStorage('transactions', []);
           const updatedTransactions = [penaltyTransaction, ...existingTransactions.slice(0, 9)];
-          setToStorage('transactions', updatedTransactions);
+          safeSetToStorage('transactions', updatedTransactions);
           
-          setMessage(`💀 Short bet expired! Penalty: $${penalty.toFixed(2)} (100x current price of $${currentMarketData.currentPrice})`);
+          setMessage(`💀 Short bet expired! Penalty: $${penalty.toFixed(2)} (100x current price of $${currentMarketData.currentPrice.toFixed(2)})`);
           setTimeout(() => setMessage(''), 10000);
           
           return { ...short, status: 'expired' as const };
@@ -565,7 +640,7 @@ export default function OpinionPage() {
             totalEarnings: userProfile.totalEarnings + short.potentialWinnings
           };
           setUserProfile(updatedProfile);
-          setToStorage('userProfile', updatedProfile);
+          safeSetToStorage('userProfile', updatedProfile);
           
           // Add transaction
           const newTransaction: Transaction = {
@@ -577,11 +652,11 @@ export default function OpinionPage() {
             date: new Date().toLocaleDateString()
           };
           
-          const existingTransactions = getFromStorage('transactions', []);
+          const existingTransactions = safeGetFromStorage('transactions', []);
           const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-          setToStorage('transactions', updatedTransactions);
+          safeSetToStorage('transactions', updatedTransactions);
           
-          setMessage(`🎉 Short bet won! Earned $${short.potentialWinnings}!`);
+          setMessage(`🎉 Short bet won! Earned $${short.potentialWinnings.toFixed(2)}!`);
           setTimeout(() => setMessage(''), 7000);
           
           return { ...short, status: 'won' as const };
@@ -591,7 +666,7 @@ export default function OpinionPage() {
       });
       
       if (updated) {
-        setToStorage('shortPositions', updatedShorts);
+        safeSetToStorage('shortPositions', updatedShorts);
         loadShortPositions();
       }
     } catch (error) {
@@ -601,7 +676,7 @@ export default function OpinionPage() {
 
   // Place short bet
   const placeShortBet = () => {
-    if (!opinion || userProfile.balance < shortSettings.betAmount) {
+    if (!opinion || userProfile.balance < shortSettings.betAmount || !isClient) {
       setMessage('Insufficient funds for this bet!');
       setTimeout(() => setMessage(''), 5000);
       return;
@@ -650,12 +725,12 @@ export default function OpinionPage() {
       balance: userProfile.balance - shortSettings.betAmount
     };
     setUserProfile(updatedProfile);
-    setToStorage('userProfile', updatedProfile);
+    safeSetToStorage('userProfile', updatedProfile);
     
     // Save short position
-    const existingShorts = getFromStorage('shortPositions', []);
+    const existingShorts = safeGetFromStorage('shortPositions', []);
     const updatedShorts = [...existingShorts, newShort];
-    setToStorage('shortPositions', updatedShorts);
+    safeSetToStorage('shortPositions', updatedShorts);
     
     // Add transaction
     const newTransaction: Transaction = {
@@ -667,21 +742,23 @@ export default function OpinionPage() {
       date: new Date().toLocaleDateString()
     };
     
-    const existingTransactions = getFromStorage('transactions', []);
+    const existingTransactions = safeGetFromStorage('transactions', []);
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-    setToStorage('transactions', updatedTransactions);
+    safeSetToStorage('transactions', updatedTransactions);
     
     setHasActiveShort(true);
     setShowShortModal(false);
     loadShortPositions();
     
-    setMessage(`📉 Short bet placed! You'll win $${potentialWinnings} if price drops to $${targetPrice} within ${shortSettings.timeLimit} hours.`);
+    setMessage(`📉 Short bet placed! You'll win $${potentialWinnings.toFixed(2)} if price drops to $${targetPrice.toFixed(2)} within ${shortSettings.timeLimit} hours.`);
     setTimeout(() => setMessage(''), 10000);
   };
 
   // Update all owned opinions with new market prices
   const updateOwnedOpinionPrices = () => {
-    const storedAssets = getFromStorage('ownedOpinions', null);
+    if (!isClient) return;
+    
+    const storedAssets = safeGetFromStorage('ownedOpinions', null);
     if (!storedAssets) return;
     
     const owned = storedAssets;
@@ -694,17 +771,19 @@ export default function OpinionPage() {
     });
     
     setOwnedOpinions(updatedOwned);
-    setToStorage('ownedOpinions', updatedOwned);
+    safeSetToStorage('ownedOpinions', updatedOwned);
   };
 
   useEffect(() => {
+    if (!isClient) return;
+    
     if (typeof id !== 'string') {
       setOpinion('Opinion not found.');
       return;
     }
 
     try {
-      const stored = getFromStorage('opinions', null);
+      const stored = safeGetFromStorage('opinions', null);
       if (!stored) {
         setOpinion('Opinion not found.');
         setOpinions([]);
@@ -731,7 +810,7 @@ export default function OpinionPage() {
         setCurrentPrice(marketData.currentPrice);
         
         // Get owned asset to check purchase price
-        const storedAssets = getFromStorage('ownedOpinions', null);
+        const storedAssets = safeGetFromStorage('ownedOpinions', null);
         let ownedAsset = null;
         if (storedAssets) {
           const owned = storedAssets;
@@ -740,7 +819,7 @@ export default function OpinionPage() {
         
         console.log(`DEBUG initial load: ownedAsset =`, ownedAsset);
         const initialSellPrice = calculateSellPrice(marketData.currentPrice, ownedAsset?.purchasePrice);
-        console.log(`DEBUG initial load: calculated sell price = ${initialSellPrice}`);
+        console.log(`DEBUG initial load: calculated sell price = ${initialSellPrice.toFixed(2)}`);
         setSellPrice(initialSellPrice);
         setTimesPurchased(marketData.timesPurchased);
         setTimesSold(marketData.timesSold);
@@ -748,14 +827,14 @@ export default function OpinionPage() {
         setOpinion('Opinion not found.');
       }
 
-      const storedProfile = getFromStorage('userProfile', null);
+      const storedProfile = safeGetFromStorage('userProfile', null);
       if (storedProfile) {
         setUserProfile(storedProfile);
       }
 
       updateOwnedOpinionPrices();
       
-      const storedAssets = getFromStorage('ownedOpinions', null);
+      const storedAssets = safeGetFromStorage('ownedOpinions', null);
       if (storedAssets && all[idx]) {
         const owned = storedAssets;
         const ownedAsset = owned.find((asset: OpinionAsset) => 
@@ -774,31 +853,34 @@ export default function OpinionPage() {
       console.error('Error loading opinion data:', error);
       setOpinion('Error loading opinion.');
     }
-  }, [id]);
+  }, [id, isClient]);
 
   // Check short positions periodically
   useEffect(() => {
-    if (opinion) {
+    if (opinion && isClient) {
       checkShortPositions();
       const interval = setInterval(checkShortPositions, 30000); // Check every 30 seconds
       return () => clearInterval(interval);
     }
-  }, [opinion, currentPrice]);
+  }, [opinion, currentPrice, isClient]);
 
   // Update sell price whenever current price changes
   useEffect(() => {
+    if (!isClient) return;
+    
     console.log(`DEBUG useEffect: alreadyOwned=${alreadyOwned}, currentPrice=${currentPrice}, opinion="${opinion}"`);
     if (alreadyOwned && currentPrice > 0 && opinion) {
       const userPurchasePrice = getUserPurchasePrice(opinion);
-      console.log(`DEBUG useEffect: calling calculateSellPrice(${currentPrice}, ${userPurchasePrice})`);
+      console.log(`DEBUG useEffect: calling calculateSellPrice(${currentPrice.toFixed(2)}, ${userPurchasePrice.toFixed(2)})`);
       const newSellPrice = calculateSellPrice(currentPrice, userPurchasePrice);
-      console.log(`DEBUG useEffect: calculated sell price = ${newSellPrice}`);
+      console.log(`DEBUG useEffect: calculated sell price = ${newSellPrice.toFixed(2)}`);
       setSellPrice(newSellPrice);
     }
-  }, [currentPrice, alreadyOwned, opinion, ownedOpinions]); // Added ownedOpinions dependency
+  }, [currentPrice, alreadyOwned, opinion, ownedOpinions, isClient]); // Added ownedOpinions and isClient dependency
 
+  // FIXED: Purchase opinion with proper decimal handling and metadata tracking
   const purchaseOpinion = () => {
-    if (!opinion) return;
+    if (!opinion || !isClient) return;
 
     if (userProfile.balance < currentPrice) {
       setMessage('Insufficient funds! Generate more opinions to earn money.');
@@ -813,6 +895,10 @@ export default function OpinionPage() {
       setTimeout(() => setMessage(''), 5000);
       return;
     }
+
+    const purchasePrice = currentPrice; // Store the exact purchase price
+    const purchaseQuantity = 1; // Always buying 1 share
+    const totalCost = purchasePrice; // Total cost for 1 share
 
     const updatedMarketData = updateOpinionMarketDataRealistic(opinion, 'buy');
 
@@ -829,12 +915,12 @@ export default function OpinionPage() {
       });
       setOwnedOpinions(updatedOwnedOpinions);
       setOwnedQuantity(ownedQuantity + 1);
-      setToStorage('ownedOpinions', updatedOwnedOpinions);
+      safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
     } else {
       const newAsset: OpinionAsset = {
         id: Date.now().toString(),
         text: opinion,
-        purchasePrice: currentPrice,
+        purchasePrice: purchasePrice, // Store exact purchase price
         currentPrice: updatedMarketData.currentPrice,
         purchaseDate: new Date().toLocaleDateString(),
         quantity: 1
@@ -842,16 +928,19 @@ export default function OpinionPage() {
 
       const updatedOwnedOpinions = [...ownedOpinions, newAsset];
       setOwnedOpinions(updatedOwnedOpinions);
-      setToStorage('ownedOpinions', updatedOwnedOpinions);
+      safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
       setAlreadyOwned(true);
       setOwnedQuantity(1);
     }
 
+    // FIXED: Create transaction with proper price and quantity metadata
     const newTransaction: Transaction = {
       id: Date.now().toString(),
       type: 'buy',
       opinionText: opinion.length > 50 ? opinion.slice(0, 50) + '...' : opinion,
-      amount: -currentPrice,
+      amount: -totalCost, // Negative because it's an expense
+      price: purchasePrice, // Store the actual purchase price
+      quantity: purchaseQuantity, // Store the quantity purchased
       date: new Date().toLocaleDateString()
     };
 
@@ -859,14 +948,14 @@ export default function OpinionPage() {
 
     const updatedProfile = {
       ...userProfile,
-      balance: userProfile.balance - currentPrice
+      balance: userProfile.balance - totalCost
     };
     setUserProfile(updatedProfile);
-    setToStorage('userProfile', updatedProfile);
+    safeSetToStorage('userProfile', updatedProfile);
 
-    const existingTransactions = getFromStorage('transactions', []);
+    const existingTransactions = safeGetFromStorage('transactions', []);
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-    setToStorage('transactions', updatedTransactions);
+    safeSetToStorage('transactions', updatedTransactions);
 
     const oldPrice = currentPrice;
     setCurrentPrice(updatedMarketData.currentPrice);
@@ -875,12 +964,28 @@ export default function OpinionPage() {
     setSellPrice(calculateSellPrice(updatedMarketData.currentPrice));
     setTimesPurchased(updatedMarketData.timesPurchased);
     
-    setMessage(`Successfully purchased! Price: ${oldPrice} → ${updatedMarketData.currentPrice}. You can sell for: ${calculateSellPrice(updatedMarketData.currentPrice)}`);
+    setMessage(`Successfully purchased! Price: $${oldPrice.toFixed(2)} → $${updatedMarketData.currentPrice.toFixed(2)}. You can sell for: $${calculateSellPrice(updatedMarketData.currentPrice).toFixed(2)}`);
     setTimeout(() => setMessage(''), 7000);
+
+    // Add to global activity feed if available
+    if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
+      (window as any).addToGlobalFeed({
+        type: 'buy',
+        username: userProfile.username,
+        opinionText: opinion,
+        opinionId: id,
+        amount: -totalCost,
+        price: purchasePrice,
+        quantity: purchaseQuantity,
+        timestamp: new Date().toISOString(),
+        isBot: false
+      });
+    }
   };
 
+  // FIXED: Sell opinion with proper decimal handling and metadata tracking
   const sellOpinion = () => {
-    if (!opinion || !alreadyOwned || ownedQuantity === 0) return;
+    if (!opinion || !alreadyOwned || ownedQuantity === 0 || !isClient) return;
 
     // Check if user has active short position - if so, they must buy units equal to target drop percentage
     const activeShort = activeShorts.find(short => short.opinionText === opinion && short.status === 'active');
@@ -897,7 +1002,7 @@ export default function OpinionPage() {
         totalLosses: userProfile.totalLosses + totalPenaltyCost
       };
       setUserProfile(updatedProfile);
-      setToStorage('userProfile', updatedProfile);
+      safeSetToStorage('userProfile', updatedProfile);
       
       // Mark short as lost and add penalty transaction
       const updatedShorts = activeShorts.map(short => 
@@ -905,11 +1010,11 @@ export default function OpinionPage() {
       );
       setActiveShorts(updatedShorts);
       
-      const allShorts = getFromStorage('shortPositions', []);
+      const allShorts = safeGetFromStorage('shortPositions', []);
       const updatedAllShorts = allShorts.map((short: ShortPosition) => 
         short.id === activeShort.id ? { ...short, status: 'lost' as const } : short
       );
-      setToStorage('shortPositions', updatedAllShorts);
+      safeSetToStorage('shortPositions', updatedAllShorts);
       
       // Add penalty transaction
       const penaltyTransaction: Transaction = {
@@ -921,8 +1026,8 @@ export default function OpinionPage() {
         date: new Date().toLocaleDateString()
       };
       
-      const existingTransactions = getFromStorage('transactions', []);
-      setToStorage('transactions', [penaltyTransaction, ...existingTransactions.slice(0, 9)]);
+      const existingTransactions = safeGetFromStorage('transactions', []);
+      safeSetToStorage('transactions', [penaltyTransaction, ...existingTransactions.slice(0, 9)]);
       
       setHasActiveShort(false);
       
@@ -932,6 +1037,8 @@ export default function OpinionPage() {
 
     // Get the actual sell price based on current market price
     const actualSellPrice = calculateSellPrice(currentPrice);
+    const sellQuantity = 1; // Always selling 1 share
+    const totalReceived = actualSellPrice; // Total received for 1 share
 
     const updatedMarketData = updateOpinionMarketDataRealistic(opinion, 'sell');
 
@@ -948,7 +1055,7 @@ export default function OpinionPage() {
     }).filter(asset => asset.quantity > 0);
 
     setOwnedOpinions(updatedOwnedOpinions);
-    setToStorage('ownedOpinions', updatedOwnedOpinions);
+    safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
 
     const newQuantity = ownedQuantity - 1;
     setOwnedQuantity(newQuantity);
@@ -956,11 +1063,14 @@ export default function OpinionPage() {
       setAlreadyOwned(false);
     }
 
+    // FIXED: Create transaction with proper price and quantity metadata
     const newTransaction: Transaction = {
       id: Date.now().toString(),
       type: 'sell',
       opinionText: opinion.length > 50 ? opinion.slice(0, 50) + '...' : opinion,
-      amount: actualSellPrice,
+      amount: totalReceived, // Positive because it's income
+      price: actualSellPrice, // Store the actual sell price
+      quantity: sellQuantity, // Store the quantity sold
       date: new Date().toLocaleDateString()
     };
 
@@ -968,15 +1078,15 @@ export default function OpinionPage() {
 
     const updatedProfile = {
       ...userProfile,
-      balance: userProfile.balance + actualSellPrice,
-      totalEarnings: userProfile.totalEarnings + actualSellPrice
+      balance: userProfile.balance + totalReceived,
+      totalEarnings: userProfile.totalEarnings + totalReceived
     };
     setUserProfile(updatedProfile);
-    setToStorage('userProfile', updatedProfile);
+    safeSetToStorage('userProfile', updatedProfile);
 
-    const existingTransactions = getFromStorage('transactions', []);
+    const existingTransactions = safeGetFromStorage('transactions', []);
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-    setToStorage('transactions', updatedTransactions);
+    safeSetToStorage('transactions', updatedTransactions);
 
     const oldPrice = currentPrice;
     setCurrentPrice(updatedMarketData.currentPrice);
@@ -989,15 +1099,29 @@ export default function OpinionPage() {
     
     const userPurchasePrice = getUserPurchasePrice(opinion);
     const profitLoss = actualSellPrice - userPurchasePrice;
-    const profitMessage = profitLoss > 0 ? `📈 Profit: +${profitLoss.toFixed(2)}` : profitLoss < 0 ? `📉 Loss: ${Math.abs(profitLoss).toFixed(2)}` : '📊 Break even';
+    const profitMessage = profitLoss > 0 ? `📈 Profit: +$${profitLoss.toFixed(2)}` : profitLoss < 0 ? `📉 Loss: $${Math.abs(profitLoss).toFixed(2)}` : '📊 Break even';
     
-    const baseMessage = `Sold for ${actualSellPrice}! ${profitMessage} (Bought at ${userPurchasePrice}). Market: ${oldPrice} → ${updatedMarketData.currentPrice}`;
+    const baseMessage = `Sold for $${actualSellPrice.toFixed(2)}! ${profitMessage} (Bought at $${userPurchasePrice.toFixed(2)}). Market: $${oldPrice.toFixed(2)} → $${updatedMarketData.currentPrice.toFixed(2)}`;
     
     if (!activeShort) {
       setMessage(baseMessage);
       setTimeout(() => setMessage(''), 7000);
     }
-    // If there was an active short, the penalty message was already set above
+
+    // Add to global activity feed if available
+    if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
+      (window as any).addToGlobalFeed({
+        type: 'sell',
+        username: userProfile.username,
+        opinionText: opinion,
+        opinionId: id,
+        amount: totalReceived,
+        price: actualSellPrice,
+        quantity: sellQuantity,
+        timestamp: new Date().toISOString(),
+        isBot: false
+      });
+    }
   };
 
   const getMarketTrend = () => {
@@ -1040,6 +1164,11 @@ export default function OpinionPage() {
     }
   };
 
+  // Don't render until client-side hydration is complete
+  if (!isClient) {
+    return <div>Loading...</div>;
+  }
+
   const trend = getMarketTrend();
 
   return (
@@ -1069,7 +1198,7 @@ export default function OpinionPage() {
 
             <div className={styles.walletDisplay}>
               <p>💰 Wallet</p>
-              <p>${userProfile.balance.toLocaleString()}</p>
+              <p>${userProfile.balance.toFixed(2)}</p>
             </div>
           </div>
         </div>
@@ -1127,7 +1256,7 @@ export default function OpinionPage() {
               <div className={styles.shortDetails}>
                 <div className={styles.shortDetailItem}>
                   <span>Bet Amount:</span>
-                  <span>${short.betAmount}</span>
+                  <span>${short.betAmount.toFixed(2)}</span>
                 </div>
                 <div className={styles.shortDetailItem}>
                   <span>Target Drop:</span>
@@ -1135,15 +1264,15 @@ export default function OpinionPage() {
                 </div>
                 <div className={styles.shortDetailItem}>
                   <span>Starting Price:</span>
-                  <span>${short.startingPrice}</span>
+                  <span>${short.startingPrice.toFixed(2)}</span>
                 </div>
                 <div className={styles.shortDetailItem}>
                   <span>Target Price:</span>
-                  <span>${short.targetPrice}</span>
+                  <span>${short.targetPrice.toFixed(2)}</span>
                 </div>
                 <div className={styles.shortDetailItem}>
                   <span>Potential Winnings:</span>
-                  <span className={styles.winnings}>${short.potentialWinnings}</span>
+                  <span className={styles.winnings}>${short.potentialWinnings.toFixed(2)}</span>
                 </div>
                 <div className={styles.shortDetailItem}>
                   <span>Expires:</span>
@@ -1152,7 +1281,7 @@ export default function OpinionPage() {
               </div>
               <div className={styles.shortProgress}>
                 <div className={styles.progressLabel}>
-                  Progress to Target: ${currentPrice} → ${short.targetPrice}
+                  Progress to Target: ${currentPrice.toFixed(2)} → ${short.targetPrice.toFixed(2)}
                 </div>
                 <div className={styles.progressBar}>
                   <div 
@@ -1169,7 +1298,7 @@ export default function OpinionPage() {
             </div>
           ))}
 
-          {/* Price Chart */}
+          {/* Price Chart - keeping the existing implementation */}
           <div className={styles.chartContainer}>
             <h3 className={styles.chartTitle}>📈 Price History Chart</h3>
             
@@ -1220,16 +1349,16 @@ export default function OpinionPage() {
                   <div className={styles.chartSummary}>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Starting Price</div>
-                      <div className={styles.summaryValue}>${firstPrice}</div>
+                      <div className={styles.summaryValue}>${firstPrice.toFixed(2)}</div>
                     </div>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Current Price</div>
-                      <div className={styles.summaryValue}>${lastPrice}</div>
+                      <div className={styles.summaryValue}>${lastPrice.toFixed(2)}</div>
                     </div>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Total Change</div>
                       <div className={`${styles.summaryValue} ${totalChange >= 0 ? styles.positive : styles.negative}`}>
-                        {totalChange >= 0 ? '+' : ''}${totalChange.toFixed(1)} ({totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
+                        {totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)} ({totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
                       </div>
                     </div>
                     <div className={styles.summaryItem}>
@@ -1240,10 +1369,10 @@ export default function OpinionPage() {
                   
                   <div className={styles.chartVisual}>
                     <div className={`${styles.yAxisLabel} ${styles.top}`}>
-                      ${maxPrice}
+                      ${maxPrice.toFixed(2)}
                     </div>
                     <div className={`${styles.yAxisLabel} ${styles.bottom}`}>
-                      ${minPrice}
+                      ${minPrice.toFixed(2)}
                     </div>
                     
                     {chartData.map((dataPoint, index) => {
@@ -1255,13 +1384,13 @@ export default function OpinionPage() {
                       return (
                         <div key={index} className={styles.chartBar}>
                           <div className={`${styles.barLabel} ${isIncrease ? styles.positive : styles.negative}`}>
-                            ${dataPoint.price}
+                            ${dataPoint.price.toFixed(2)}
                           </div>
                           
                           <div
                             className={`${styles.bar} ${isIncrease ? styles.positive : styles.negative}`}
                             style={{ height: `${barHeight}px` }}
-                            title={`${dataPoint.price} - ${dataPoint.date} ${dataPoint.time}`}
+                            title={`${dataPoint.price.toFixed(2)} - ${dataPoint.date} ${dataPoint.time}`}
                           />
                           
                           <div className={styles.barDate}>
@@ -1291,8 +1420,8 @@ export default function OpinionPage() {
           <div className={styles.marketStats}>
             <div className={`${styles.statCard} ${styles.price}`}>
               <h3 className={`${styles.statTitle} ${styles.price}`}>💰 Current Price</h3>
-              <p className={styles.statValue}>${currentPrice}</p>
-              <p className={styles.statSubtext}>Base price: $10</p>
+              <p className={styles.statValue}>${currentPrice.toFixed(2)}</p>
+              <p className={styles.statSubtext}>Base price: $10.00</p>
             </div>
 
             <div className={`${styles.statCard} ${styles.trend}`}>
@@ -1318,7 +1447,7 @@ export default function OpinionPage() {
             {alreadyOwned && (
               <div className={`${styles.statCard} ${styles.sell}`}>
                 <h3 className={`${styles.statTitle} ${styles.sell}`}>💸 Sell Price</h3>
-                <p className={styles.statValue}>${sellPrice}</p>
+                <p className={styles.statValue}>${sellPrice.toFixed(2)}</p>
                 <div className={styles.marketConditions}>
                   {(() => {
                     const userPurchasePrice = getUserPurchasePrice(opinion || '');
@@ -1326,14 +1455,14 @@ export default function OpinionPage() {
                     return (
                       <>
                         <p className={styles.statSubtext}>
-                          Purchase: ${userPurchasePrice} | Market: ${currentPrice} | Sell: ${sellPrice}
+                          Purchase: ${userPurchasePrice.toFixed(2)} | Market: ${currentPrice.toFixed(2)} | Sell: ${sellPrice.toFixed(2)}
                         </p>
                         <p className={styles.liquidityInfo}>
                           {sellPrice > userPurchasePrice 
-                            ? `🎉 Profit potential: +$${(sellPrice - userPurchasePrice).toFixed(2)}`
+                            ? `🎉 Profit potential: +${(sellPrice - userPurchasePrice).toFixed(2)}`
                             : sellPrice === userPurchasePrice 
                             ? `📊 Break even - no profit or loss`
-                            : `📉 Loss: -$${(userPurchasePrice - sellPrice).toFixed(2)} (5% transaction cost + small market moves)`
+                            : `📉 Loss: -${(userPurchasePrice - sellPrice).toFixed(2)} (5% transaction cost + small market moves)`
                           }
                         </p>
                       </>
@@ -1353,8 +1482,8 @@ export default function OpinionPage() {
                 className={`${styles.actionButton} ${styles.buy}`}
               >
                 {userProfile.balance < currentPrice 
-                  ? `Need $${currentPrice - userProfile.balance} more`
-                  : `Buy for $${currentPrice}`
+                  ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
+                  : `Buy for ${currentPrice.toFixed(2)}`
                 }
               </button>
             ) : (
@@ -1365,8 +1494,8 @@ export default function OpinionPage() {
                   className={`${styles.actionButton} ${styles.buyMore}`}
                 >
                   {userProfile.balance < currentPrice 
-                    ? `Need $${currentPrice - userProfile.balance} more`
-                    : `Buy More ($${currentPrice})`
+                    ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
+                    : `Buy More (${currentPrice.toFixed(2)})`
                   }
                 </button>
                 
@@ -1374,7 +1503,7 @@ export default function OpinionPage() {
                   onClick={sellOpinion}
                   className={`${styles.actionButton} ${styles.sell}`}
                 >
-                  Sell 1 for ${sellPrice}
+                  Sell 1 for ${sellPrice.toFixed(2)}
                 </button>
               </>
             )}
@@ -1413,6 +1542,7 @@ export default function OpinionPage() {
                   <br/>• If time expires → owe 100x current market price!
                   <br/>• If you sell shares early → must buy {shortSettings.targetDropPercentage} units at current price!
                   <br/>• Only way to avoid penalties: reach target price in time!
+                  <br/><strong>NEW:</strong> You can now bet on any price drop from 1% to 100% (complete crash to $0.00)!
                 </p>
                 
                 <div className={styles.shortSettings}>
@@ -1429,25 +1559,45 @@ export default function OpinionPage() {
                       })}
                       className={styles.settingInput}
                     />
-                    <span className={styles.settingHint}>Available: ${userProfile.balance}</span>
+                    <span className={styles.settingHint}>Available: ${userProfile.balance.toFixed(2)}</span>
                   </div>
                   
                   <div className={styles.settingGroup}>
                     <label>Target Price Drop (%)</label>
-                    <input
-                      type="range"
-                      min="5"
-                      max="50"
-                      value={shortSettings.targetDropPercentage}
-                      onChange={(e) => setShortSettings({
-                        ...shortSettings,
-                        targetDropPercentage: parseInt(e.target.value)
-                      })}
-                      className={styles.settingSlider}
-                    />
+                    <div className={styles.percentageInputContainer}>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value={shortSettings.targetDropPercentage}
+                        onChange={(e) => setShortSettings({
+                          ...shortSettings,
+                          targetDropPercentage: parseInt(e.target.value)
+                        })}
+                        className={styles.settingSlider}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={shortSettings.targetDropPercentage}
+                        onChange={(e) => {
+                          const value = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
+                          setShortSettings({
+                            ...shortSettings,
+                            targetDropPercentage: value
+                          });
+                        }}
+                        className={styles.percentageInput}
+                        placeholder="%"
+                      />
+                    </div>
                     <div className={styles.sliderValue}>
                       {shortSettings.targetDropPercentage}% 
-                      (${currentPrice} → ${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)})
+                      (${currentPrice.toFixed(2)} → ${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)})
+                    </div>
+                    <div className={styles.percentageHint}>
+                      1% = Easy target, low reward • 50% = Moderate target • 100% = Price goes to $0.00, extreme reward
                     </div>
                   </div>
                   
@@ -1478,7 +1628,7 @@ export default function OpinionPage() {
                   <div className={styles.summaryDetails}>
                     <div className={styles.summaryRow}>
                       <span>Current Price:</span>
-                      <span>${currentPrice}</span>
+                      <span>${currentPrice.toFixed(2)}</span>
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Target Price:</span>
@@ -1486,12 +1636,12 @@ export default function OpinionPage() {
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Bet Amount:</span>
-                      <span>-${shortSettings.betAmount}</span>
+                      <span>-${shortSettings.betAmount.toFixed(2)}</span>
                     </div>
                     <div className={styles.summaryRow}>
                       <span>Potential Winnings:</span>
                       <span className={styles.winnings}>
-                        +${calculateShortWinnings(shortSettings.betAmount, shortSettings.targetDropPercentage, shortSettings.timeLimit)}
+                        +${calculateShortWinnings(shortSettings.betAmount, shortSettings.targetDropPercentage, shortSettings.timeLimit).toFixed(2)}
                       </span>
                     </div>
                     <div className={styles.summaryRow}>
@@ -1501,7 +1651,7 @@ export default function OpinionPage() {
                     <div className={styles.summaryRow}>
                       <span>Early Exit Penalty:</span>
                       <span className={styles.penalty}>
-                        -${(shortSettings.targetDropPercentage * currentPrice).toFixed(2)} ({shortSettings.targetDropPercentage} units × ${currentPrice})
+                        -${(shortSettings.targetDropPercentage * currentPrice).toFixed(2)} ({shortSettings.targetDropPercentage} units × ${currentPrice.toFixed(2)})
                       </span>
                     </div>
                     <div className={styles.summaryRow}>
@@ -1533,7 +1683,7 @@ export default function OpinionPage() {
                   >
                     {userProfile.balance < shortSettings.betAmount 
                       ? 'Insufficient Funds' 
-                      : `Place Short Bet (${shortSettings.betAmount})`
+                      : `Place Short Bet (${shortSettings.betAmount.toFixed(2)})`
                     }
                   </button>
                 </div>
@@ -1561,6 +1711,8 @@ export default function OpinionPage() {
                 <li>Ultra-tiny price jumps make instant arbitrage impossible</li>
                 <li>Need massive trading volume to create profit opportunities</li>
                 <li>Market movements are now 10x smaller than before</li>
+                <li>All prices display proper decimals (no more $0.00 transactions)</li>
+                <li><strong>Volatility multiplier removed - pure price based on supply/demand only</strong></li>
               </ul>
             </div>
             <div className={styles.tradingInfoSection}>
@@ -1569,7 +1721,9 @@ export default function OpinionPage() {
                 <li><strong>WIN:</strong> Target reached in time = earn potential winnings</li>
                 <li><strong>EARLY EXIT:</strong> Sell shares = buy X units at current price (X = target %)</li>
                 <li><strong>EXPIRE:</strong> Time runs out = pay 100x current market price!</li>
-                <li>Example: 20% drop bet, exit early at $15 = buy 20 units = $300 penalty</li>
+                <li>Example: 20% drop bet, exit early at $15.00 = buy 20 units = $300.00 penalty</li>
+                <li><strong>NEW:</strong> Bet on any drop from 1%-100%! Higher % = exponentially higher rewards</li>
+                <li>100% drop = price must hit $0.00 for massive 10x+ multipliers!</li>
               </ul>
             </div>
           </div>

@@ -25,6 +25,7 @@ interface OpinionWithPrice {
   priceChangePercent: number;
   trend: 'up' | 'down' | 'neutral';
   volatility: 'high' | 'medium' | 'low';
+  createdAt: number;
 }
 
 export default function Sidebar({
@@ -34,6 +35,78 @@ export default function Sidebar({
 }) {
   const [opinionsWithPrices, setOpinionsWithPrices] = useState<OpinionWithPrice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // CRITICAL FIX: Only use CREATION timestamps, ignore all trading activity for sidebar ordering
+  const getAllOpinions = (): { id: string; text: string; createdAt: number }[] => {
+    try {
+      const storedOpinions: string[] = JSON.parse(localStorage.getItem('opinions') || '[]');
+      
+      // FIXED: Get ONLY creation transactions (type: 'earn'), ignore all buy/sell/bet transactions
+      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      
+      // CRITICAL: Filter to ONLY opinion creation transactions (type: 'earn')
+      const creationTransactions = [
+        ...userTransactions.filter((t: any) => t.type === 'earn'),
+        ...botTransactions.filter((t: any) => t.type === 'earn')
+      ];
+      
+      console.log(`📊 Sidebar: Found ${storedOpinions.length} opinions, ${creationTransactions.length} creation transactions (ignoring trading activity)`);
+      
+      return storedOpinions
+        .filter(Boolean)
+        .map((text: string, index: number) => {
+          // CRITICAL FIX: ID must match the array index for proper linking to opinion pages
+          const opinionId = index.toString();
+          
+          // CRITICAL: Find creation transaction for THIS SPECIFIC OPINION (exact text match first)
+          const creationTransaction = creationTransactions
+            .filter((t: any) => {
+              // EXACT match first (most reliable)
+              if (t.opinionText === text) return true;
+              
+              // Fallback: partial match only if exact match not found
+              if (t.opinionText && (
+                text.includes(t.opinionText.slice(0, 50)) ||
+                t.opinionText.includes(text.slice(0, 50))
+              )) return true;
+              
+              return false;
+            })
+            .sort((a: any, b: any) => {
+              // Sort by timestamp descending to get the MOST RECENT creation (in case of duplicates)
+              const aTime = a.timestamp || new Date(a.date).getTime();
+              const bTime = b.timestamp || new Date(b.date).getTime();
+              return bTime - aTime; // NEWEST FIRST
+            })[0];
+          
+          // CRITICAL FIX: Use ONLY creation timestamps for sorting, NOT trading activity
+          let createdAt: number;
+          
+          if (creationTransaction) {
+            createdAt = creationTransaction.timestamp || new Date(creationTransaction.date).getTime();
+            console.log(`📋 CREATION found for "${text.slice(0, 30)}...": ${new Date(createdAt).toLocaleString()}`);
+          } else {
+            // FALLBACK: Use opinion position in array with recent bias for newest opinions
+            // Most recent opinions (higher index) get more recent timestamps
+            const baseTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
+            const timeIncrement = 60 * 60 * 1000; // 1 hour increment per opinion
+            createdAt = baseTime + (index * timeIncrement);
+            
+            console.log(`📋 FALLBACK timestamp for "${text.slice(0, 30)}..." (index ${index}): ${new Date(createdAt).toLocaleString()}`);
+          }
+          
+          return {
+            id: opinionId, // Use array index as ID for consistency
+            text,
+            createdAt
+          };
+        });
+    } catch (error) {
+      console.error('Error getting all opinions:', error);
+      return [];
+    }
+  };
 
   // Get market data for an opinion
   const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
@@ -102,6 +175,16 @@ export default function Sidebar({
       return { type: 'user', emoji: '✨' };
     }
 
+    // Check if this is from bot transactions (bot-generated)
+    const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+    const isBotGenerated = botTransactions.some((t: any) => 
+      t.type === 'earn' && t.opinionText && opinionText.includes(t.opinionText.slice(0, 20))
+    );
+
+    if (isBotGenerated) {
+      return { type: 'ai', emoji: '🤖' };
+    }
+
     // Check for AI-generated patterns or keywords
     const text = opinionText.toLowerCase();
     const aiPatterns = [
@@ -145,58 +228,94 @@ export default function Sidebar({
     return { emoji, text, className: `${styles.volatilityIndicator} ${styles[volatility]}` };
   };
 
-  // Load and process opinion data
+  // FIXED: Load and process opinion data with proper sorting for recent opinions at top
   useEffect(() => {
     setIsLoading(true);
     
-    const processedOpinions: OpinionWithPrice[] = opinions
-      .filter(Boolean)
-      .reverse() // Show newest opinions first
-      .map((op, i) => {
-        const text = typeof op === 'string' ? op : op.text;
-        // Use reverse index to maintain correct IDs
-        const originalIndex = opinions.length - 1 - i;
-        const id = typeof op === 'string' ? `${originalIndex}` : op.id;
-        
-        const marketData = getOpinionMarketData(text);
-        const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-        const volatilityLevel = getVolatilityLevel(marketData.volatility);
-        
-        return {
-          id,
-          text,
-          currentPrice: marketData.currentPrice,
-          priceChange,
-          priceChangePercent,
-          trend,
-          volatility: volatilityLevel
-        };
-      });
+    const updateOpinions = () => {
+      // Fetch ALL opinions from storage (including bot-generated ones)
+      const allOpinions = getAllOpinions();
+      
+      // DEBUG: Log opinion count for troubleshooting
+      console.log(`📊 Sidebar updating: Found ${allOpinions.length} total opinions`);
+      
+      // CRITICAL FIX: Sort by creation timestamp - NEWEST FIRST, maintain proper ID mapping
+      const sortedOpinions = allOpinions
+        .filter(Boolean)
+        .sort((a, b) => b.createdAt - a.createdAt); // Sort by createdAt descending (newest first)
+      
+      console.log(`📊 After sorting: ${sortedOpinions.length} opinions`);
+      console.log(`📊 Most recent: "${sortedOpinions[0]?.text?.slice(0, 30)}..." (ID: ${sortedOpinions[0]?.id})`);
+      console.log(`📊 Oldest: "${sortedOpinions[sortedOpinions.length - 1]?.text?.slice(0, 30)}..." (ID: ${sortedOpinions[sortedOpinions.length - 1]?.id})`);
+      
+      const processedOpinions: OpinionWithPrice[] = sortedOpinions
+        .map((op: { id: string; text: string; createdAt: number }) => {
+          const text = op.text;
+          const id = op.id; // Keep original ID for proper linking
+          
+          const marketData = getOpinionMarketData(text);
+          const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
+          const volatilityLevel = getVolatilityLevel(marketData.volatility);
+          
+          return {
+            id, // Keep original ID for linking to /opinion/[id]
+            text,
+            currentPrice: marketData.currentPrice,
+            priceChange,
+            priceChangePercent,
+            trend,
+            volatility: volatilityLevel,
+            createdAt: op.createdAt
+          };
+        });
 
-    setOpinionsWithPrices(processedOpinions);
-    setIsLoading(false);
+      console.log(`📊 Processed ${processedOpinions.length} opinions for display`);
+      console.log(`📊 Display order: ${processedOpinions.slice(0, 3).map(op => `"${op.text.slice(0, 20)}..." (ID: ${op.id})`).join(', ')}`);
 
-    // Update every 30 seconds to reflect market changes
-    const interval = setInterval(() => {
-      const updated = processedOpinions.map(opinion => {
-        const marketData = getOpinionMarketData(opinion.text);
-        const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-        const volatilityLevel = getVolatilityLevel(marketData.volatility);
-        
-        return {
-          ...opinion,
-          currentPrice: marketData.currentPrice,
-          priceChange,
-          priceChangePercent,
-          trend,
-          volatility: volatilityLevel
-        };
-      });
-      setOpinionsWithPrices(updated);
-    }, 30000);
+      setOpinionsWithPrices(processedOpinions);
+      setIsLoading(false);
+    };
 
-    return () => clearInterval(interval);
-  }, [opinions]);
+    // Initial load
+    updateOpinions();
+
+    // ENHANCED: Multiple update mechanisms for faster detection
+    
+    // 1. Fast interval for real-time updates (every 3 seconds for better responsiveness)
+    const fastInterval = setInterval(updateOpinions, 3000);
+    
+    // 2. Storage event listener for immediate updates when localStorage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'opinions' || e.key === 'botTransactions' || e.key === 'transactions' || e.key === 'opinionMarketData') {
+        console.log('🔄 Storage changed, updating sidebar...', e.key);
+        setTimeout(updateOpinions, 100); // Small delay to ensure data is written
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // 3. Custom event listener for bot activity
+    const handleBotActivity = () => {
+      console.log('🤖 Bot activity detected, updating sidebar...');
+      setTimeout(updateOpinions, 200);
+    };
+    
+    window.addEventListener('botActivityUpdate', handleBotActivity);
+    
+    // 4. Manual polling with visibility check (when tab is active)
+    const visibilityInterval = setInterval(() => {
+      if (!document.hidden) {
+        updateOpinions();
+      }
+    }, 5000); // Every 5 seconds when tab is visible
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(visibilityInterval);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('botActivityUpdate', handleBotActivity);
+    };
+  }, []); // No dependencies - fetch directly from storage
 
   return (
     <aside className={styles.sidebar}>
@@ -206,7 +325,7 @@ export default function Sidebar({
           📊 Opinion Exchange
         </h2>
         <p className={styles.headerSubtitle}>
-          Live Market Prices
+          Live Market Prices (Recent First)
         </p>
       </div>
 
@@ -218,7 +337,7 @@ export default function Sidebar({
       {/* Table Headers */}
       <div className={styles.tableHeaders}>
         <div className={styles.headerRow}>
-          <span>Opinion</span>
+          <span>Opinion (Newest First)</span>
           <span>Price</span>
         </div>
       </div>
@@ -239,13 +358,18 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* Opinion List */}
+      {/* Opinion List - Now properly sorted with newest first */}
       {!isLoading && opinionsWithPrices.length > 0 && (
         <ul className={styles.opinionList}>
-          {opinionsWithPrices.map((opinion) => {
+          {opinionsWithPrices.map((opinion, index) => {
             const attribution = getOpinionAttribution(opinion.text);
             const trendIndicator = getTrendIndicator(opinion.trend, opinion.volatility);
             const volatilityIndicator = getVolatilityIndicator(opinion.volatility);
+            
+            // Add debug info for first few opinions
+            if (index < 3) {
+              console.log(`📋 Displaying opinion ${index}: ID=${opinion.id}, text="${opinion.text.slice(0, 30)}...", createdAt=${new Date(opinion.createdAt).toLocaleString()}`);
+            }
             
             return (
               <li key={opinion.id} className={styles.opinionItem}>
