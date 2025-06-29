@@ -86,3 +86,4 @@ Return **only** the new opinion.`;
     });
   }
 }
+

@@ -62,7 +62,7 @@ interface AdvancedBet {
   bettor: string;
   targetUser: string;
   betType: 'increase' | 'decrease';
-  targetPercentage: number;
+  targetPercentage: number; // Now supports 1%-100%
   amount: number;
   timeFrame: number;
   initialPortfolioValue: number;
@@ -72,7 +72,7 @@ interface AdvancedBet {
   status: 'active' | 'won' | 'lost' | 'expired';
   multiplier: number;
   potentialPayout: number;
-  volatilityRating: 'Low' | 'Medium' | 'High';
+  volatilityRating: 'Low' | 'Medium' | 'High' | 'Extreme';
 }
 
 interface Transaction {
@@ -91,6 +91,15 @@ interface DetailedUserView {
   recentTransactions: Transaction[];
 }
 
+// NEW: Interface for tracking portfolio value over time
+interface PortfolioSnapshot {
+  userId: string;
+  botId?: string;
+  portfolioValue: number;
+  timestamp: number;
+  date: string;
+}
+
 export default function UsersPage() {
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
@@ -107,7 +116,7 @@ export default function UsersPage() {
   const [detailedUserView, setDetailedUserView] = useState<DetailedUserView | null>(null);
   const [activeBets, setActiveBets] = useState<AdvancedBet[]>([]);
   const [message, setMessage] = useState('');
-  const [sortBy, setSortBy] = useState<'value' | 'performance' | 'volatility'>('value');
+  const [sortBy, setSortBy] = useState<'value' | 'performance' | 'volatility' | 'recent_performance'>('recent_performance');
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   
   const [betForm, setBetForm] = useState<{
@@ -117,7 +126,7 @@ export default function UsersPage() {
     timeFrame: number;
   }>({
     betType: 'increase',
-    targetPercentage: 10,
+    targetPercentage: 15, // Changed default to 15%
     amount: 100,
     timeFrame: 7
   });
@@ -146,6 +155,193 @@ export default function UsersPage() {
     } catch (error) {
       return 10;
     }
+  };
+
+  // NEW: Function to save portfolio snapshot
+  // FIXED: Function to save portfolio snapshot with proper error handling
+  const savePortfolioSnapshot = (userId: string, portfolioValue: number, botId?: string) => {
+    // Don't run on server side
+    if (typeof window === 'undefined') return;
+    
+    try {
+      // Emergency cleanup first - get existing snapshots
+      const existingSnapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+      
+      // CRITICAL: Aggressive cleanup to prevent storage overflow
+      const now = new Date();
+      const sevenDaysAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000); // Only keep 7 days
+      
+      // Filter to recent snapshots and limit to 50 total entries
+      const recentSnapshots = existingSnapshots
+        .filter((snap: PortfolioSnapshot) => snap.timestamp > sevenDaysAgo)
+        .slice(-49); // Keep last 49, add 1 new = 50 total
+      
+      // Create new snapshot
+      const snapshot: PortfolioSnapshot = {
+        userId,
+        botId,
+        portfolioValue,
+        timestamp: now.getTime(),
+        date: now.toISOString().split('T')[0] // YYYY-MM-DD format
+      };
+      
+      // Add new snapshot
+      const updatedSnapshots = [...recentSnapshots, snapshot];
+      
+      // Check data size before saving
+      const dataString = JSON.stringify(updatedSnapshots);
+      const dataSize = new Blob([dataString]).size;
+      
+      // If data is too large, use emergency cleanup
+      if (dataSize > 2 * 1024 * 1024) { // 2MB limit
+        console.warn('Portfolio snapshots too large, emergency cleanup...');
+        
+        // Super aggressive cleanup - keep only last 20 snapshots
+        const emergencySnapshots = updatedSnapshots.slice(-20);
+        localStorage.setItem('portfolioSnapshots', JSON.stringify(emergencySnapshots));
+        console.log(`Emergency cleanup: reduced to ${emergencySnapshots.length} snapshots`);
+      } else {
+        // Normal save
+        localStorage.setItem('portfolioSnapshots', dataString);
+      }
+      
+    } catch (error) {
+      // CRITICAL: Handle storage quota exceeded error gracefully
+      console.warn('Portfolio snapshot save failed:', error);
+      
+      try {
+        // Emergency response - clear all portfolio snapshots and start fresh
+        localStorage.removeItem('portfolioSnapshots');
+        
+        // Create minimal snapshot array with just the new entry
+        const freshSnapshot: PortfolioSnapshot = {
+          userId,
+          botId,
+          portfolioValue,
+          timestamp: Date.now(),
+          date: new Date().toISOString().split('T')[0]
+        };
+        
+        localStorage.setItem('portfolioSnapshots', JSON.stringify([freshSnapshot]));
+        console.log('Emergency recovery: created fresh portfolio snapshots');
+        
+      } catch (emergencyError) {
+        console.error('Emergency portfolio snapshot recovery failed:', emergencyError);
+        // Complete failure - disable portfolio snapshots for this session
+        console.log('Portfolio snapshots disabled for this session');
+      }
+    }
+  };
+
+  // NEW: Function to calculate real 7-day performance
+  const calculateReal7DayPerformance = (userId: string, currentValue: number, botId?: string): number => {
+    try {
+      const snapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+      const now = new Date();
+      const sevenDaysAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000);
+      
+      // Filter snapshots for this user/bot from 7 days ago
+      const userSnapshots = snapshots.filter((snap: PortfolioSnapshot) => {
+        if (botId) {
+          return snap.botId === botId && snap.timestamp >= sevenDaysAgo;
+        } else {
+          return snap.userId === userId && !snap.botId && snap.timestamp >= sevenDaysAgo;
+        }
+      });
+      
+      if (userSnapshots.length === 0) {
+        // No historical data, try to estimate based on current performance
+        return 0; // Default to 0% if no history
+      }
+      
+      // Get the oldest snapshot from 7 days ago (closest to 7 days ago)
+      userSnapshots.sort((a: PortfolioSnapshot, b: PortfolioSnapshot) => a.timestamp - b.timestamp);
+      const oldestSnapshot = userSnapshots[0];
+      
+      if (oldestSnapshot.portfolioValue <= 0) {
+        return 0;
+      }
+      
+      // Calculate percentage change
+      const performanceChange = ((currentValue - oldestSnapshot.portfolioValue) / oldestSnapshot.portfolioValue) * 100;
+      
+      // Cap extreme values
+      return Math.max(-95, Math.min(500, performanceChange));
+      
+    } catch (error) {
+      console.error('Error calculating 7-day performance:', error);
+      return 0;
+    }
+  };
+
+  // NEW: Function to initialize historical data for existing users (one-time setup)
+  const initializeHistoricalData = () => {
+    try {
+      const existingSnapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+      
+      // Only initialize if we don't have much historical data
+      if (existingSnapshots.length < 10) {
+        const now = new Date();
+        const newSnapshots: PortfolioSnapshot[] = [];
+        
+        // Create historical snapshots for current user
+        const currentUserPortfolio = getCurrentUserPortfolio();
+        const currentUserValue = calculatePortfolioValue(currentUserPortfolio);
+        
+        for (let i = 14; i >= 0; i--) {
+          const date = new Date(now.getTime() - (i * 24 * 60 * 60 * 1000));
+          // Simulate historical values with some realistic variation
+          const variation = (Math.random() - 0.5) * 0.2; // ±10% variation
+          const historicalValue = currentUserValue * (1 + variation * (i / 14));
+          
+          newSnapshots.push({
+            userId: currentUser.username,
+            portfolioValue: Math.max(100, historicalValue),
+            timestamp: date.getTime(),
+            date: date.toISOString().split('T')[0]
+          });
+        }
+        
+        // Create historical snapshots for bots
+        const botUsers = getBotUsers();
+        botUsers.forEach(bot => {
+          const botPortfolio = getBotPortfolio(bot.id);
+          const botValue = calculatePortfolioValue(botPortfolio);
+          
+          for (let i = 14; i >= 0; i--) {
+            const date = new Date(now.getTime() - (i * 24 * 60 * 60 * 1000));
+            // Bots can have more volatile historical performance
+            const variation = (Math.random() - 0.5) * 0.4; // ±20% variation
+            const historicalValue = botValue * (1 + variation * (i / 14));
+            
+            newSnapshots.push({
+              userId: bot.username,
+              botId: bot.id,
+              portfolioValue: Math.max(100, historicalValue),
+              timestamp: date.getTime(),
+              date: date.toISOString().split('T')[0]
+            });
+          }
+        });
+        
+        // Merge with existing snapshots and save
+        const allSnapshots = [...existingSnapshots, ...newSnapshots];
+        localStorage.setItem('portfolioSnapshots', JSON.stringify(allSnapshots));
+        
+        console.log('📊 Initialized historical portfolio data for', newSnapshots.length, 'snapshots');
+      }
+    } catch (error) {
+      console.error('Error initializing historical data:', error);
+    }
+  };
+
+  // Helper function to calculate portfolio value
+  const calculatePortfolioValue = (portfolio: OpinionAsset[]): number => {
+    return portfolio.reduce((total, asset) => {
+      const marketData = getOpinionMarketData(asset.text);
+      const currentPrice = marketData.currentPrice || asset.currentPrice;
+      return total + (currentPrice * asset.quantity);
+    }, 0);
   };
 
   // Get user's active short positions
@@ -206,17 +402,13 @@ export default function UsersPage() {
     adjustedValue: number;
   } => {
     // Traditional opinion holdings value
-    const portfolioValue = portfolio.reduce((total, asset) => {
-      const marketData = getOpinionMarketData(asset.text);
-      const currentPrice = marketData.currentPrice || asset.currentPrice;
-      return total + (currentPrice * asset.quantity);
-    }, 0);
+    const portfolioValue = calculatePortfolioValue(portfolio);
 
     // Short positions exposure (money at risk)
     const shortExposure = activeShorts.reduce((total, short) => total + short.betAmount, 0);
 
-    // Bet exposure (money at risk)
-    const betExposure = activeBets.reduce((total, bet) => total + bet.amount, 0);
+    // Bet exposure (money at risk) - now uses multiplier for potential loss
+    const betExposure = activeBets.reduce((total, bet) => total + (bet.amount * bet.multiplier), 0);
 
     // Adjusted portfolio value (traditional value minus money tied up in shorts/bets)
     const adjustedValue = portfolioValue - shortExposure - betExposure;
@@ -225,23 +417,13 @@ export default function UsersPage() {
   };
 
   const calculatePortfolioVolatility = (opinions: OpinionAsset[]): number => {
+    // Simplified volatility - just based on portfolio size
     if (opinions.length === 0) return 1.0;
     
-    let totalVolatility = 0;
-    opinions.forEach(opinion => {
-      const text = opinion.text.toLowerCase();
-      let opinionVolatility = 1.0;
-      
-      if (text.includes('crypto') || text.includes('bitcoin')) opinionVolatility += 0.8;
-      if (text.includes('controversial') || text.includes('hot take')) opinionVolatility += 0.5;
-      if (text.includes('prediction') || text.includes('future')) opinionVolatility += 0.3;
-      if (text.includes('politics')) opinionVolatility += 0.6;
-      if (text.includes('safe') || text.includes('obvious')) opinionVolatility -= 0.3;
-      
-      totalVolatility += Math.max(0.5, Math.min(3.0, opinionVolatility));
-    });
-    
-    return totalVolatility / opinions.length;
+    // Smaller portfolios = higher volatility, larger portfolios = lower volatility
+    if (opinions.length <= 3) return 2.0; // High volatility
+    if (opinions.length <= 7) return 1.5; // Medium volatility
+    return 1.0; // Low volatility
   };
 
   const getCurrentUserPortfolio = (): OpinionAsset[] => {
@@ -292,14 +474,6 @@ export default function UsersPage() {
     }
   };
 
-  const calculate7DayPerformance = (performancePercentage: number, isBot: boolean = false): number => {
-    if (isBot) {
-      const variation = (Math.random() - 0.5) * 20;
-      return Math.max(-50, Math.min(50, performancePercentage * 0.4 + variation));
-    }
-    return performancePercentage * 0.3;
-  };
-
   const convertToPublicUserData = (
     username: string,
     portfolio: OpinionAsset[],
@@ -324,7 +498,9 @@ export default function UsersPage() {
     const gainsLosses = portfolioValue - totalCost;
     const performancePercentage = totalCost > 0 ? ((gainsLosses / totalCost) * 100) : 0;
     const volatility = calculatePortfolioVolatility(portfolio);
-    const recentPerformance = calculate7DayPerformance(performancePercentage, isBot);
+    
+    // CHANGED: Use real 7-day performance calculation
+    const recentPerformance = calculateReal7DayPerformance(username, adjustedValue, botId);
 
     const topOpinions = [...portfolio]
       .map(opinion => ({
@@ -345,7 +521,7 @@ export default function UsersPage() {
       performancePercentage,
       topOpinions,
       volatility,
-      recentPerformance,
+      recentPerformance, // Now using real calculated performance
       rank: 0,
       isCurrentUser,
       isBot,
@@ -402,6 +578,9 @@ export default function UsersPage() {
         true
       );
       allUsers.push(currentUserData);
+      
+      // NEW: Save current portfolio snapshot
+      savePortfolioSnapshot(currentUser.username, currentUserData.portfolioValue);
     }
 
     const botUsers = getBotUsers();
@@ -416,6 +595,9 @@ export default function UsersPage() {
         bot.id
       );
       allUsers.push(botData);
+      
+      // NEW: Save bot portfolio snapshot
+      savePortfolioSnapshot(bot.username, botData.portfolioValue, bot.id);
     });
 
     try {
@@ -427,12 +609,16 @@ export default function UsersPage() {
           user.joinDate || new Date().toLocaleDateString()
         );
         allUsers.push(userData);
+        
+        // NEW: Save other user portfolio snapshot
+        savePortfolioSnapshot(user.username, userData.portfolioValue);
       });
     } catch (error) {
       console.log('ℹ️ No other real users found');
     }
 
-    allUsers.sort((a, b) => b.portfolioValue - a.portfolioValue);
+    // CHANGED: Sort by real recent performance (7-day) and update ranks
+    allUsers.sort((a, b) => b.recentPerformance - a.recentPerformance);
     allUsers.forEach((user, index) => {
       user.rank = index + 1;
     });
@@ -447,6 +633,7 @@ export default function UsersPage() {
     setLastRefresh(Date.now());
   };
 
+  // ENHANCED: Calculate bet multiplier with support for 1-100% range and loss calculation
   const calculateBetMultiplier = (
     betType: 'increase' | 'decrease',
     targetPercentage: number,
@@ -454,19 +641,65 @@ export default function UsersPage() {
     userVolatility: number,
     recentPerformance: number
   ): number => {
-    const percentageDifficulty = Math.pow(Math.abs(targetPercentage) / 10, 1.2);
-    const timeDifficulty = Math.pow((30 - Math.min(timeFrame, 30)) / 30, 0.8) + 0.3;
+    // Base multiplier calculation for 1-100% range
+    let baseMultiplier = 1.0;
+    
+    // Percentage difficulty multiplier (1-100% range)
+    if (targetPercentage >= 1 && targetPercentage <= 5) {
+      baseMultiplier = 1.2; // Easy
+    } else if (targetPercentage > 5 && targetPercentage <= 15) {
+      baseMultiplier = 1.5; // Medium-Easy
+    } else if (targetPercentage > 15 && targetPercentage <= 25) {
+      baseMultiplier = 2.0; // Medium
+    } else if (targetPercentage > 25 && targetPercentage <= 40) {
+      baseMultiplier = 3.0; // Medium-Hard
+    } else if (targetPercentage > 40 && targetPercentage <= 60) {
+      baseMultiplier = 4.0; // Hard
+    } else if (targetPercentage > 60 && targetPercentage <= 80) {
+      baseMultiplier = 5.0; // Very Hard
+    } else if (targetPercentage > 80 && targetPercentage <= 100) {
+      baseMultiplier = 6.0; // Extreme
+    }
+    
+    // Time multiplier (shorter time = higher risk = higher reward)
+    let timeMultiplier = 1.0;
+    if (timeFrame <= 1) {
+      timeMultiplier = 1.5;
+    } else if (timeFrame <= 3) {
+      timeMultiplier = 1.3;
+    } else if (timeFrame <= 7) {
+      timeMultiplier = 1.0;
+    } else if (timeFrame <= 14) {
+      timeMultiplier = 0.9;
+    } else {
+      timeMultiplier = 0.8;
+    }
+    
+    // Volatility factor
     const volatilityFactor = Math.max(0.8, Math.min(2.0, userVolatility));
     
+    // Trend alignment
     const trendAlignment = betType === 'increase' 
       ? (recentPerformance > 5 ? 0.7 : recentPerformance < -5 ? 1.4 : 1.0)
       : (recentPerformance < -5 ? 0.7 : recentPerformance > 5 ? 1.4 : 1.0);
     
-    const marketDifficulty = targetPercentage > 20 ? Math.pow(targetPercentage / 20, 1.5) : 1.0;
-    const baseDifficulty = percentageDifficulty * timeDifficulty * volatilityFactor * trendAlignment * marketDifficulty;
-    const multiplier = Math.max(1.1, Math.min(15.0, 1 + baseDifficulty * 0.8));
+    const finalMultiplier = baseMultiplier * timeMultiplier * volatilityFactor * trendAlignment;
     
-    return Math.round(multiplier * 100) / 100;
+    // Cap multiplier to reasonable bounds
+    return Math.max(1.1, Math.min(15.0, Math.round(finalMultiplier * 10) / 10));
+  };
+
+  // Enhanced volatility rating
+  const getVolatilityRating = (percentage: number): 'Low' | 'Medium' | 'High' | 'Extreme' => {
+    if (percentage >= 1 && percentage <= 10) return 'Low';
+    if (percentage > 10 && percentage <= 30) return 'Medium';
+    if (percentage > 30 && percentage <= 70) return 'High';
+    return 'Extreme'; // 70-100%
+  };
+
+  // Calculate potential loss (bet amount × multiplier)
+  const calculatePotentialLoss = (amount: number, multiplier: number): number => {
+    return amount * multiplier;
   };
 
   const placeBet = () => {
@@ -493,8 +726,8 @@ export default function UsersPage() {
     );
 
     const potentialPayout = Math.round(betForm.amount * multiplier);
-    const volatilityRating = selectedUser.volatility > 2.0 ? 'High' : 
-                            selectedUser.volatility > 1.3 ? 'Medium' : 'Low';
+    const potentialLoss = calculatePotentialLoss(betForm.amount, multiplier);
+    const volatilityRating = getVolatilityRating(betForm.targetPercentage);
 
     const newBet: AdvancedBet = {
       id: Date.now().toString(),
@@ -530,16 +763,16 @@ export default function UsersPage() {
       type: 'bet_place',
       amount: -betForm.amount,
       date: new Date().toLocaleDateString(),
-      description: `Bet on ${selectedUser.username}: ${betForm.betType} ${betForm.targetPercentage}% in ${betForm.timeFrame}d`
+      description: `Bet on ${selectedUser.username}: ${betForm.betType} ${betForm.targetPercentage}% in ${betForm.timeFrame}d (${multiplier}x multiplier)`
     };
 
     const existingTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
     localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
 
-    setMessage(`Bet placed! $${betForm.amount} on ${selectedUser.username} portfolio ${betForm.betType === 'increase' ? 'increasing' : 'decreasing'} by ${betForm.targetPercentage}% in ${betForm.timeFrame} days. Potential payout: $${potentialPayout} (${multiplier}x)`);
+    setMessage(`Bet placed! $${betForm.amount} on ${selectedUser.username} portfolio ${betForm.betType === 'increase' ? 'increasing' : 'decreasing'} by ${betForm.targetPercentage}% in ${betForm.timeFrame} days. Potential payout: $${potentialPayout} (${multiplier}x) | Risk: $${potentialLoss} if lost`);
     setShowBetModal(false);
-    setTimeout(() => setMessage(''), 8000);
+    setTimeout(() => setMessage(''), 10000);
   };
 
   const resolveBet = (bet: AdvancedBet) => {
@@ -575,14 +808,28 @@ export default function UsersPage() {
 
       setMessage(`🎉 Bet won! You received $${bet.potentialPayout} from your ${bet.betType} bet on ${bet.targetUser}!`);
     } else {
-      setMessage(`😞 Bet lost. ${bet.targetUser} portfolio ${bet.betType === 'increase' ? 'did not increase' : 'did not decrease'} by ${bet.targetPercentage}% (actual: ${actualChange.toFixed(1)}%)`);
+      // Calculate actual loss with multiplier
+      const actualLoss = calculatePotentialLoss(bet.amount, bet.multiplier);
+      
+      const updatedUser = {
+        ...currentUser,
+        balance: currentUser.balance - actualLoss,
+        totalLosses: currentUser.totalLosses + actualLoss
+      };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('userProfile', JSON.stringify(updatedUser));
+
+      setMessage(`😞 Bet lost. Lost $${actualLoss} (${bet.amount} × ${bet.multiplier}x multiplier). ${bet.targetUser} portfolio ${bet.betType === 'increase' ? 'did not increase' : 'did not decrease'} by ${bet.targetPercentage}% (actual: ${actualChange.toFixed(1)}%)`);
     }
 
-    setTimeout(() => setMessage(''), 5000);
+    setTimeout(() => setMessage(''), 8000);
   };
 
+  // Sort function remains the same since we're now using real data
   const sortUsers = (users: PublicUserData[]) => {
     switch (sortBy) {
+      case 'recent_performance':
+        return [...users].sort((a, b) => b.recentPerformance - a.recentPerformance);
       case 'performance':
         return [...users].sort((a, b) => b.performancePercentage - a.performancePercentage);
       case 'volatility':
@@ -664,6 +911,9 @@ export default function UsersPage() {
         setActiveBets(JSON.parse(storedBets));
       }
 
+      // NEW: Initialize historical data on first load
+      initializeHistoricalData();
+
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -699,7 +949,7 @@ export default function UsersPage() {
         <div className={styles.pageHeader}>
           <div className={styles.headerTitle}>
             <h1>🏆 Portfolio Leaderboard & Betting</h1>
-            <p>Portfolio betting with real traders & autonomous bots ({botCount} bots, {humanCount} humans)</p>
+            <p>Real-time performance tracking with {botCount} bots, {humanCount} humans</p>
           </div>
           
           <div className={styles.headerActions}>
@@ -730,13 +980,16 @@ export default function UsersPage() {
 
         <div className={styles.sortControls}>
           <span className={styles.sortLabel}>Sort by:</span>
-          {(['value', 'performance', 'volatility'] as const).map(option => (
+          {(['recent_performance', 'value', 'performance', 'volatility'] as const).map(option => (
             <button
               key={option}
               onClick={() => setSortBy(option)}
               className={`${styles.sortButton} ${sortBy === option ? styles.active : ''}`}
             >
-              {option === 'value' ? 'Portfolio Value' : option}
+              {option === 'recent_performance' ? '7-Day Performance' :
+               option === 'value' ? 'Portfolio Value' : 
+               option === 'performance' ? 'Total Performance' :
+               'Volatility'}
             </button>
           ))}
           <span className={styles.lastRefresh}>
@@ -744,39 +997,8 @@ export default function UsersPage() {
           </span>
         </div>
 
-        {activeBets.length > 0 && (
-          <section className={styles.activeBetsSection}>
-            <h2 className={styles.activeBetsTitle}>
-              🎲 My Active Bets ({activeBets.filter((b: AdvancedBet) => b.status === 'active').length})
-            </h2>
-            <div className={styles.activeBetsGrid}>
-              {activeBets.filter((b: AdvancedBet) => b.status === 'active').slice(0, 5).map((bet: AdvancedBet) => (
-                <div key={bet.id} className={styles.activeBetCard}>
-                  <div className={styles.activeBetInfo}>
-                    <p>
-                      ${bet.amount} on {bet.targetUser} {bet.betType === 'increase' ? '📈' : '📉'} {bet.targetPercentage}%
-                    </p>
-                    <p>
-                      {bet.timeFrame} days • {bet.volatilityRating} volatility • Expires: {bet.expiryDate}
-                    </p>
-                  </div>
-                  <div className={styles.activeBetResults}>
-                    <p>Win: ${bet.potentialPayout} ({bet.multiplier}x)</p>
-                    <button
-                      onClick={() => resolveBet(bet)}
-                      className={styles.simulateButton}
-                    >
-                      Simulate Result
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         <section className="section">
-          <h2 className="section-title">📊 Portfolio Leaderboard ({sortedUsers.length})</h2>
+          <h2 className="section-title">📊 Portfolio Leaderboard ({sortedUsers.length}) - Real 7-Day Performance Tracking</h2>
           
           {sortedUsers.length === 0 ? (
             <div style={{ 
@@ -843,16 +1065,16 @@ export default function UsersPage() {
                       </p>
                       {(user.shortExposure || user.betExposure) && (
                         <p style={{ fontSize: '12px', color: '#f59e0b' }}>
-                          Exposure: ${(user.shortExposure || 0) + (user.betExposure || 0)}
+                          Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
                         </p>
                       )}
                     </div>
                   </div>
 
                   <div className={styles.performanceMetrics}>
-                    <div className={`${styles.metricCard} ${styles.performance}`}>
-                      <p>7-Day Performance</p>
-                      <p className={`${styles.metricValue} ${getPerformanceClass(user.recentPerformance)}`}>
+                    <div className={`${styles.metricCard} ${styles.performance} ${styles.primary}`}>
+                      <p>🎯 7-Day Performance (Real)</p>
+                      <p className={`${styles.metricValue} ${styles.highlight} ${getPerformanceClass(user.recentPerformance)}`}>
                         {user.recentPerformance >= 0 ? '+' : ''}{user.recentPerformance.toFixed(1)}%
                       </p>
                     </div>
@@ -959,6 +1181,12 @@ export default function UsersPage() {
                       </p>
                     </div>
                     <div className={styles.summaryCard}>
+                      <p>Real 7-Day Performance</p>
+                      <p className={`${styles.summaryValue} ${getPerformanceClass(detailedUserView.user.recentPerformance)}`}>
+                        {detailedUserView.user.recentPerformance >= 0 ? '+' : ''}{detailedUserView.user.recentPerformance.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className={styles.summaryCard}>
                       <p>Active Positions</p>
                       <p className={styles.summaryValue}>{detailedUserView.portfolio.length}</p>
                     </div>
@@ -1048,6 +1276,9 @@ export default function UsersPage() {
                           <div className={styles.betStats}>
                             <p>Potential: ${bet.potentialPayout}</p>
                             <p>Multiplier: {bet.multiplier}x</p>
+                            <p style={{ color: '#ef4444', fontSize: '11px' }}>
+                              Risk: ${calculatePotentialLoss(bet.amount, bet.multiplier)}
+                            </p>
                           </div>
                         </div>
                       ))}
@@ -1109,7 +1340,7 @@ export default function UsersPage() {
                             </div>
                             <div className={styles.shortStats}>
                               <p>Potential: ${short.potentialWinnings}</p>
-                              <p className={progress >= 100 ? styles.positive : styles.negative}>
+                              <p className={progress >= 100 ? 'positive' : 'negative'}>
                                 {progress >= 100 ? 'Target Hit!' : 'In Progress'}
                               </p>
                             </div>
@@ -1156,7 +1387,7 @@ export default function UsersPage() {
           </div>
         )}
 
-        {/* Betting Modal (existing) */}
+        {/* UPDATED: Betting Modal with 1-100% range and loss multiplier display */}
         {showBetModal && selectedUser && (
           <div 
             className={styles.modalOverlay}
@@ -1212,7 +1443,7 @@ export default function UsersPage() {
                       <p>${selectedUser.portfolioValue.toLocaleString()}</p>
                     </div>
                     <div className={styles.summaryItem}>
-                      <p>Recent Performance</p>
+                      <p>Real 7-Day Performance</p>
                       <p className={getPerformanceClass(selectedUser.recentPerformance)}>
                         {selectedUser.recentPerformance >= 0 ? '+' : ''}{selectedUser.recentPerformance.toFixed(1)}%
                       </p>
@@ -1232,13 +1463,13 @@ export default function UsersPage() {
                       <p className={styles.formLabel}>Direction:</p>
                       <div className={styles.directionButtons}>
                         <button
-                          onClick={() => setBetForm({ ...betForm, betType: 'increase' as 'increase' | 'decrease' })}
+                          onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
                           className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
                         >
                           📈 INCREASE
                         </button>
                         <button
-                          onClick={() => setBetForm({ ...betForm, betType: 'decrease' as 'increase' | 'decrease' })}
+                          onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
                           className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
                         >
                           📉 DECREASE
@@ -1252,17 +1483,18 @@ export default function UsersPage() {
                       </label>
                       <input
                         type="range"
-                        min="5"
-                        max="50"
-                        step="5"
+                        min="1"
+                        max="100"
+                        step="1"
                         value={betForm.targetPercentage}
                         onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
                         className={styles.rangeInput}
                       />
                       <div className={styles.rangeLabels}>
-                        <span>5% (Easy)</span>
+                        <span>1% (Easy)</span>
                         <span>25% (Medium)</span>
                         <span>50% (Hard)</span>
+                        <span>100% (Extreme)</span>
                       </div>
                     </div>
 
@@ -1313,32 +1545,84 @@ export default function UsersPage() {
 
                     {betForm.amount > 0 && (
                       <div className={styles.betSummary}>
-                        <p>Bet Summary:</p>
+                        <div className={styles.betSummaryHeader}>
+                          <p>📊 Bet Summary:</p>
+                        </div>
                         <p>
                           Betting ${betForm.amount} that {selectedUser.isBot ? '🤖 ' : ''}{selectedUser.username} portfolio will{' '}
                           <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
                           within <strong>{betForm.timeFrame} days</strong>
                         </p>
-                        <p>
-                          Multiplier: <strong>
-                            {calculateBetMultiplier(
+                        <div className={styles.betCalculations}>
+                          <div className={styles.calculationRow}>
+                            <span>Multiplier:</span>
+                            <span><strong>
+                              {calculateBetMultiplier(
+                                betForm.betType,
+                                betForm.targetPercentage,
+                                betForm.timeFrame,
+                                selectedUser.volatility,
+                                selectedUser.recentPerformance
+                              ).toFixed(2)}x
+                            </strong></span>
+                          </div>
+                          <div className={styles.calculationRow}>
+                            <span>Volatility Rating:</span>
+                            <span><strong>{getVolatilityRating(betForm.targetPercentage)}</strong></span>
+                          </div>
+                          <div className={styles.calculationRow}>
+                            <span>If You Win:</span>
+                            <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                              +${Math.round(betForm.amount * calculateBetMultiplier(
+                                betForm.betType,
+                                betForm.targetPercentage,
+                                betForm.timeFrame,
+                                selectedUser.volatility,
+                                selectedUser.recentPerformance
+                              ))}
+                            </span>
+                          </div>
+                          <div className={styles.calculationRow}>
+                            <span>If You Lose:</span>
+                            <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                              -${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                                betForm.betType,
+                                betForm.targetPercentage,
+                                betForm.timeFrame,
+                                selectedUser.volatility,
+                                selectedUser.recentPerformance
+                              ))}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Loss Warning */}
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '10px',
+                          backgroundColor: '#fef2f2',
+                          border: '1px solid #fecaca',
+                          borderRadius: '6px'
+                        }}>
+                          <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>
+                            ⚠️ Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
                               betForm.betType,
                               betForm.targetPercentage,
                               betForm.timeFrame,
                               selectedUser.volatility,
                               selectedUser.recentPerformance
-                            ).toFixed(2)}x
-                          </strong> • 
-                          Potential Payout: <strong>
-                            ${Math.round(betForm.amount * calculateBetMultiplier(
+                            ).toFixed(2)}x = ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
                               betForm.betType,
                               betForm.targetPercentage,
                               betForm.timeFrame,
                               selectedUser.volatility,
                               selectedUser.recentPerformance
                             ))}
-                          </strong>
-                        </p>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '2px' }}>
+                            Higher percentages and shorter timeframes increase both potential rewards and losses
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -1349,7 +1633,13 @@ export default function UsersPage() {
                     >
                       {betForm.amount <= 0 ? 'Enter Bet Amount' :
                        betForm.amount > currentUser.balance ? 'Insufficient Funds' :
-                       `Place Bet: ${betForm.amount}`}
+                       `Place Bet: ${betForm.amount} (Risk: ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                         betForm.betType,
+                         betForm.targetPercentage,
+                         betForm.timeFrame,
+                         selectedUser.volatility,
+                         selectedUser.recentPerformance
+                       ))})`}
                     </button>
                   </div>
 
@@ -1366,7 +1656,7 @@ export default function UsersPage() {
                             </div>
                             <div className={styles.holdingStats}>
                               <p>${opinion.currentPrice}</p>
-                              <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative}>
+                              <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? 'positive' : 'negative'}>
                                 {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
                               </p>
                             </div>
@@ -1412,368 +1702,12 @@ export default function UsersPage() {
             <p style={{ margin: 0, color: '#0369a1' }}>
               🤖 <strong>{botCount}</strong> autonomous trading bots active • 
               Real portfolios with algorithmic strategies • 
-              Updated every 30 seconds
+              <strong>Portfolio betting: 1%-100% range with loss multipliers</strong> • 
+              Real 7-day performance tracking updated every 30 seconds
             </p>
           </div>
         )}
       </main>
-
-      {/* Additional CSS for new components */}
-      <style jsx>{`
-        .userCardActions {
-          display: flex;
-          gap: 8px;
-          margin-top: 12px;
-          padding-top: 12px;
-          border-top: 1px solid #e5e7eb;
-        }
-
-        .viewDetailsButton, .placeBetButton {
-          flex: 1;
-          padding: 6px 12px;
-          border: none;
-          border-radius: 6px;
-          font-size: 13px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-          min-height: 32px;
-        }
-
-        .viewDetailsButton {
-          background: #f3f4f6;
-          color: #374151;
-          border: 1px solid #d1d5db;
-        }
-
-        .viewDetailsButton:hover {
-          background: #e5e7eb;
-          border-color: #9ca3af;
-        }
-
-        .placeBetButton {
-          background: #3b82f6;
-          color: white;
-          border: 1px solid #3b82f6;
-        }
-
-        .placeBetButton:hover {
-          background: #2563eb;
-          border-color: #2563eb;
-        }
-
-        .detailModalContent {
-          background: white;
-          border-radius: 16px;
-          padding: 0;
-          max-width: 900px;
-          width: 95%;
-          max-height: 90vh;
-          overflow-y: auto;
-        }
-
-        .detailModalBody {
-          padding: 24px;
-          max-height: calc(90vh - 80px);
-          overflow-y: auto;
-        }
-
-        .portfolioSummarySection {
-          margin-bottom: 32px;
-        }
-
-        .summaryGrid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-          gap: 16px;
-          margin-top: 16px;
-        }
-
-        .summaryCard {
-          background: #f8fafc;
-          padding: 16px;
-          border-radius: 8px;
-          text-align: center;
-          border: 1px solid #e2e8f0;
-        }
-
-        .summaryCard p:first-child {
-          font-size: 14px;
-          color: #64748b;
-          margin: 0 0 8px 0;
-        }
-
-        .summaryValue {
-          font-size: 18px;
-          font-weight: 600;
-          margin: 0;
-          color: #1e293b;
-        }
-
-        .portfolioSection {
-          margin-bottom: 32px;
-        }
-
-        .portfolioSection h3 {
-          margin: 0 0 16px 0;
-          color: #1e293b;
-          font-size: 18px;
-        }
-
-        .emptySection {
-          text-align: center;
-          padding: 40px 20px;
-          background: #f8fafc;
-          border-radius: 8px;
-          color: #64748b;
-        }
-
-        .portfolioGrid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-          gap: 16px;
-        }
-
-        .opinionCard {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          padding: 16px;
-          transition: all 0.2s;
-        }
-
-        .opinionCard:hover {
-          border-color: #cbd5e1;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        }
-
-        .opinionContent {
-          margin-bottom: 12px;
-        }
-
-        .opinionText {
-          font-size: 14px;
-          line-height: 1.4;
-          margin: 0 0 8px 0;
-          color: #374151;
-        }
-
-        .opinionMeta {
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          color: #64748b;
-        }
-
-        .opinionStats {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .priceInfo {
-          font-size: 12px;
-          color: #64748b;
-        }
-
-        .priceInfo p {
-          margin: 0 0 2px 0;
-        }
-
-        .opinionGainLoss {
-          font-weight: 600;
-          font-size: 14px;
-        }
-
-        .betsGrid, .shortsGrid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 16px;
-        }
-
-        .betCard, .shortCard {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          padding: 16px;
-          transition: all 0.2s;
-        }
-
-        .betCard:hover, .shortCard:hover {
-          border-color: #cbd5e1;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        }
-
-        .betHeader, .shortHeader {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 8px;
-        }
-
-        .betType, .shortBadge {
-          font-size: 12px;
-          font-weight: 600;
-          padding: 4px 8px;
-          border-radius: 4px;
-          background: #ddd6fe;
-          color: #6b21a8;
-        }
-
-        .shortBadge {
-          background: #fef3c7;
-          color: #92400e;
-        }
-
-        .betAmount, .shortAmount {
-          font-weight: 600;
-          color: #374151;
-        }
-
-        .betDescription, .shortOpinion {
-          font-size: 14px;
-          margin: 8px 0;
-          color: #374151;
-          line-height: 1.4;
-        }
-
-        .betMeta, .shortMeta {
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          color: #64748b;
-          margin-bottom: 12px;
-        }
-
-        .shortDetails {
-          margin: 12px 0;
-        }
-
-        .shortPrices {
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          color: #64748b;
-          margin-bottom: 8px;
-        }
-
-        .shortProgress {
-          margin: 12px 0;
-        }
-
-        .progressLabel {
-          font-size: 12px;
-          color: #64748b;
-          margin-bottom: 4px;
-        }
-
-        .progressBar {
-          width: 100%;
-          height: 6px;
-          background: #e5e7eb;
-          border-radius: 3px;
-          overflow: hidden;
-        }
-
-        .progressFill {
-          height: 100%;
-          transition: width 0.3s ease;
-          border-radius: 3px;
-        }
-
-        .betStats, .shortStats {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-size: 12px;
-          padding-top: 12px;
-          border-top: 1px solid #f1f5f9;
-        }
-
-        .betStats p, .shortStats p {
-          margin: 0;
-          font-weight: 500;
-        }
-
-        .transactionsGrid {
-          display: grid;
-          gap: 12px;
-        }
-
-        .transactionCard {
-          display: flex;
-          align-items: center;
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          padding: 12px;
-          transition: all 0.2s;
-        }
-
-        .transactionCard:hover {
-          border-color: #cbd5e1;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        }
-
-        .transactionIcon {
-          font-size: 20px;
-          margin-right: 12px;
-          width: 32px;
-          text-align: center;
-        }
-
-        .transactionContent {
-          flex: 1;
-        }
-
-        .transactionType {
-          font-weight: 600;
-          margin: 0 0 4px 0;
-          font-size: 14px;
-          color: #374151;
-        }
-
-        .transactionDescription {
-          font-size: 12px;
-          color: #64748b;
-          margin: 0 0 2px 0;
-        }
-
-        .transactionDate {
-          font-size: 11px;
-          color: #9ca3af;
-          margin: 0;
-        }
-
-        .transactionAmount {
-          font-weight: 600;
-          font-size: 14px;
-          text-align: right;
-          min-width: 80px;
-        }
-
-        .positive {
-          color: #059669;
-        }
-
-        .negative {
-          color: #dc2626;
-        }
-
-        .modalOverlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 20px;
-        }
-      `}</style>
     </div>
   );
 }

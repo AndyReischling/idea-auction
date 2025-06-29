@@ -878,97 +878,112 @@ export default function OpinionPage() {
     }
   }, [currentPrice, alreadyOwned, opinion, ownedOpinions, isClient]); // Added ownedOpinions and isClient dependency
 
-  // FIXED: Purchase opinion with proper decimal handling and metadata tracking
-  const purchaseOpinion = () => {
-    if (!opinion || !isClient) return;
+  // FIXED: Purchase opinion with proper feed integration
+const purchaseOpinion = () => {
+  if (!opinion || !isClient) return;
 
-    if (userProfile.balance < currentPrice) {
-      setMessage('Insufficient funds! Generate more opinions to earn money.');
-      setTimeout(() => setMessage(''), 5000);
-      return;
-    }
+  if (userProfile.balance < currentPrice) {
+    setMessage('Insufficient funds! Generate more opinions to earn money.');
+    setTimeout(() => setMessage(''), 5000);
+    return;
+  }
 
-    // Check for rapid trading penalty
-    const rapidTradeCount = getRapidTradeCount(opinion, 10); // last 10 minutes
-    if (rapidTradeCount > 3) {
-      setMessage('⚠️ Rapid trading detected! Please wait before making another purchase.');
-      setTimeout(() => setMessage(''), 5000);
-      return;
-    }
+  // Check for rapid trading penalty
+  const rapidTradeCount = getRapidTradeCount(opinion, 10); // last 10 minutes
+  if (rapidTradeCount > 3) {
+    setMessage('⚠️ Rapid trading detected! Please wait before making another purchase.');
+    setTimeout(() => setMessage(''), 5000);
+    return;
+  }
 
-    const purchasePrice = currentPrice; // Store the exact purchase price
-    const purchaseQuantity = 1; // Always buying 1 share
-    const totalCost = purchasePrice; // Total cost for 1 share
+  const purchasePrice = currentPrice; // Store the exact purchase price
+  const purchaseQuantity = 1; // Always buying 1 share
+  const totalCost = purchasePrice; // Total cost for 1 share
 
-    const updatedMarketData = updateOpinionMarketDataRealistic(opinion, 'buy');
+  const updatedMarketData = updateOpinionMarketDataRealistic(opinion, 'buy');
 
-    if (alreadyOwned) {
-      const updatedOwnedOpinions = ownedOpinions.map(asset => {
-        if (asset.text === opinion) {
-          return {
-            ...asset,
-            quantity: asset.quantity + 1,
-            currentPrice: updatedMarketData.currentPrice
-          };
-        }
-        return asset;
-      });
-      setOwnedOpinions(updatedOwnedOpinions);
-      setOwnedQuantity(ownedQuantity + 1);
-      safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
-    } else {
-      const newAsset: OpinionAsset = {
-        id: Date.now().toString(),
-        text: opinion,
-        purchasePrice: purchasePrice, // Store exact purchase price
-        currentPrice: updatedMarketData.currentPrice,
-        purchaseDate: new Date().toLocaleDateString(),
-        quantity: 1
-      };
-
-      const updatedOwnedOpinions = [...ownedOpinions, newAsset];
-      setOwnedOpinions(updatedOwnedOpinions);
-      safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
-      setAlreadyOwned(true);
-      setOwnedQuantity(1);
-    }
-
-    // FIXED: Create transaction with proper price and quantity metadata
-    const newTransaction: Transaction = {
+  if (alreadyOwned) {
+    const updatedOwnedOpinions = ownedOpinions.map(asset => {
+      if (asset.text === opinion) {
+        return {
+          ...asset,
+          quantity: asset.quantity + 1,
+          currentPrice: updatedMarketData.currentPrice
+        };
+      }
+      return asset;
+    });
+    setOwnedOpinions(updatedOwnedOpinions);
+    setOwnedQuantity(ownedQuantity + 1);
+    safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
+  } else {
+    const newAsset: OpinionAsset = {
       id: Date.now().toString(),
-      type: 'buy',
-      opinionText: opinion.length > 50 ? opinion.slice(0, 50) + '...' : opinion,
-      amount: -totalCost, // Negative because it's an expense
-      price: purchasePrice, // Store the actual purchase price
-      quantity: purchaseQuantity, // Store the quantity purchased
-      date: new Date().toLocaleDateString()
+      text: opinion,
+      purchasePrice: purchasePrice, // Store exact purchase price
+      currentPrice: updatedMarketData.currentPrice,
+      purchaseDate: new Date().toLocaleDateString(),
+      quantity: 1
     };
 
-    updateOwnedOpinionPrices();
+    const updatedOwnedOpinions = [...ownedOpinions, newAsset];
+    setOwnedOpinions(updatedOwnedOpinions);
+    safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
+    setAlreadyOwned(true);
+    setOwnedQuantity(1);
+  }
 
-    const updatedProfile = {
-      ...userProfile,
-      balance: userProfile.balance - totalCost
-    };
-    setUserProfile(updatedProfile);
-    safeSetToStorage('userProfile', updatedProfile);
+  // FIXED: Create transaction with proper price and quantity metadata
+  const newTransaction: Transaction = {
+    id: Date.now().toString(),
+    type: 'buy',
+    opinionText: opinion.length > 50 ? opinion.slice(0, 50) + '...' : opinion,
+    amount: -totalCost, // Negative because it's an expense
+    price: purchasePrice, // Store the actual purchase price
+    quantity: purchaseQuantity, // Store the quantity purchased
+    date: new Date().toLocaleDateString()
+  };
 
-    const existingTransactions = safeGetFromStorage('transactions', []);
-    const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-    safeSetToStorage('transactions', updatedTransactions);
+  updateOwnedOpinionPrices();
 
-    const oldPrice = currentPrice;
-    setCurrentPrice(updatedMarketData.currentPrice);
+  const updatedProfile = {
+    ...userProfile,
+    balance: userProfile.balance - totalCost
+  };
+  setUserProfile(updatedProfile);
+  safeSetToStorage('userProfile', updatedProfile);
+
+  const existingTransactions = safeGetFromStorage('transactions', []);
+  const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
+  safeSetToStorage('transactions', updatedTransactions);
+
+  const oldPrice = currentPrice;
+  setCurrentPrice(updatedMarketData.currentPrice);
+  
+  // Update sell price based on new market price (simple 95% calculation)
+  setSellPrice(calculateSellPrice(updatedMarketData.currentPrice));
+  setTimesPurchased(updatedMarketData.timesPurchased);
+  
+  setMessage(`Successfully purchased! Price: $${oldPrice.toFixed(2)} → $${updatedMarketData.currentPrice.toFixed(2)}. You can sell for: $${calculateSellPrice(updatedMarketData.currentPrice).toFixed(2)}`);
+  setTimeout(() => setMessage(''), 7000);
+
+  // CRITICAL FIX: Call the global feed tracking functions
+  if (typeof window !== 'undefined') {
+    // Method 1: Use the global tracking function if available
+    if ((window as any).trackTrade) {
+      console.log('🔥 CALLING trackTrade for purchase...');
+      (window as any).trackTrade('buy', opinion, purchaseQuantity, purchasePrice, totalCost);
+    }
     
-    // Update sell price based on new market price (simple 95% calculation)
-    setSellPrice(calculateSellPrice(updatedMarketData.currentPrice));
-    setTimesPurchased(updatedMarketData.timesPurchased);
+    // Method 2: Use the enhanced interception function
+    if ((window as any).interceptBuyTransaction) {
+      console.log('🔥 CALLING interceptBuyTransaction...');
+      (window as any).interceptBuyTransaction(opinion, purchaseQuantity, purchasePrice);
+    }
     
-    setMessage(`Successfully purchased! Price: $${oldPrice.toFixed(2)} → $${updatedMarketData.currentPrice.toFixed(2)}. You can sell for: $${calculateSellPrice(updatedMarketData.currentPrice).toFixed(2)}`);
-    setTimeout(() => setMessage(''), 7000);
-
-    // Add to global activity feed if available
-    if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
+    // Method 3: Directly add to global feed
+    if ((window as any).addToGlobalFeed) {
+      console.log('🔥 CALLING addToGlobalFeed for purchase...');
       (window as any).addToGlobalFeed({
         type: 'buy',
         username: userProfile.username,
@@ -981,7 +996,27 @@ export default function OpinionPage() {
         isBot: false
       });
     }
-  };
+    
+    // Method 4: Dispatch custom event
+    window.dispatchEvent(new CustomEvent('newTransaction', {
+      detail: {
+        type: 'buy',
+        username: userProfile.username,
+        opinionText: opinion,
+        opinionId: id,
+        amount: -totalCost,
+        price: purchasePrice,
+        quantity: purchaseQuantity,
+        timestamp: new Date().toISOString(),
+        isBot: false
+      }
+    }));
+    
+    console.log('✅ All feed tracking methods called for PURCHASE');
+  }
+};
+
+// FIXED: Sell opinion with proper feed integration
 
   // FIXED: Sell opinion with proper decimal handling and metadata tracking
   const sellOpinion = () => {

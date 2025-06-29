@@ -42,7 +42,7 @@ interface AdvancedBet {
   bettor: string;
   targetUser: string;
   betType: 'increase' | 'decrease';
-  targetPercentage: number;
+  targetPercentage: number; // Now supports 1%-100%
   amount: number;
   timeFrame: number;
   initialPortfolioValue: number;
@@ -52,7 +52,7 @@ interface AdvancedBet {
   status: 'active' | 'won' | 'lost' | 'expired';
   multiplier: number;
   potentialPayout: number;
-  volatilityRating: 'Low' | 'Medium' | 'High';
+  volatilityRating: 'Low' | 'Medium' | 'High' | 'Extreme';
 }
 
 interface Transaction {
@@ -81,6 +81,7 @@ interface BettingActivity {
   targetUser?: string;
   opinionText?: string;
   progress?: number;
+  actualLoss?: number;
 }
 
 export default function UserDetailPage() {
@@ -93,6 +94,67 @@ export default function UserDetailPage() {
   const [combinedBettingActivity, setCombinedBettingActivity] = useState<BettingActivity[]>([]);
   const [isBot, setIsBot] = useState(false);
   const [botId, setBotId] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  // Safe localStorage helper with storage limit protection
+  const safeLocalStorage = {
+    getItem: (key: string) => {
+      if (typeof window !== 'undefined' && isClient) {
+        try {
+          return localStorage.getItem(key);
+        } catch (error) {
+          console.error('Error reading from localStorage:', error);
+          return null;
+        }
+      }
+      return null;
+    },
+    
+    setItem: (key: string, value: string) => {
+      if (typeof window !== 'undefined' && isClient) {
+        try {
+          // For portfolioSnapshots, limit the data to prevent quota exceeded errors
+          if (key === 'portfolioSnapshots') {
+            const data = JSON.parse(value);
+            const maxSnapshots = 100; // Limit to last 100 snapshots
+            const limitedData = data.slice(-maxSnapshots);
+            localStorage.setItem(key, JSON.stringify(limitedData));
+          } else {
+            localStorage.setItem(key, value);
+          }
+        } catch (error: any) {
+          console.error('Error writing to localStorage:', error);
+          // If it's a quota error and not portfolioSnapshots, try to free up space
+          if (error?.name === 'QuotaExceededError' && key !== 'portfolioSnapshots') {
+            console.warn('Storage quota exceeded, attempting cleanup...');
+            // Clean up old portfolio snapshots to free space
+            try {
+              const existingSnapshots = localStorage.getItem('portfolioSnapshots');
+              if (existingSnapshots) {
+                const snapshots = JSON.parse(existingSnapshots);
+                const reducedSnapshots = snapshots.slice(-50); // Keep only last 50
+                localStorage.setItem('portfolioSnapshots', JSON.stringify(reducedSnapshots));
+                // Try saving the original item again
+                localStorage.setItem(key, value);
+              }
+            } catch (retryError) {
+              console.error('Failed to save even after cleanup:', retryError);
+            }
+          }
+        }
+      }
+    },
+    
+    removeItem: (key: string) => {
+      if (typeof window !== 'undefined' && isClient) {
+        try {
+          localStorage.removeItem(key);
+        } catch (error) {
+          console.error('Error removing from localStorage:', error);
+        }
+      }
+    }
+  };
 
   const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
     if (!text || typeof text !== 'string') return 'Unknown text';
@@ -100,10 +162,15 @@ export default function UserDetailPage() {
   };
 
   const getCurrentPrice = (opinionText: string): number => {
+    if (!isClient) return 10;
+    
     try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      if (marketData[opinionText]) {
-        return marketData[opinionText].currentPrice;
+      const marketDataStr = safeLocalStorage.getItem('opinionMarketData');
+      if (marketDataStr) {
+        const marketData = JSON.parse(marketDataStr);
+        if (marketData[opinionText]) {
+          return marketData[opinionText].currentPrice;
+        }
       }
       return 10;
     } catch (error) {
@@ -128,8 +195,13 @@ export default function UserDetailPage() {
   };
 
   const getUserShorts = (username: string, botId?: string): ShortPosition[] => {
+    if (!isClient) return [];
+    
     try {
-      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      const shortsStr = safeLocalStorage.getItem('shortPositions');
+      if (!shortsStr) return [];
+      
+      const shorts = JSON.parse(shortsStr);
       return shorts.filter((short: ShortPosition) => {
         if (botId) {
           return short.botId === botId;
@@ -143,33 +215,77 @@ export default function UserDetailPage() {
   };
 
   const getUserBets = (username: string): AdvancedBet[] => {
+    if (!isClient) return [];
+    
     try {
-      const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      const betsStr = safeLocalStorage.getItem('advancedBets');
+      if (!betsStr) return [];
+      
+      const bets = JSON.parse(betsStr);
       return bets.filter((bet: AdvancedBet) => bet.bettor === username);
     } catch {
       return [];
     }
   };
 
+  // Validate percentage range (1%-100%)
+  const validateBetPercentage = (percentage: number): boolean => {
+    return percentage >= 1 && percentage <= 100;
+  };
+
+  // Calculate actual loss amount for failed portfolio bets
+  const calculateBetLoss = (bet: AdvancedBet): number => {
+    // User loses bet amount × multiplier when bet fails
+    return bet.amount * bet.multiplier;
+  };
+
+  // Get volatility rating based on percentage
+  const getVolatilityRating = (percentage: number): 'Low' | 'Medium' | 'High' | 'Extreme' => {
+    if (percentage >= 1 && percentage <= 10) return 'Low';
+    if (percentage > 10 && percentage <= 30) return 'Medium';
+    if (percentage > 30 && percentage <= 70) return 'High';
+    return 'Extreme'; // 70-100%
+  };
+
+  // Get difficulty label for display
+  const getDifficultyLabel = (percentage: number): string => {
+    if (percentage >= 1 && percentage <= 10) return 'Easy';
+    if (percentage > 10 && percentage <= 25) return 'Medium';
+    if (percentage > 25 && percentage <= 50) return 'Hard';
+    return 'Extreme';
+  };
+
   const combineBettingActivities = (bets: AdvancedBet[], shorts: ShortPosition[]) => {
     const activities: BettingActivity[] = [];
 
     bets.forEach(bet => {
+      // Calculate actual loss for failed bets
+      const actualLoss = bet.status === 'lost' ? calculateBetLoss(bet) : undefined;
+      
+      // Enhanced subtitle to show percentage range validation
+      const percentageDisplay = validateBetPercentage(bet.targetPercentage) 
+        ? `${bet.targetPercentage}%` 
+        : `${bet.targetPercentage}% (Invalid range: must be 1-100%)`;
+
+      // Get difficulty label
+      const difficultyLabel = getDifficultyLabel(bet.targetPercentage);
+
       activities.push({
         id: `bet_${bet.id}`,
         type: 'portfolio_bet',
         title: `Portfolio Bet: ${bet.targetUser}`,
-        subtitle: `Betting $${bet.amount} on ${bet.betType} by ${bet.targetPercentage}%`,
+        subtitle: `Betting $${bet.amount} on ${bet.betType} by ${percentageDisplay} (${difficultyLabel})`,
         amount: bet.amount,
         potentialPayout: bet.potentialPayout,
         status: bet.status,
         placedDate: bet.placedDate,
         expiryDate: bet.expiryDate,
         daysRemaining: bet.status === 'active' ? getDaysRemaining(bet.expiryDate) : undefined,
-        additionalInfo: `${bet.timeFrame} days | ${bet.volatilityRating} volatility`,
+        additionalInfo: `${bet.timeFrame} days | ${bet.volatilityRating} volatility | ${bet.multiplier}x multiplier`,
         multiplier: bet.multiplier,
         volatilityRating: bet.volatilityRating,
-        targetUser: bet.targetUser
+        targetUser: bet.targetUser,
+        actualLoss: actualLoss
       });
     });
 
@@ -200,8 +316,13 @@ export default function UserDetailPage() {
   };
 
   const getUserBotTransactions = (botId: string): Transaction[] => {
+    if (!isClient) return [];
+    
     try {
-      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      const botTransactionsStr = safeLocalStorage.getItem('botTransactions');
+      if (!botTransactionsStr) return [];
+      
+      const botTransactions = JSON.parse(botTransactionsStr);
       return botTransactions
         .filter((t: any) => t.botId === botId)
         .map((t: any) => ({
@@ -219,10 +340,13 @@ export default function UserDetailPage() {
   };
 
   const loadUserData = async () => {
+    if (!isClient) return;
+    
     const targetUsername = decodeURIComponent(username as string);
     
     try {
-      const bots = JSON.parse(localStorage.getItem('autonomousBots') || '[]');
+      const botsStr = safeLocalStorage.getItem('autonomousBots');
+      const bots = botsStr ? JSON.parse(botsStr) : [];
       const bot = bots.find((b: any) => b.username === targetUsername);
       
       if (bot) {
@@ -236,7 +360,8 @@ export default function UserDetailPage() {
           totalLosses: bot.totalLosses
         });
 
-        const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
+        const botOpinionsStr = safeLocalStorage.getItem('botOpinions');
+        const botOpinions = botOpinionsStr ? JSON.parse(botOpinionsStr) : [];
         const userOpinions = botOpinions
           .filter((opinion: any) => opinion.botId === bot.id)
           .map((opinion: any) => ({
@@ -250,18 +375,21 @@ export default function UserDetailPage() {
         setOwnedOpinions(userOpinions);
         setRecentTransactions(getUserBotTransactions(bot.id));
       } else {
-        const currentUserProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        const currentUserProfileStr = safeLocalStorage.getItem('userProfile');
+        const currentUserProfile = currentUserProfileStr ? JSON.parse(currentUserProfileStr) : {};
         if (currentUserProfile.username === targetUsername) {
           setUserProfile(currentUserProfile);
           
-          const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
+          const ownedOpinionsStr = safeLocalStorage.getItem('ownedOpinions');
+          const ownedOpinions = ownedOpinionsStr ? JSON.parse(ownedOpinionsStr) : [];
           const updatedOpinions = ownedOpinions.map((opinion: OpinionAsset) => ({
             ...opinion,
             currentPrice: getCurrentPrice(opinion.text)
           }));
           setOwnedOpinions(updatedOpinions);
 
-          const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+          const transactionsStr = safeLocalStorage.getItem('transactions');
+          const transactions = transactionsStr ? JSON.parse(transactionsStr) : [];
           setRecentTransactions(transactions.slice(0, 10));
         }
       }
@@ -277,9 +405,15 @@ export default function UserDetailPage() {
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem('opinions');
-    if (stored) {
-      const parsed = JSON.parse(stored);
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    
+    const storedStr = safeLocalStorage.getItem('opinions');
+    if (storedStr) {
+      const parsed = JSON.parse(storedStr);
       const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
       setAllOpinions(validOpinions);
     }
@@ -287,9 +421,9 @@ export default function UserDetailPage() {
     if (username) {
       loadUserData();
     }
-  }, [username]);
+  }, [username, isClient]);
 
-  if (!userProfile) {
+  if (!userProfile || !isClient) {
     return (
       <div className="page-container">
         <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
@@ -333,7 +467,7 @@ export default function UserDetailPage() {
                   fontWeight: '600',
                   marginTop: '4px'
                 }}>
-                  🤖 Algorithmic Trading Strategies
+                  🤖 Algorithmic Trading Strategies (1-100% bet range with loss multipliers)
                 </p>
               )}
             </div>
@@ -425,7 +559,7 @@ export default function UserDetailPage() {
           {combinedBettingActivity.length === 0 ? (
             <div className="empty-state">
               <p>{isBot ? 'This bot hasn\'t placed any bets or short positions yet!' : 'This user hasn\'t placed any bets or short positions yet!'}</p>
-              <p>{isBot ? 'The bot will start making strategic bets as it develops confidence.' : 'They can bet on portfolios or short specific opinions.'}</p>
+              <p>{isBot ? 'The bot will start making strategic bets as it develops confidence.' : 'They can bet on portfolios (1-100% range with multiplied losses) or short specific opinions.'}</p>
             </div>
           ) : (
             <div className="grid grid-2">
@@ -495,7 +629,15 @@ export default function UserDetailPage() {
                         
                         <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
                           {activity.additionalInfo && <span>{activity.additionalInfo}</span>}
-                          {activity.multiplier && <span>Multiplier: {activity.multiplier}x</span>}
+                          {activity.multiplier && (
+                            <span style={{ 
+                              color: activity.status === 'lost' ? '#ef4444' : 'inherit',
+                              fontWeight: activity.status === 'lost' ? '600' : 'normal'
+                            }}>
+                              Multiplier: {activity.multiplier}x
+                              {activity.status === 'lost' && ' (Applied to loss)'}
+                            </span>
+                          )}
                         </div>
                       </div>
                       
@@ -507,12 +649,21 @@ export default function UserDetailPage() {
                           'status-neutral'
                         }>
                           {activity.status === 'won' ? `Won $${activity.potentialPayout}` :
-                           activity.status === 'lost' ? `Lost $${activity.amount}` :
+                           activity.status === 'lost' ? 
+                             (activity.type === 'portfolio_bet' && activity.actualLoss ? 
+                               `Lost $${activity.actualLoss} (${activity.amount} × ${activity.multiplier}x)` : 
+                               `Lost $${activity.amount}`) :
                            activity.status === 'active' ? `Potential: $${activity.potentialPayout}` :
                            'Expired'}
                         </p>
                         {activity.status === 'active' && (
                           <p className="card-subtitle">Expires: {activity.expiryDate}</p>
+                        )}
+                        {/* Show loss risk for active portfolio bets */}
+                        {activity.status === 'active' && activity.type === 'portfolio_bet' && activity.multiplier && (
+                          <p className="card-subtitle" style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px' }}>
+                            Risk: ${activity.amount * activity.multiplier} if lost
+                          </p>
                         )}
                       </div>
                     </div>
@@ -582,7 +733,7 @@ export default function UserDetailPage() {
                     break;
                   case 'bet_loss':
                     emoji = '💸';
-                    activityText = 'Lost Portfolio Bet';
+                    activityText = 'Lost Portfolio Bet (with multiplier applied)';
                     break;
                   default:
                     emoji = '📝';
@@ -622,7 +773,9 @@ export default function UserDetailPage() {
           }}>
             <p style={{ margin: 0, color: '#0369a1' }}>
               🤖 This is an <strong>Autonomous Trading Bot</strong> with algorithmic strategies • 
-              Portfolio updates automatically based on market conditions
+              Portfolio updates automatically based on market conditions • 
+              <strong>Bet range: 1%-100% with loss multipliers</strong> • 
+              <strong>Loss calculation: Bet Amount × Multiplier (higher % = higher risk)</strong>
             </p>
           </div>
         )}
