@@ -7,7 +7,7 @@
 /* 2️⃣  Color & design tokens ---------------------------------------------- */
 :root {
   /* Accent / brand colours (unchanged) */
-  --lime-green: #9fd4a3;
+  --lime-green: #C1DECA;
   --lime-bright: #9aff4d;
   --lime-dark: #8fdd47;
   --emerald-green: #25A766;
@@ -16,9 +16,10 @@
   --coral-bright: #ff5252;
   --soft-purple: #BFB6D7;
   --accent-purple: #9F93C4;
-  --soft-blue: #63b3ed;
+  --soft-blue: #BBD7EC;
   --soft-yellow: #FFD166;
   --soft-azure: #3A86FF;
+  --light-purple: #DEDBE6;
 
   /* Light-mode backgrounds */
   --bg-white: #F1F0EC;
@@ -117,7 +118,7 @@ a { color: inherit; text-decoration: none; }
   flex: 1;
   max-width: 1200px;
   margin: 0 auto;
-  margin-top: 95px;
+  margin-top:71px;
 }
 
 /* 5️⃣  Header -------------------------------------------------------------- */
@@ -133,7 +134,7 @@ a { color: inherit; text-decoration: none; }
   width: 100%;
   max-width: 1200px;
   background: var(--bg-card);
-  height: 95px;
+  height: 72px;
   z-index: 1000;
 }
 
@@ -182,7 +183,7 @@ a { color: inherit; text-decoration: none; }
 .user-info p:last-child { margin: 0; font-weight: 400; opacity: 1; }
 
 /* 6️⃣  Navigation ---------------------------------------------------------- */
-.navigation-buttons { display: flex; gap: 0px; flex-wrap: wrap; padding: 24px 0; }
+.navigation-buttons { display: flex; gap: 0px; flex-wrap: wrap; padding: 12px 0; }
 
 .nav-button {
   padding: 0px 24px;

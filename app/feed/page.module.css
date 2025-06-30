@@ -1,12 +1,28 @@
 /* page.module.css - Feed page specific styles */
 
-/* Header Section */
+/* Header and Navigation */
 .pageHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
   gap: 1rem;
+  border-bottom: 1px solid var(--border-primary);
+  border-left: none;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  max-width: 1200px;
+  background: var(--bg-card);
+  height: 72px;
+  z-index: 1000;
+}
+
+.pageTitle{
+  font-size: var(--font-size-xl);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: var(--font-opinion);
 }
 
 .headerContent {
@@ -32,57 +48,51 @@
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0px;
   flex-wrap: wrap;
+  padding: 0px 0px;
 }
 
 /* Filter Controls */
 .filterControls {
   display: flex;
-  gap: 8px;
-  margin-bottom: 2rem;
-  padding: 1rem;
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
+  gap: 0px;
+  padding: 0 0;
   align-items: center;
+  border-bottom: 1px solid var(--border-primary);
   transition: all var(--transition);
-}
-
-.filterControls:hover {
-  border-color: var(--lime-green);
-  background: var(--bg-elevated);
 }
 
 .filterLabel {
-  margin-right: 1rem;
-  font-weight: 700;
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-weight: 400;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
+  border-right: 1px solid var(--border-primary);
 }
 
 .filterButton {
-  padding: 8px 16px;
-  border: 2px solid var(--soft-blue);
-  border-radius: var(--radius-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 400;
   font-size: var(--font-size-sm);
   text-transform: capitalize;
   transition: all var(--transition);
-  background: var(--bg-card);
   color: var(--text-primary);
   white-space: nowrap;
+  letter-spacing: 0.5px;
+  height: 100%;
+  font-family: var(--font-primary);
 }
 
 .filterButton:hover {
-  transform: translateY(-1px);
+  background: white;
 }
 
 .filterButton.active {
-  background: var(--soft-blue);
+  background: white;
   color: var(--text-primary);
   border-color: var(--soft-blue);
 }
@@ -90,33 +100,45 @@
 /* Activity Feed */
 .feedContainer {
   background: var(--bg-card);
-  border-radius: var(--radius-xl);
-  border: 2px solid var(--border-primary);
   overflow: hidden;
   transition: all var(--transition);
 }
 
 .feedContainer:hover {
-  border-color: var(--lime-green);
+  border-color: var(--soft-purple);
 }
 
 .feedHeader {
-  padding: 1rem 1.5rem;
-  background: var(--bg-section);
-  border-bottom: 2px solid var(--border-primary);
-  font-weight: 700;
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background: none;
+  border-bottom: 1px solid var(--border-primary);
+  font-weight: 400;
   color: var(--text-primary);
+  font-size: var(--font-size-sm);
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.liveTitleSection{
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: var(--font-size-md);
+
 }
 
 .liveIndicator {
   width: 8px;
   height: 8px;
-  background: var(--coral-red);
+  background: #FFBB00;
   border-radius: 50%;
   animation: pulse 2s infinite;
+}
+
+.liveTitle{
+  font-weight: 700;
 }
 
 @keyframes pulse {
@@ -135,16 +157,16 @@
 }
 
 .feedContent::-webkit-scrollbar-track {
-  background: var(--bg-section);
+  background: var(--bg-card);
 }
 
 .feedContent::-webkit-scrollbar-thumb {
-  background: var(--border-secondary);
+  background: var(--light-purple);
   border-radius: 4px;
 }
 
 .feedContent::-webkit-scrollbar-thumb:hover {
-  background: var(--lime-green);
+  background: var(--soft-purple);
 }
 
 .emptyFeed {
@@ -165,7 +187,7 @@
 
 /* Activity Items */
 .activityItem {
-  padding: 1rem 1.5rem;
+  padding: var(--spacing-lg) var(--spacing-lg);
   border-bottom: 1px solid var(--border-primary);
   transition: all var(--transition);
   position: relative;
@@ -176,14 +198,13 @@
 }
 
 .activityItem.userActivity {
-  background: var(--bg-elevated);
-  border-left: 4px solid var(--lime-green);
+  background: rgba(139, 92, 246, 0.09);
 }
 
 .activityLayout {
   display: flex;
   align-items: flex-start;
-  gap: 1rem;
+  gap: var(--spacing-xl);
 }
 
 .activityIcon {
@@ -195,7 +216,8 @@
   justify-content: center;
   font-size: var(--font-size-xl);
   flex-shrink: 0;
-  border: 2px solid;
+  background: var(--bg-white);
+  /* border: 1px solid; */
   transition: all var(--transition);
 }
 
@@ -241,6 +263,8 @@
 }
 
 .activityDescription {
+  display: flex;
+  gap: 8px;
   font-size: var(--font-size-base);
   line-height: 1.4;
   color: var(--text-primary);
@@ -260,9 +284,8 @@
 .userBadge {
   margin-left: 8px;
   padding: 2px 8px;
-  background: var(--lime-green);
+  background: var(--soft-blue);
   color: var(--text-black);
-  border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
   text-transform: uppercase;
@@ -285,10 +308,11 @@
 .activityAmount {
   font-weight: 700;
   font-size: var(--font-size-base);
+  font-family: var(--font-number);
 }
 
 .activityAmount.positive {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 .activityAmount.negative {
@@ -871,7 +895,7 @@
 /* Add a green hover effect on activity items */
 .activityItem:hover {
   background: rgba(16, 185, 129, 0.1) !important; /* Light green background */
-  border-left: 4px solid var(--lime-green) !important; /* Green left border */
+  border-left: 4px solid var(--soft-purple) !important; /* Green left border */
 }
 
 .activityItem.userActivity:hover {
@@ -1126,13 +1150,13 @@
 }
 
 .activityItem.userActivity:hover {
-  background: rgba(16, 185, 129, 0.2) !important; /* Slightly more green for your activities */
-  border-left: 4px solid var(--lime-green) !important;
+  background: #EDE7DA !important; /* Slightly more green for your activities */
+  border-left: 4px solid #CEBFA2 !important;
 }
 
 .activityItem.botActivity:hover {
-  background: rgba(16, 185, 129, 0.15) !important; /* Medium green for bot activities */
-  border-left: 4px solid var(--lime-green) !important;
+  background: #DEDAEA !important; /* Medium green for bot activities */
+  border-left: 4px solid var(--soft-purple) !important;
 }
 
 .activityItem.shortActivity:hover {

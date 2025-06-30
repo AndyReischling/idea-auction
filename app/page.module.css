@@ -46,7 +46,7 @@
 
 .walletCard.portfolio {
   /* background: var(--bg-card); */
-  border-color:  var(--emerald-green);
+  border-color:  var(--border-primary);
 }
 
 .walletCard.pnl.positive {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
 
 interface ActivityFeedItem {
   id: string;
@@ -2318,28 +2319,30 @@ export default function FeedPage() {
       <Sidebar opinions={opinions} />
       
       <main className="main-content">
-        {/* Navigation Buttons - Added back as requested */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '12px', 
-          marginBottom: '20px',
-          justifyContent: 'center',
-          flexWrap: 'wrap'
-        }}>
-          <a href="/generate" className="nav-button generate">
-            ✨ GENERATE OPINIONS
-          </a>
-          <a href="/users" className="nav-button traders">
-            👥 TRADERS
-          </a>
-          <a href="/" className="nav-button traders">
-            👤 MY WALLET
-          </a>
+        <div className={styles.pageHeader}>
+          <div className={styles.pageTitle}>
+            Live Trading Feed
+          </div>
+
+          <div className={styles.headerActions}>
+            <a href="/users" className="nav-button traders">
+              <ScanSmiley size={24} /> View Traders
+            </a>
+            <a href="/feed" className="nav-button feed">
+              <RssSimple size={24} /> Live Feed
+            </a>
+            <a href="/generate" className="nav-button generate">
+              <Balloon size={24} /> Generate
+            </a>
+            <a href="/" className="nav-button admin">
+              <PiggyBank size={24}/> My Wallet
+            </a>
+          </div>
         </div>
 
         {/* Filter Controls */}
         <div className={styles.filterControls}>
-          <span className={styles.filterLabel}>Filter:</span>
+          <div className={styles.filterLabel}>Filter</div>
           {(['all', 'trades', 'bets', 'shorts', 'generates'] as const).map(filterType => (
             <button
               key={filterType}
@@ -2359,10 +2362,15 @@ export default function FeedPage() {
         <div className={styles.feedContainer}>
           {/* Enhanced Feed Header */}
           <div className={styles.feedHeader}>
-            <div className={styles.liveIndicator}></div>
-            LIVE • {filteredActivities.length} Recent Activities • 
+            <div className={styles.liveTitleSection}>
+              <div className={styles.liveIndicator}></div>
+              <div className={styles.liveTitle}>Live</div>
+            </div>
+            <div>
+              {filteredActivities.length} Recent Activities • 
             🤖 {botActivityCount} bots • 👤 {humanActivityCount} users • 
             Last refresh: {new Date(lastRefresh).toLocaleTimeString()}
+            </div>
           </div>
 
           {/* Feed Content */}
@@ -2454,22 +2462,22 @@ export default function FeedPage() {
                         <div className={styles.activityDescription}>
                           {formatActivityDescription(activity)}
                           {isUserActivity && (
-                            <span className={styles.userBadge}>
+                            <div className={styles.userBadge}>
                               YOU
-                            </span>
+                            </div>
                           )}
                           {isBotActivity && (
-                            <span className={styles.botBadge}>
+                            <div className={styles.botBadge}>
                               BOT
-                            </span>
+                            </div>
                           )}
                           {isShortActivity && (
-                            <span className={styles.shortBadge}>
+                            <div className={styles.shortBadge}>
                               SHORT
-                            </span>
+                            </div>
                           )}
                           {/* Clickable username */}
-                          <span 
+                          <div
                             className="clickableUsername"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2485,7 +2493,7 @@ export default function FeedPage() {
                             }}
                           >
                             {isBotActivity ? '🤖' : '👤'} {activity.username}
-                          </span>
+                          </div>
                         </div>
                         
                         <div className={styles.activityMeta}>
