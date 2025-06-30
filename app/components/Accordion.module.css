@@ -1,0 +1,30 @@
+/* Accordion.module.css */
+.accordion {
+  width: 100%;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;   /* pushes chevron to the far right */
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-2xl) var(--spacing-xl) var(--spacing-2xl) 0;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  text-align: left;
+}
+
+.chevron {
+  flex-shrink: 0;                   /* never shrinks, stays aligned */
+}
+
+.body {
+  padding-bottom: var(--spacing-2xl);
+}

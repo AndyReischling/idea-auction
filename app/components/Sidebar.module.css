@@ -2,15 +2,27 @@
 
 /* Main Sidebar Container */
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
   width: 280px;
   height: 100vh;
   overflow-y: auto;
-  padding: 1rem;
+  padding: var(--spacing-md) 0;
   background: var(--bg-card);
-  border-right: 2px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);
   flex-shrink: 0;
   font-family: system-ui, -apple-system, sans-serif;
-  position: relative;
+  position: sticky;
+  top:0;
+  align-self: flex-start;
+  overflow: hidden;  
+}
+
+.scrollArea {
+  flex: 1 1 auto;          /* take remaining height */
+  overflow-y: auto;        /* this is the only scrollbar */
+  padding-right: 0px;      /* keep custom scrollbar clear of border */
 }
 
 .sidebar::before {
@@ -20,45 +32,39 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: linear-gradient(90deg, var(--lime-green), var(--lime-bright));
+  /* background: linear-gradient(90deg, var(--lime-green), var(--lime-bright)); */
 }
 
 /* Custom Scrollbar */
-.sidebar::-webkit-scrollbar {
+.scrollArea::-webkit-scrollbar {
   width: 8px;
 }
 
-.sidebar::-webkit-scrollbar-track {
-  background: var(--bg-section);
+.scrollArea::-webkit-scrollbar-track {
+  background: var(--bg-card);
 }
 
-.sidebar::-webkit-scrollbar-thumb {
-  background: var(--border-secondary);
+.scrollArea::-webkit-scrollbar-thumb {
+  background: #DEDBE6;
   border-radius: 4px;
 }
 
-.sidebar::-webkit-scrollbar-thumb:hover {
-  background: var(--lime-green);
+.scrollArea::-webkit-scrollbar-thumb:hover {
+  background: var(--soft-purple);
 }
 
 /* Header Section */
 .sidebarHeader {
-  margin-bottom: 1.5rem;
-  padding: 12px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-opinion);  
   text-align: center;
   transition: all var(--transition);
-}
 
-.sidebarHeader:hover {
-  border-color: var(--lime-green);
-  background: var(--bg-card);
 }
 
 .headerTitle {
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-4xl);
   margin: 0;
   color: var(--text-primary);
   font-weight: 700;
@@ -70,35 +76,37 @@
 
 .headerSubtitle {
   font-size: var(--font-size-xs);
-  margin: 4px 0 0 0;
-  color: var(--text-tertiary);
+  margin: 0px 0 4px 0;
+  color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
+  font-family: var(--font-primary);
 }
 
 /* Live Feed Link */
 .liveFeedLink {
-  display: block;
-  padding: 12px;
-  background: var(--coral-red);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: 12px;
+  padding: 10px;
   color: var(--text-primary);
+  background: var(--soft-purple);
   text-decoration: none;
-  border-radius: var(--radius-md);
-  font-weight: 700;
+  font-weight: 500;
   text-align: center;
   margin-bottom: 1rem;
   transition: all var(--transition);
-  border: 2px solid var(--coral-red);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-);
+  font-family: var(--font-primary);
 }
 
 .liveFeedLink:hover {
-  background: var(--coral-bright);
-  border-color: var(--coral-bright);
-  transform: translateY(-1px);
+  background: var(--accent-purple);
+  transform: translateY(1px);
 }
 
 /* Table Headers */
@@ -122,23 +130,22 @@
 .opinionList {
   list-style: none;
   padding: 0;
-  margin: 0;
+  margin-bottom: 83px;
+  margin-top: 0;
 }
 
 .opinionItem {
-  margin-bottom: 8px;
+  /* margin-bottom: 8px; */
 }
 
 .opinionLink {
   text-decoration: none;
   display: block;
-  padding: 12px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-md);
-  border: 2px solid var(--border-primary);
+  padding: 16px;
   transition: all var(--transition);
   position: relative;
   overflow: hidden;
+  border-bottom: 1px solid lightgrey;
 }
 
 .opinionLink::before {
@@ -148,13 +155,13 @@
   left: -100%;
   width: 100%;
   height: 2px;
-  background: var(--lime-green);
+  background: var(--soft-purple);
   transition: left var(--transition);
 }
 
 .opinionLink:hover {
   transform: translateY(-1px);
-  border-color: var(--lime-green);
+  border-color: var(--soft-purple);
   background: var(--bg-card);
 }
 
@@ -186,7 +193,6 @@
   font-size: var(--font-size-xs);
   padding: 2px 6px;
   color: var(--text-primary);
-  border-radius: var(--radius-pill);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -194,16 +200,16 @@
 }
 
 .attributionBadge.ai {
-  background: var(--lime-green);
+  background: #FFEB99;
   color: var(--text-black);
 }
 
 .attributionBadge.community {
-  background: var(--soft-purple);
+  background: #CEBFA2;
 }
 
 .attributionBadge.user {
-  background: var(--soft-blue);
+  background: #CEBFA2;
 }
 
 .priceSection {
@@ -219,6 +225,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
+  font-family: var(--font-number);
 }
 
 .trendIndicator {
@@ -227,7 +234,7 @@
 }
 
 .trendIndicator.up {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 .trendIndicator.down {
@@ -261,7 +268,7 @@
 }
 
 .priceChange.positive {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 .priceChange.negative {
@@ -289,27 +296,26 @@
 }
 
 .volatilityIndicator.low {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 /* Market Summary */
 .marketSummary {
-  margin-top: 1.5rem;
+  margin-top: var(--spacing-lg);
   padding: 12px;
-  background: var(--bg-elevated);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
   transition: all var(--transition);
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-primary);
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  z-index: 1000;
 }
 
-.marketSummary:hover {
-  border-color: var(--lime-green);
-  background: var(--bg-card);
-}
 
 .summaryTitle {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--text-primary);
   text-align: center;
   margin-bottom: 8px;
   text-transform: uppercase;
@@ -320,7 +326,7 @@
 .summaryStats {
   display: flex;
   justify-content: space-around;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .statItem {
@@ -329,11 +335,11 @@
 
 .statNumber {
   font-weight: 700;
-  margin-bottom: 2px;
+  font-family: var(--font-number);
 }
 
 .statNumber.rising {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 .statNumber.falling {
@@ -378,7 +384,6 @@
   width: 20px;
   height: 20px;
   border: 2px solid var(--border-primary);
-  border-top: 2px solid var(--lime-green);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-bottom: 8px;

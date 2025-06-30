@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
+import Accordion from '../../components/Accordion';
 import styles from './page.module.css';
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
 
 // ... keeping all the interfaces the same ...
 interface UserProfile {
@@ -1161,11 +1163,11 @@ const purchaseOpinion = () => {
 
   const getMarketTrend = () => {
     const netDemand = timesPurchased - timesSold;
-    if (netDemand > 5) return { emoji: '🚀', text: 'Bullish', color: 'bullish', class: 'bullish' };
-    if (netDemand > 2) return { emoji: '📈', text: 'Rising', color: 'bullish', class: 'bullish' };
-    if (netDemand > -2) return { emoji: '➡️', text: 'Stable', color: 'stable', class: 'stable' };
-    if (netDemand > -5) return { emoji: '📉', text: 'Declining', color: 'bearish', class: 'bearish' };
-    return { emoji: '💀', text: 'Bearish', color: 'bearish', class: 'bearish' };
+    if (netDemand > 5) return { emoji: <RocketLaunch size={32} weight="fill" />, text: 'Bullish', color: 'bullish', class: 'bullish' };
+    if (netDemand > 2) return { emoji: <ChartLineUp size={32} weight="fill" />, text: 'Rising', color: 'bullish', class: 'bullish' };
+    if (netDemand > -2) return { emoji: <FlowerLotus size={32} weight="fill" />, text: 'Stable', color: 'stable', class: 'stable' };
+    if (netDemand > -5) return { emoji: <ChartLineDown size={32} weight="fill" />, text: 'Declining', color: 'bearish', class: 'bearish' };
+    return { emoji: <Skull size={32} weight="fill" />, text: 'Bearish', color: 'bearish', class: 'bearish' };
   };
 
   const getMessageClass = (message: string) => {
@@ -1217,22 +1219,22 @@ const purchaseOpinion = () => {
             onClick={() => router.push('/')}
             className={styles.backButton}
           >
-            ← Back to Profile
+            <ArrowLeft size={24}/> Back to Profile
           </button>
 
           <div className={styles.headerActions}>
             <a href="/users" className="nav-button traders">
-              📊 View Traders
+              <ScanSmiley size={24} /> View Traders
             </a>
             <a href="/feed" className="nav-button feed">
-              📡 Live Feed
+              <RssSimple size={24} /> Live Feed
             </a>
             <a href="/generate" className="nav-button generate">
-              ✨ Generate
+              <Balloon size={24} /> Generate
             </a>
 
             <div className={styles.walletDisplay}>
-              <p>💰 Wallet</p>
+              <p><PiggyBank size={32} weight="fill"/></p>
               <p>${userProfile.balance.toFixed(2)}</p>
             </div>
           </div>
@@ -1241,11 +1243,12 @@ const purchaseOpinion = () => {
         {/* Main Opinion Card */}
         <div className={styles.opinionCard}>
           <div className={styles.opinionHeader}>
-            <h1 className={styles.opinionTitle}>💬 Opinion #{id}</h1>
+            {/*<h1 className={styles.opinionTitle}>💬 Opinion #{id}</h1>*/}
             <div className={styles.badgeContainer}>
               {alreadyOwned && (
                 <div className={styles.ownedBadge}>
-                  ✅ Owned: {ownedQuantity}
+                  <CheckSquare size={24} weight="fill" />
+                  Owned: {ownedQuantity}
                 </div>
               )}
               {hasActiveShort && (
@@ -1257,27 +1260,18 @@ const purchaseOpinion = () => {
           </div>
           
           <div className={styles.opinionText}>
-            <p>"{opinion}"</p>
-          </div>
-
-          {/* Attribution Section */}
-          {attribution && (
-            <div className={styles.attributionSection}>
-              <div className={`${styles.attributionCard} ${styles[getAuthorDisplay(attribution).class]}`}>
-                <div className={styles.attributionIcon}>
-                  {getAuthorDisplay(attribution).icon}
-                </div>
-                <div className={styles.attributionDetails}>
-                  <div className={styles.attributionAuthor}>
-                    {getAuthorDisplay(attribution).name}
+            <p>{opinion}</p>
+            <div className={styles.opinionAttribute}>
+                {attribution && (
+                  <div className={styles.attribution}>
+                    <div>{getAuthorDisplay(attribution).name}</div>
+                    <div className={styles.attributionMeta}>
+                      {attribution.dateCreated}
+                    </div>
                   </div>
-                  <div className={styles.attributionMeta}>
-                    {getAuthorDisplay(attribution).description} • Created {attribution.dateCreated}
-                  </div>
-                </div>
-              </div>
+                )}
             </div>
-          )}
+          </div>
 
           {/* Active Short Positions Display */}
           {activeShorts.filter(short => short.opinionText === opinion).map(short => (
@@ -1335,7 +1329,7 @@ const purchaseOpinion = () => {
 
           {/* Price Chart - keeping the existing implementation */}
           <div className={styles.chartContainer}>
-            <h3 className={styles.chartTitle}>📈 Price History Chart</h3>
+            {/* <h3 className={styles.chartTitle}>📈 Price History Chart</h3> */}
             
             {(() => {
               if (!opinion) return null;
@@ -1454,13 +1448,14 @@ const purchaseOpinion = () => {
           {/* Market Stats */}
           <div className={styles.marketStats}>
             <div className={`${styles.statCard} ${styles.price}`}>
-              <h3 className={`${styles.statTitle} ${styles.price}`}>💰 Current Price</h3>
+
+              <h3 className={`${styles.statTitle} ${styles.price}`}>Current Price</h3>
               <p className={styles.statValue}>${currentPrice.toFixed(2)}</p>
               <p className={styles.statSubtext}>Base price: $10.00</p>
             </div>
 
             <div className={`${styles.statCard} ${styles.trend}`}>
-              <h3 className={`${styles.statTitle} ${styles.trend}`}>📊 Market Trend</h3>
+              <h3 className={`${styles.statTitle} ${styles.trend}`}>Market Trend</h3>
               <p className={`${styles.statValue} ${styles[trend.class]}`}>
                 {trend.emoji} {trend.text}
               </p>
@@ -1470,7 +1465,7 @@ const purchaseOpinion = () => {
             </div>
 
             <div className={`${styles.statCard} ${styles.volume}`}>
-              <h3 className={`${styles.statTitle} ${styles.volume}`}>🔄 Trading Volume</h3>
+              <h3 className={`${styles.statTitle} ${styles.volume}`}>Trading Volume</h3>
               <p className={styles.statValue}>
                 {timesPurchased} buys
               </p>
@@ -1481,8 +1476,10 @@ const purchaseOpinion = () => {
 
             {alreadyOwned && (
               <div className={`${styles.statCard} ${styles.sell}`}>
-                <h3 className={`${styles.statTitle} ${styles.sell}`}>💸 Sell Price</h3>
+
+                <h3 className={`${styles.statTitle} ${styles.sell}`}>Sell Price</h3>
                 <p className={styles.statValue}>${sellPrice.toFixed(2)}</p>
+
                 <div className={styles.marketConditions}>
                   {(() => {
                     const userPurchasePrice = getUserPurchasePrice(opinion || '');
@@ -1508,60 +1505,12 @@ const purchaseOpinion = () => {
             )}
           </div>
 
-          {/* Action Buttons */}
-          <div className={styles.actionButtons}>
-            {!alreadyOwned || ownedQuantity === 0 ? (
-              <button
-                onClick={purchaseOpinion}
-                disabled={userProfile.balance < currentPrice}
-                className={`${styles.actionButton} ${styles.buy}`}
-              >
-                {userProfile.balance < currentPrice 
-                  ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
-                  : `Buy for ${currentPrice.toFixed(2)}`
-                }
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={purchaseOpinion}
-                  disabled={userProfile.balance < currentPrice}
-                  className={`${styles.actionButton} ${styles.buyMore}`}
-                >
-                  {userProfile.balance < currentPrice 
-                    ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
-                    : `Buy More (${currentPrice.toFixed(2)})`
-                  }
-                </button>
-                
-                <button
-                  onClick={sellOpinion}
-                  className={`${styles.actionButton} ${styles.sell}`}
-                >
-                  Sell 1 for ${sellPrice.toFixed(2)}
-                </button>
-              </>
-            )}
-            
-            {/* Short Bet Button */}
-            <button
-              onClick={() => setShowShortModal(true)}
-              disabled={hasActiveShort || ownedQuantity > 0}
-              className={`${styles.actionButton} ${styles.short}`}
-            >
-              {hasActiveShort ? 'Short Active' : 
-               ownedQuantity > 0 ? 'Own Shares (Can\'t Short)' : 
-               '📉 Short'}
-            </button>
-          </div>
-        </div>
-
-        {/* Short Bet Modal */}
-        {showShortModal && (
+          {/* Short Bet Modal */}
+          {showShortModal && (
           <div className={styles.modalOverlay}>
             <div className={styles.shortModal}>
               <div className={styles.modalHeader}>
-                <h3>📉 Short Bet Configuration</h3>
+                <h3>Short Bet Configuration</h3>
                 <button 
                   onClick={() => setShowShortModal(false)}
                   className={styles.closeButton}
@@ -1727,42 +1676,103 @@ const purchaseOpinion = () => {
           </div>
         )}
 
-        {/* Status Messages */}
+
+        {/* Enhanced Trading Info */}
+        <div className={styles.tradingInfo}>
+          <Accordion title="Ultra-Conservative Trading System with Extreme Short Risk">
+            <div className={styles.tradingInfoGrid}>
+              <div className={styles.tradingInfoSection}>
+                <strong>Ultra-Micro Market Movements</strong>
+                <ul>
+                  <li>Each purchase increases price by ~0.1% (prevents arbitrage completely)</li>
+                  <li>Sell price = 95% of current market price</li>
+                  <li>Ultra-tiny price jumps make instant arbitrage impossible</li>
+                  <li>Need massive trading volume to create profit opportunities</li>
+                  <li>Market movements are now 10× smaller than before</li>
+                </ul>
+              </div>
+
+              <div className={styles.tradingInfoSection}>
+                <strong>Short Position Penalties</strong>
+                <ul>
+                  <li><strong>WIN:</strong> Target reached in time → earn potential winnings</li>
+                  <li><strong>EARLY EXIT:</strong> Sell shares → buy X units at current price (X = target %)</li>
+                  <li><strong>EXPIRE:</strong> Time runs out → pay 100× current market price !</li>
+                  <li>Example: 20 % drop bet, exit early at $15 → buy 20 units = $300 penalty</li>
+                </ul>
+              </div>
+            </div>
+          </Accordion>
+        </div>
+
+    
+
+
+          {/* Action Buttons */}
+          <div className={styles.actionButtons}>
+
+          {/* Status Messages */}
         {message && (
           <div className={`${styles.statusMessage} ${styles[getMessageClass(message)]}`}>
             {message}
           </div>
         )}
 
-        {/* Enhanced Trading Info */}
-        <div className={styles.tradingInfo}>
-          <p>💡 <strong>Ultra-Conservative Trading System with Extreme Short Risk:</strong></p>
-          <div className={styles.tradingInfoGrid}>
-            <div className={styles.tradingInfoSection}>
-              <strong>Ultra-Micro Market Movements:</strong>
-              <ul>
-                <li>Each purchase increases price by ~0.1% (prevents arbitrage completely)</li>
-                <li>Sell price = 95% of current market price</li>
-                <li>Ultra-tiny price jumps make instant arbitrage impossible</li>
-                <li>Need massive trading volume to create profit opportunities</li>
-                <li>Market movements are now 10x smaller than before</li>
-                <li>All prices display proper decimals (no more $0.00 transactions)</li>
-                <li><strong>Volatility multiplier removed - pure price based on supply/demand only</strong></li>
-              </ul>
-            </div>
-            <div className={styles.tradingInfoSection}>
-              <strong>⚠️ SHORT POSITION PENALTIES:</strong>
-              <ul>
-                <li><strong>WIN:</strong> Target reached in time = earn potential winnings</li>
-                <li><strong>EARLY EXIT:</strong> Sell shares = buy X units at current price (X = target %)</li>
-                <li><strong>EXPIRE:</strong> Time runs out = pay 100x current market price!</li>
-                <li>Example: 20% drop bet, exit early at $15.00 = buy 20 units = $300.00 penalty</li>
-                <li><strong>NEW:</strong> Bet on any drop from 1%-100%! Higher % = exponentially higher rewards</li>
-                <li>100% drop = price must hit $0.00 for massive 10x+ multipliers!</li>
-              </ul>
-            </div>
+            {!alreadyOwned || ownedQuantity === 0 ? (
+              <button
+                onClick={purchaseOpinion}
+                disabled={userProfile.balance < currentPrice}
+                className={`${styles.actionButton} ${styles.buy}`}
+              >
+                {userProfile.balance < currentPrice 
+                  ? `Need $${currentPrice - userProfile.balance} more`
+                  : `Buy for $${currentPrice}`
+                }
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={purchaseOpinion}
+                  disabled={userProfile.balance < currentPrice}
+                  className={`${styles.actionButton} ${styles.buyMore}`}
+                >
+                  {userProfile.balance < currentPrice 
+                    ? `Need $${currentPrice - userProfile.balance} more`
+                    : `Buy More ($${currentPrice})`
+                  }
+                </button>
+                
+                <button
+                  onClick={sellOpinion}
+                  className={`${styles.actionButton} ${styles.sell}`}
+                >
+                  Sell 1 for ${sellPrice}
+                </button>
+              </>
+            )}
+            
+            {/* Short Bet Button */}
+            <button
+              onClick={() => setShowShortModal(true)}
+              disabled={hasActiveShort || ownedQuantity > 0}
+              className={`${styles.actionButton} ${styles.short}`}
+            >
+              {hasActiveShort ? 'Short Active' : 
+               ownedQuantity > 0 ? 'Own Shares (Can\'t Short)' : 
+               <div className={`${styles.shortText}`}><Ticket size={18} weight="fill" /> Short</div>}
+            </button>
           </div>
         </div>
+
+        {/* Status Messages */}
+        {/* {message && (
+          <div className={`${styles.statusMessage} ${styles[getMessageClass(message)]}`}>
+            {message}
+          </div>
+        )} */}
+
+        
+        
       </main>
     </div>
   );

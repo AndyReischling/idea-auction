@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import styles from './page.module.css';
 import './global.css'; 
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Robot } from "@phosphor-icons/react";
+
 
 interface UserProfile {
   username: string;
@@ -304,39 +306,38 @@ export default function UserProfile() {
               {userProfile.username[0].toUpperCase()}
             </div>
             <div className="user-info">
-              <h1>{userProfile.username}</h1>
-              <p>Member since {userProfile.joinDate}</p>
-              <p>Opinion Trader & Collector</p>
-              {/* Bot status indicator */}
-              <p style={{ 
-                fontSize: '12px', 
-                color: botsRunning ? '#10b981' : '#ef4444',
-                fontWeight: '600',
-                marginTop: '4px'
-              }}>
-                🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
-              </p>
+              <div className="user-name">
+                <div>{userProfile.username}</div>
+                <div style={{ 
+                  fontSize: '12px', 
+                  color: botsRunning ? '#10b981' : '#ef4444',
+                  fontWeight: '400',
+                  marginTop: '4px'
+                }}>
+                  🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
+                </div>
+              </div>
+              <p>Member since {userProfile.joinDate} Opinion Trader & Collector</p>
+              {/* Bot status indicator */} 
             </div>
           </div>
 
           {/* Navigation Buttons */}
           <div className="navigation-buttons">
             <a href="/users" className="nav-button traders">
-              📊 View Traders
+              <ScanSmiley size={24} /> View Traders
             </a>
             <a href="/feed" className="nav-button feed">
-              📡 Live Feed
+            <RssSimple size={24} /> Live Feed
             </a>
             <a href="/generate" className="nav-button generate">
-              ✨ Generate Opinions
+            <Balloon size={24} /> Generate
             </a>
             {/* Bot Control button */}
             <a href="/admin" className="nav-button admin" style={{ 
-              backgroundColor: '#8b5cf6',
-              color: 'white',
               textDecoration: 'none'
             }}>
-              🤖 Bot Control
+              <Robot size={24} /> Bot Control
             </a>
           </div>
         </div>
@@ -344,69 +345,68 @@ export default function UserProfile() {
         {/* Global Bot Controls */}
         <div style={{
           display: 'flex',
+          justifyContent: 'space-between',
           gap: '10px',
           marginBottom: '20px',
           padding: '12px',
-          backgroundColor: botsRunning ? '#f0fdf4' : '#fef2f2',
-          borderRadius: '8px',
-          border: `1px solid ${botsRunning ? '#bbf7d0' : '#fecaca'}`
+          backgroundColor: botsRunning ? '#C1DECA' : '#DDB4B4',
         }}>
-          <button
-            onClick={botsRunning ? handleStopBots : handleStartBots}
-            style={{
-              padding: '8px 16px',
-              fontSize: '14px',
-              fontWeight: '600',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              backgroundColor: botsRunning ? '#ef4444' : '#10b981',
-              color: 'white',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {botsRunning ? '⏹️ Stop Global Bots' : '▶️ Start Global Bots'}
-          </button>
-          <span style={{
+          <div style={{
             display: 'flex',
             alignItems: 'center',
             fontSize: '14px',
-            color: '#64748b',
+            color: botsRunning ? '#4B6453' : '#8E3A3A',
             marginLeft: '10px'
           }}>
             {botsRunning ? 
-              '🟢 AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
-              '🔴 AI traders are paused globally'
+              'AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
+              'AI traders are paused globally'
             }
-          </span>
+          </div>
+          <button
+            onClick={botsRunning ? handleStopBots : handleStartBots}
+            style={{
+              padding: '0px 16px',
+              fontSize: '14px',
+              fontWeight: '400',
+              cursor: 'pointer',
+              background: 'none',
+              // backgroundColor: botsRunning ? '#DDB4B4' : '#C1DECA',
+              color: 'black',
+              transition: 'all 0.2s ease',
+              border: 'none',
+            }}
+          >
+            {botsRunning ? 'Stop Global Bots' : 'Start Global Bots'}
+          </button>
         </div>
 
         {/* Wallet Overview */}
         <div className={styles.walletOverview}>
           <div className={`${styles.walletCard} ${styles.balance}`}>
-            <h3>💰 Wallet Balance</h3>
+            <h3>Wallet Balance</h3>
             <p>${userProfile.balance.toLocaleString()}</p>
           </div>
 
           <div className={`${styles.walletCard} ${styles.portfolio}`}>
-            <h3>📊 Portfolio Value</h3>
+            <h3>Portfolio Value</h3>
             <p>${portfolioValue.toLocaleString()}</p>
           </div>
 
           <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`}>
-            <h3>📈 P&L</h3>
+            <h3>P&L</h3>
             <p>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
           </div>
 
           <div className={`${styles.walletCard} ${styles.bets}`}>
-            <h3>🎲 Active Bets</h3>
+            <h3>Active Bets</h3>
             <p>{totalActiveBets}</p>
           </div>
         </div>
 
         {/* Opinion Portfolio */}
         <section className="section">
-          <h2 className="section-title">💼 Your Opinion Portfolio</h2>
+          <h2 className="section-title">My Opinion Portfolio</h2>
           
           {ownedOpinions.length === 0 ? (
             <div className="empty-state">
@@ -419,7 +419,7 @@ export default function UserProfile() {
               )}
             </div>
           ) : (
-            <div className="grid grid-2">
+            <div className="grid grid-2 p-grid">
               {ownedOpinions.map((opinion) => {
                 const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
                 const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
@@ -429,18 +429,20 @@ export default function UserProfile() {
                 const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
                 
                 return (
-                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <div className="card-header">
+                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card p-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+                    <div className="p-card-header">
                       <div className="card-content">
-                        <p>{safeSlice(opinion.text, 80)}</p>
+                        <p className="p-card-opinion-text">{safeSlice(opinion.text, 80)}</p>
                         <p className="card-subtitle">Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}</p>
                       </div>
                       <div className={styles.opinionPricing}>
                         <p>Bought: ${opinion.purchasePrice}</p>
-                        <p>Current: ${opinion.currentPrice}</p>
-                        <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
-                          {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
-                        </p>
+                        <div className={styles.currentPricing}>
+                          <p>${opinion.currentPrice}</p>
+                          <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
+                            {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </a>
@@ -452,14 +454,14 @@ export default function UserProfile() {
 
         {/* Enhanced My Betting Activity */}
         <section className="section">
-          <h2 className="section-title">🎲 My Portfolio Bets & Short Positions</h2>
+          <h2 className="section-title">My Portfolio Bets & Short Positions</h2>
           
           {combinedBettingActivity.length === 0 ? (
             <div className="empty-state">
               <p>You haven't placed any bets or short positions yet!</p>
               <p>Visit the <a href="/users">Traders page</a> to bet on portfolios or short specific opinions.</p>
               {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
+                <p style={{ color: '#633FD0', fontSize: '14px', marginTop: '10px' }}>
                   🤖 Bots are actively placing bets and shorts - check the Live Feed to see their activity!
                 </p>
               )}
@@ -570,19 +572,19 @@ export default function UserProfile() {
 
         {/* Recent Activity */}
         <section className="section">
-          <h2 className="section-title">📋 Recent Activity</h2>
+          <h2 className="section-title">Recent Activity</h2>
           
           {recentTransactions.length === 0 ? (
             <div>
               <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
               {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#8b5cf6' }}>Live Feed</a> to see all activity!
+                <p style={{ color: '#633FD0', fontSize: '14px', marginTop: '10px' }}>
+                  🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#BFB6D7' }}>Live Feed</a> to see all activity!
                 </p>
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', marginBottom: '84px' }}>
               {recentTransactions.map((transaction, index) => {
                 let activityText = '';
                 let emoji = '';
@@ -620,8 +622,8 @@ export default function UserProfile() {
 return (
   <div key={`transaction-${index}-${transaction.id}`} className="card">
     <div className="card-header">
-      <div className="card-content">
-        <p>
+      <div className="card-content" style={{ display: 'flex', flexDirection: 'column', gap: '0px', marginBottom: '0px 0px 0x' }}>
+        <p style={{ margin: '0px', fontWeight: '400',fontSize: '14px' }}>
           {emoji} {activityText}
         </p>
         <p className="card-subtitle">

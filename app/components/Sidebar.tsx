@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import styles from './Sidebar.module.css';
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
 
 type OpinionItem = { id: string; text: string } | string;
 
@@ -433,32 +434,29 @@ export default function Sidebar({
       {/* Header */}
       <div className={styles.sidebarHeader}>
         <h2 className={styles.headerTitle}>
-          📊 Opinion Exchange
+          Opinion Exchange
         </h2>
         <p className={styles.headerSubtitle}>
           Live Market Prices (Recent First)
         </p>
+
+        {/* Live Feed Link */}
+        <a href="/feed" className={styles.liveFeedLink}>
+          <RssSimple size={24}/> Live Feed
+        </a>
+      </div>
+
+      <div className={styles.scrollArea}>
+            {/* Loading State */}
+
         {debugInfo && (
           <p className={styles.debugInfo} style={{fontSize: '12px', color: '#666'}}>
             {debugInfo}
           </p>
         )}
-      </div>
-
-      {/* Live Feed Link */}
-      <a href="/feed" className={styles.liveFeedLink}>
-        📡 Live Trading Feed
-      </a>
-
-      {/* Table Headers */}
-      <div className={styles.tableHeaders}>
-        <div className={styles.headerRow}>
-          <span>Opinion (Newest First)</span>
-          <span>Price</span>
-        </div>
-      </div>
 
       {/* Loading State */}
+
       {isLoading && (
         <div className={styles.loadingState}>
           <div className={styles.loadingSpinner}></div>
@@ -537,6 +535,10 @@ export default function Sidebar({
           })}
         </ul>
       )}
+
+      </div>
+
+      
 
       {/* Market Summary */}
       {!isLoading && opinionsWithPrices.length > 0 && (
