@@ -170,14 +170,22 @@
 }
 
 .emptyFeed {
-  padding: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-4xl);
+  padding-bottom: var(--spacing-6xl);
   text-align: center;
   color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-primary);
 }
 
 .emptyFeed p:first-child {
-  font-size: var(--font-size-xl);
-  margin: 0 0 0.5rem 0;
+  font-size: var(--font-size-4xl);
+  margin: 0 0 0 0;
 }
 
 .emptyFeed p:last-child {
@@ -198,7 +206,7 @@
 }
 
 .activityItem.userActivity {
-  background: rgba(139, 92, 246, 0.09);
+  background: rgba(139, 92, 246, 0.06);
 }
 
 .activityLayout {
@@ -307,7 +315,7 @@
 
 .activityAmount {
   font-weight: 700;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-md);
   font-family: var(--font-number);
 }
 
@@ -321,68 +329,51 @@
 
 /* Market Stats */
 .marketStats {
-  margin-top: 2rem;
+  margin: var(--spacing-xl) 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
+  /* border-top: 1px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary); */
 }
 
 .statCard {
+  /* margin: var(--spacing-md) 0; */
   padding: 1rem;
-  border-radius: var(--radius-lg);
-  border: 2px solid;
+  border-left: 1px solid var(--border-primary);
   text-align: center;
   transition: all var(--transition);
   background: var(--bg-card);
 }
 
-.statCard:hover {
-  transform: translateY(-2px);
-}
-
-.statCard.purchases {
-  border-color: var(--lime-green);
+.statCard:last-child {
+  border-right: 1px solid var(--border-primary);
 }
 
 .statCard.sales {
-  border-color: var(--soft-blue);
+  
 }
 
 .statCard.bets {
-  border-color: var(--soft-purple);
+  
 }
 
 .statCard.volume {
-  border-color: var(--warning);
+  
 }
 
 .statNumber {
   font-size: var(--font-size-2xl);
-  font-weight: 800;
+  font-weight: 700;
+  font-family: var(--font-number);
   margin: 0 0 4px 0;
-}
-
-.statNumber.purchases {
-  color: var(--lime-green);
-}
-
-.statNumber.sales {
-  color: var(--soft-blue);
-}
-
-.statNumber.bets {
-  color: var(--soft-purple);
-}
-
-.statNumber.volume {
-  color: var(--warning);
 }
 
 .statLabel {
   font-size: var(--font-size-sm);
   margin: 0;
   color: var(--text-secondary);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 /* Activity Type Indicators */
@@ -817,17 +808,7 @@
 }
 
 .activityIcon.shorts {
-  background: var(--coral-red);
-  border-color: var(--coral-bright);
   color: var(--text-primary);
-}
-
-.statCard.shorts {
-  border-color: var(--coral-red);
-}
-
-.statNumber.shorts {
-  color: var(--coral-red);
 }
 
 /* Responsive modal styles */

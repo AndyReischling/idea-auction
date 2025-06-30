@@ -2378,8 +2378,8 @@ export default function FeedPage() {
             {filteredActivities.length === 0 ? (
               <div className={styles.emptyFeed}>
                 <p>📭</p>
-                <p>No activity found matching your filter.</p>
-                <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>
+                <p style={{margin: 0}}>No activity found matching your filter.</p>
+                <p style={{ fontSize: '14px', color: '#666' }}>
                   🤖 Bot system may be starting up. Click "Start Bots" to begin automated trading.
                 </p>
                 <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -2390,11 +2390,10 @@ export default function FeedPage() {
                     }}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: '#10b981',
+                      backgroundColor: '#000',
                       color: 'white',
                       border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
                     }}
                   >
                     🤖 Start Bot System
@@ -2403,10 +2402,9 @@ export default function FeedPage() {
                     onClick={forceRefreshFeed}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: '#9F93C4',
                       color: 'white',
                       border: 'none',
-                      borderRadius: '6px',
                       cursor: 'pointer'
                     }}
                   >
@@ -2421,11 +2419,10 @@ export default function FeedPage() {
                     }}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: '#f59e0b',
-                      color: 'white',
+                      color: 'black',
                       border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      background: 'white'
                     }}
                   >
                     🚀 Force Bot Activity
