@@ -12,9 +12,9 @@ interface OpinionMarketData {
   timesSold: number;
   currentPrice: number;
   basePrice: number;
-  volatility: number;
+  volatility?: number; // Made optional to handle both data formats
   lastUpdated: string;
-  priceHistory: { price: number; timestamp: string; action: 'buy' | 'sell' }[];
+  priceHistory?: { price: number; timestamp: string; action: 'buy' | 'sell' | 'create' }[];
 }
 
 interface OpinionWithPrice {
@@ -26,7 +26,7 @@ interface OpinionWithPrice {
   trend: 'up' | 'down' | 'neutral';
   volatility: 'high' | 'medium' | 'low';
   createdAt: number;
-  originalIndex: number; // Keep track of original array position
+  originalIndex: number;
 }
 
 export default function Sidebar({
@@ -36,15 +36,52 @@ export default function Sidebar({
 }) {
   const [opinionsWithPrices, setOpinionsWithPrices] = useState<OpinionWithPrice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
-  // FIXED: Get all opinions with proper creation timestamps and maintain array index mapping
+  // Safe localStorage helpers
+  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
+    if (typeof window === 'undefined') return defaultValue;
+    try {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      console.error(`Error reading localStorage key ${key}:`, error);
+      return defaultValue;
+    }
+  };
+
+  const safeSetToStorage = (key: string, value: any) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(`Error writing to localStorage key ${key}:`, error);
+    }
+  };
+
+  // Price calculation matching other components
+  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
+    const netDemand = timesPurchased - timesSold;
+    let priceMultiplier;
+    
+    if (netDemand >= 0) {
+      priceMultiplier = Math.pow(1.001, netDemand);
+    } else {
+      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
+    }
+    
+    const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
+    return Math.round(calculatedPrice * 100) / 100;
+  };
+
+  // Get all opinions with proper creation timestamps and maintain array index mapping
   const getAllOpinions = (): { id: string; text: string; createdAt: number; originalIndex: number }[] => {
     try {
-      const storedOpinions: string[] = JSON.parse(localStorage.getItem('opinions') || '[]');
+      const storedOpinions: string[] = safeGetFromStorage('opinions', []);
       
       // Get ONLY creation transactions (type: 'earn'), ignore all buy/sell/bet transactions
-      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      const userTransactions = safeGetFromStorage('transactions', []);
+      const botTransactions = safeGetFromStorage('botTransactions', []);
       
       // Filter to ONLY opinion creation transactions (type: 'earn')
       const creationTransactions = [
@@ -110,14 +147,40 @@ export default function Sidebar({
     }
   };
 
-  // Get market data for an opinion
+  // FIXED: Get market data for an opinion with proper format handling
   const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
-    const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+    const marketData = safeGetFromStorage('opinionMarketData', {});
     
     if (marketData[opinionText]) {
-      return marketData[opinionText];
+      const data = marketData[opinionText];
+      
+      // Ensure we have all required fields
+      const result: OpinionMarketData = {
+        opinionText,
+        timesPurchased: data.timesPurchased || 0,
+        timesSold: data.timesSold || 0,
+        currentPrice: data.currentPrice || 10,
+        basePrice: data.basePrice || 10,
+        volatility: data.volatility || 1.0, // Default volatility if not present
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
+        priceHistory: data.priceHistory || []
+      };
+
+      // Recalculate price if it seems incorrect
+      const expectedPrice = calculatePrice(result.timesPurchased, result.timesSold, result.basePrice);
+      if (Math.abs(expectedPrice - result.currentPrice) > 0.01) {
+        console.log(`🔧 FIXING price for "${opinionText}": ${result.currentPrice} → ${expectedPrice}`);
+        result.currentPrice = expectedPrice;
+        
+        // Update the stored data
+        marketData[opinionText] = result;
+        safeSetToStorage('opinionMarketData', marketData);
+      }
+      
+      return result;
     } else {
-      return {
+      // Create new market data with default values
+      const newData: OpinionMarketData = {
         opinionText,
         timesPurchased: 0,
         timesSold: 0,
@@ -127,6 +190,12 @@ export default function Sidebar({
         lastUpdated: new Date().toISOString(),
         priceHistory: []
       };
+      
+      // Save the new market data
+      marketData[opinionText] = newData;
+      safeSetToStorage('opinionMarketData', marketData);
+      
+      return newData;
     }
   };
 
@@ -158,8 +227,8 @@ export default function Sidebar({
     };
   };
 
-  // Determine volatility level
-  const getVolatilityLevel = (volatility: number): 'high' | 'medium' | 'low' => {
+  // Determine volatility level with fallback
+  const getVolatilityLevel = (volatility: number = 1.0): 'high' | 'medium' | 'low' => {
     if (volatility > 2.0) return 'high';
     if (volatility > 1.3) return 'medium';
     return 'low';
@@ -168,7 +237,7 @@ export default function Sidebar({
   // Determine opinion source/attribution
   const getOpinionAttribution = (opinionText: string): { type: 'ai' | 'community' | 'user', emoji: string } => {
     // Check if this is from user's actual transactions (user-submitted)
-    const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+    const userTransactions = safeGetFromStorage('transactions', []);
     const isUserSubmitted = userTransactions.some((t: any) => 
       t.type === 'earn' && t.opinionText && opinionText.includes(t.opinionText.slice(0, 20))
     );
@@ -178,7 +247,7 @@ export default function Sidebar({
     }
 
     // Check if this is from bot transactions (bot-generated)
-    const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+    const botTransactions = safeGetFromStorage('botTransactions', []);
     const isBotGenerated = botTransactions.some((t: any) => 
       t.type === 'earn' && t.opinionText && opinionText.includes(t.opinionText.slice(0, 20))
     );
@@ -230,57 +299,76 @@ export default function Sidebar({
     return { emoji, text, className: `${styles.volatilityIndicator} ${styles[volatility]}` };
   };
 
-  // FIXED: Load and process opinion data with proper sorting while maintaining URL consistency
+  // FIXED: Load and process opinion data with better error handling
   useEffect(() => {
     setIsLoading(true);
     
     const updateOpinions = () => {
-      // Fetch ALL opinions from storage
-      const allOpinions = getAllOpinions();
-      
-      console.log(`📊 Sidebar updating: Found ${allOpinions.length} total opinions`);
-      
-      // CRITICAL FIX: Sort by creation timestamp - NEWEST FIRST
-      // This ensures newest opinions appear at the top regardless of their original array position
-      const sortedByCreationTime = allOpinions
-        .filter(Boolean)
-        .sort((a, b) => b.createdAt - a.createdAt); // Newest first
-      
-      console.log(`📊 After sorting by creation time: ${sortedByCreationTime.length} opinions`);
-      if (sortedByCreationTime.length > 0) {
-        console.log(`📊 Most recent: "${sortedByCreationTime[0]?.text?.slice(0, 30)}..." (Original ID: ${sortedByCreationTime[0]?.id}, Created: ${new Date(sortedByCreationTime[0]?.createdAt).toLocaleString()})`);
-        if (sortedByCreationTime.length > 1) {
-          console.log(`📊 Second most recent: "${sortedByCreationTime[1]?.text?.slice(0, 30)}..." (Original ID: ${sortedByCreationTime[1]?.id}, Created: ${new Date(sortedByCreationTime[1]?.createdAt).toLocaleString()})`);
+      try {
+        // Fetch ALL opinions from storage
+        const allOpinions = getAllOpinions();
+        
+        console.log(`📊 Sidebar updating: Found ${allOpinions.length} total opinions`);
+        setDebugInfo(`Found ${allOpinions.length} opinions`);
+        
+        // Sort by creation timestamp - NEWEST FIRST
+        const sortedByCreationTime = allOpinions
+          .filter(Boolean)
+          .sort((a, b) => b.createdAt - a.createdAt); // Newest first
+        
+        console.log(`📊 After sorting by creation time: ${sortedByCreationTime.length} opinions`);
+        if (sortedByCreationTime.length > 0) {
+          console.log(`📊 Most recent: "${sortedByCreationTime[0]?.text?.slice(0, 30)}..." (Original ID: ${sortedByCreationTime[0]?.id}, Created: ${new Date(sortedByCreationTime[0]?.createdAt).toLocaleString()})`);
         }
+        
+        const processedOpinions: OpinionWithPrice[] = sortedByCreationTime
+          .map((op: { id: string; text: string; createdAt: number; originalIndex: number }) => {
+            try {
+              const text = op.text;
+              const id = op.id; // Keep original ID for proper URL routing
+              
+              const marketData = getOpinionMarketData(text);
+              const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
+              const volatilityLevel = getVolatilityLevel(marketData.volatility);
+              
+              return {
+                id, // Original array index for URL consistency
+                text,
+                currentPrice: marketData.currentPrice,
+                priceChange,
+                priceChangePercent,
+                trend,
+                volatility: volatilityLevel,
+                createdAt: op.createdAt,
+                originalIndex: op.originalIndex
+              };
+            } catch (error) {
+              console.error('Error processing opinion:', error);
+              // Return a fallback opinion
+              return {
+                id: op.id,
+                text: op.text,
+                currentPrice: 10,
+                priceChange: 0,
+                priceChangePercent: 0,
+                trend: 'neutral' as const,
+                volatility: 'low' as const,
+                createdAt: op.createdAt,
+                originalIndex: op.originalIndex
+              };
+            }
+          });
+
+        console.log(`📊 Processed ${processedOpinions.length} opinions for display`);
+        setDebugInfo(`Processed ${processedOpinions.length} opinions`);
+
+        setOpinionsWithPrices(processedOpinions);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error in updateOpinions:', error);
+        setDebugInfo(`Error: ${error}`);
+        setIsLoading(false);
       }
-      
-      const processedOpinions: OpinionWithPrice[] = sortedByCreationTime
-        .map((op: { id: string; text: string; createdAt: number; originalIndex: number }) => {
-          const text = op.text;
-          const id = op.id; // Keep original ID for proper URL routing
-          
-          const marketData = getOpinionMarketData(text);
-          const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-          const volatilityLevel = getVolatilityLevel(marketData.volatility);
-          
-          return {
-            id, // Original array index for URL consistency
-            text,
-            currentPrice: marketData.currentPrice,
-            priceChange,
-            priceChangePercent,
-            trend,
-            volatility: volatilityLevel,
-            createdAt: op.createdAt,
-            originalIndex: op.originalIndex
-          };
-        });
-
-      console.log(`📊 Processed ${processedOpinions.length} opinions for display`);
-      console.log(`📊 Display order (newest first): ${processedOpinions.slice(0, 3).map(op => `"${op.text.slice(0, 20)}..." (ID: ${op.id}, Created: ${new Date(op.createdAt).toLocaleString()})`).join(', ')}`);
-
-      setOpinionsWithPrices(processedOpinions);
-      setIsLoading(false);
     };
 
     // Initial load
@@ -289,7 +377,7 @@ export default function Sidebar({
     // Multiple update mechanisms for faster detection
     
     // 1. Fast interval for real-time updates
-    const fastInterval = setInterval(updateOpinions, 3000);
+    const fastInterval = setInterval(updateOpinions, 2000); // Reduced to 2 seconds
     
     // 2. Storage event listener for immediate updates when localStorage changes
     const handleStorageChange = (e: StorageEvent) => {
@@ -316,11 +404,27 @@ export default function Sidebar({
       }
     }, 5000);
 
+    // 5. Add a custom event for manual refresh
+    const handleManualRefresh = () => {
+      console.log('🔄 Manual refresh triggered');
+      updateOpinions();
+    };
+    
+    window.addEventListener('sidebarRefresh', handleManualRefresh);
+
     return () => {
       clearInterval(fastInterval);
       clearInterval(visibilityInterval);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('botActivityUpdate', handleBotActivity);
+      window.removeEventListener('sidebarRefresh', handleManualRefresh);
+    };
+  }, []);
+
+  // Add a manual refresh function that can be called from other components
+  useEffect(() => {
+    (window as any).refreshSidebar = () => {
+      window.dispatchEvent(new CustomEvent('sidebarRefresh'));
     };
   }, []);
 
@@ -334,6 +438,11 @@ export default function Sidebar({
         <p className={styles.headerSubtitle}>
           Live Market Prices (Recent First)
         </p>
+        {debugInfo && (
+          <p className={styles.debugInfo} style={{fontSize: '12px', color: '#666'}}>
+            {debugInfo}
+          </p>
+        )}
       </div>
 
       {/* Live Feed Link */}
@@ -375,7 +484,7 @@ export default function Sidebar({
             
             // Debug info for first few opinions
             if (index < 3) {
-              console.log(`📋 Displaying opinion ${index}: Original ID=${opinion.id}, text="${opinion.text.slice(0, 30)}...", createdAt=${new Date(opinion.createdAt).toLocaleString()}`);
+              console.log(`📋 Displaying opinion ${index}: Original ID=${opinion.id}, text="${opinion.text.slice(0, 30)}...", price=$${opinion.currentPrice}, createdAt=${new Date(opinion.createdAt).toLocaleString()}`);
             }
             
             return (
@@ -397,7 +506,7 @@ export default function Sidebar({
                     
                     <div className={styles.priceSection}>
                       <div className={styles.priceDisplay}>
-                        ${opinion.currentPrice}
+                        ${opinion.currentPrice.toFixed(2)}
                         <span className={trendIndicator.className}>
                           {trendIndicator.emoji}
                         </span>
