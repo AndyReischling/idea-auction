@@ -101,6 +101,7 @@ interface PortfolioSnapshot {
 }
 
 export default function UsersPage() {
+  const [isClient, setIsClient] = useState(false);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
     username: 'OpinionTrader123',
@@ -891,6 +892,12 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    
     try {
       const stored = localStorage.getItem('opinions');
       if (stored) {
@@ -917,16 +924,20 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Error loading data:', error);
     }
-  }, []);
+  }, [isClient]);
 
   useEffect(() => {
+    if (!isClient) return;
+    
     if (allOpinions.length > 0 && currentUser.username) {
       const users = getAllUsers();
       setPublicUsers(users);
     }
-  }, [allOpinions, currentUser]);
+  }, [allOpinions, currentUser, isClient]);
 
   useEffect(() => {
+    if (!isClient) return;
+    
     const refreshInterval = setInterval(() => {
       const users = getAllUsers();
       if (users.length !== publicUsers.length) {
@@ -935,45 +946,101 @@ export default function UsersPage() {
     }, 30000);
 
     return () => clearInterval(refreshInterval);
-  }, [publicUsers.length]);
+  }, [publicUsers.length, isClient]);
 
   const sortedUsers = sortUsers(publicUsers);
   const botCount = sortedUsers.filter(u => u.isBot).length;
   const humanCount = sortedUsers.filter(u => !u.isBot).length;
+
+  // Client-side guard to prevent hydration errors
+  if (!isClient) {
+    return (
+      <div className="page-container">
+        <Sidebar opinions={[]} />
+        <main className="main-content">
+          <div style={{ 
+            padding: '40px', 
+            textAlign: 'center', 
+            color: 'var(--text-primary)' 
+          }}>
+            <div style={{ 
+              fontSize: '24px', 
+              marginBottom: '16px' 
+            }}>
+              📊
+            </div>
+            <p>Loading traders...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
       <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
       
       <main className="main-content">
-        <div className={styles.pageHeader}>
-          <div className={styles.headerTitle}>
-            <h1>🏆 Portfolio Leaderboard & Betting</h1>
-            <p>Real-time performance tracking with {botCount} bots, {humanCount} humans</p>
+        {/* Updated Header with Right-Justified Navigation */}
+        <div className={styles.topNavigation}>
+          {/* Page Title Section (Left side) */}
+          <div>
+            <h1 className={styles.pageTitle}>📊 View Traders</h1>
+            <p className={styles.pageSubtitle}>Explore trader portfolios and place bets</p>
           </div>
-          
+
+          {/* Navigation Buttons (Right side) */}
           <div className={styles.headerActions}>
-            <div className={styles.walletDisplay}>
-              <p>Wallet</p>
-              <p>${currentUser.balance.toLocaleString()}</p>
-            </div>
-
-            <button 
-              onClick={forceRefreshUsers}
-              className="nav-button"
-              style={{ backgroundColor: '#8b5cf6' }}
-            >
-              Refresh
-            </button>
-
-            <a href="/generate" className="nav-button generate">
-              Generate Opinions
+            <a href="/" className="nav-button" style={{ 
+              backgroundColor: 'var(--lime-green)',
+              color: 'var(--text-black)',
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-pill)',
+              textDecoration: 'none',
+              fontSize: 'var(--font-size-sm)',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all var(--transition)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              👤 My Profile
             </a>
-            <a href="/" className="nav-button traders">
-              My Profile
+            <a href="/feed" className="nav-button feed" style={{
+              backgroundColor: 'var(--coral-red)',
+              color: 'var(--text-black)',
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-pill)',
+              textDecoration: 'none',
+              fontSize: 'var(--font-size-sm)',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all var(--transition)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              📡 Live Feed
             </a>
-            <a href="/feed" className="nav-button feed">
-              Feed
+            <a href="/generate" className="nav-button generate" style={{
+              backgroundColor: 'var(--lime-green)',
+              color: 'var(--text-black)',
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-pill)',
+              textDecoration: 'none',
+              fontSize: 'var(--font-size-sm)',
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all var(--transition)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              ✨ Generate
             </a>
           </div>
         </div>
