@@ -1,6 +1,6 @@
-/* page.module.css - Feed page specific styles */
+/* Enhanced page.module.css - Feed page specific styles with global class integration */
 
-/* Header Section */
+/* Header Section - Enhanced with global integration */
 .pageHeader {
   display: flex;
   justify-content: space-between;
@@ -36,7 +36,7 @@
   flex-wrap: wrap;
 }
 
-/* Filter Controls */
+/* Enhanced Filter Controls with global styling integration */
 .filterControls {
   display: flex;
   gap: 8px;
@@ -47,11 +47,13 @@
   border: 2px solid var(--border-primary);
   align-items: center;
   transition: all var(--transition);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .filterControls:hover {
   border-color: var(--lime-green);
   background: var(--bg-elevated);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .filterLabel {
@@ -75,29 +77,35 @@
   background: var(--bg-card);
   color: var(--text-primary);
   white-space: nowrap;
+  font-family: inherit;
+  letter-spacing: 0.025em;
 }
 
 .filterButton:hover {
   transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .filterButton.active {
   background: var(--soft-blue);
   color: var(--text-primary);
   border-color: var(--soft-blue);
+  box-shadow: 0 2px 8px rgba(99, 179, 237, 0.3);
 }
 
-/* Activity Feed */
+/* Enhanced Activity Feed */
 .feedContainer {
   background: var(--bg-card);
   border-radius: var(--radius-xl);
   border: 2px solid var(--border-primary);
   overflow: hidden;
   transition: all var(--transition);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 .feedContainer:hover {
   border-color: var(--lime-green);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 }
 
 .feedHeader {
@@ -109,6 +117,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: var(--font-size-sm);
 }
 
 .liveIndicator {
@@ -147,37 +156,44 @@
   background: var(--lime-green);
 }
 
-.emptyFeed {
-  padding: 3rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.emptyFeed p:first-child {
-  font-size: var(--font-size-xl);
-  margin: 0 0 0.5rem 0;
-}
-
-.emptyFeed p:last-child {
-  margin: 0;
-  font-size: var(--font-size-base);
-}
-
-/* Activity Items */
+/* Enhanced Activity Items with global card integration */
 .activityItem {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-primary);
   transition: all var(--transition);
   position: relative;
+  /* Integration with global card styles */
+  background: var(--bg-card);
 }
 
 .activityItem:last-child {
   border-bottom: none;
 }
 
+/* Enhanced hover effects */
+.activityItem:hover {
+  background: rgba(184, 255, 107, 0.1) !important; /* Light green background */
+  border-left: 4px solid var(--lime-green) !important; /* Green left border */
+  transform: translateY(-1px);
+}
+
 .activityItem.userActivity {
   background: var(--bg-elevated);
   border-left: 4px solid var(--lime-green);
+}
+
+.activityItem.userActivity:hover {
+  background: var(--bg-elevated) !important; /* Keep user activities as they were */
+  box-shadow: 0 4px 8px rgba(184, 255, 107, 0.2);
+}
+
+.activityItem.botActivity:hover {
+  background: rgba(16, 185, 129, 0.15) !important; /* Slightly more green for bots */
+}
+
+.activityItem.shortActivity:hover {
+  background: rgba(239, 68, 68, 0.1) !important; /* Light red for short activities */
+  border-left-color: var(--coral-red) !important;
 }
 
 .activityLayout {
@@ -186,6 +202,7 @@
   gap: 1rem;
 }
 
+/* Enhanced Activity Icons with better visual hierarchy */
 .activityIcon {
   width: 40px;
   height: 40px;
@@ -197,44 +214,75 @@
   flex-shrink: 0;
   border: 2px solid;
   transition: all var(--transition);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.activityIcon.buy {
+.activityIcon:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Enhanced icon colors */
+.activityIcon.buy,
+.buyIcon {
   background: var(--lime-green);
   border-color: var(--lime-dark);
   color: var(--text-black);
 }
 
-.activityIcon.sell {
+.activityIcon.sell,
+.sellIcon {
   background: var(--soft-blue);
   border-color: var(--soft-blue);
   color: var(--text-primary);
 }
 
-.activityIcon.betPlace {
+.activityIcon.betPlace,
+.betIcon {
   background: var(--soft-purple);
   border-color: var(--soft-purple);
   color: var(--text-primary);
 }
 
-.activityIcon.betWin {
+.activityIcon.betWin,
+.winIcon {
   background: var(--lime-green);
   border-color: var(--lime-dark);
   color: var(--text-black);
 }
 
-.activityIcon.betLoss {
+.activityIcon.betLoss,
+.lossIcon {
   background: var(--coral-red);
   border-color: var(--coral-bright);
   color: var(--text-primary);
 }
 
-.activityIcon.generate {
+.activityIcon.generate,
+.earnIcon {
   background: var(--warning);
   border-color: #ffc107;
   color: var(--text-black);
 }
 
+.activityIcon.shortPlace,
+.activityIcon.shortWin,
+.activityIcon.shortLoss,
+.shortIcon,
+.shortWinIcon,
+.shortLossIcon {
+  background: var(--coral-red);
+  border-color: var(--coral-bright);
+  color: var(--text-primary);
+}
+
+.defaultIcon {
+  background: var(--bg-elevated);
+  border-color: var(--border-secondary);
+  color: var(--text-secondary);
+}
+
+/* Enhanced Activity Content */
 .activityContent {
   flex: 1;
   min-width: 0;
@@ -245,6 +293,7 @@
   line-height: 1.4;
   color: var(--text-primary);
   margin-bottom: 4px;
+  font-weight: 500;
 }
 
 .activityDescription strong {
@@ -257,6 +306,7 @@
   font-style: italic;
 }
 
+/* Enhanced Badges */
 .userBadge {
   margin-left: 8px;
   padding: 2px 8px;
@@ -267,6 +317,33 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.botBadge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--lime-green);
+  color: var(--text-black);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.shortBadge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--coral-red);
+  color: var(--text-primary);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .activityMeta {
@@ -280,22 +357,29 @@
 
 .activityTime {
   color: var(--text-tertiary);
+  font-weight: 500;
 }
 
 .activityAmount {
   font-weight: 700;
   font-size: var(--font-size-base);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
 }
 
-.activityAmount.positive {
+.activityAmount.positive,
+.positiveAmount {
   color: var(--lime-green);
+  background: rgba(184, 255, 107, 0.1);
 }
 
-.activityAmount.negative {
+.activityAmount.negative,
+.negativeAmount {
   color: var(--coral-red);
+  background: rgba(255, 107, 107, 0.1);
 }
 
-/* Market Stats */
+/* Enhanced Market Stats with global grid integration */
 .marketStats {
   margin-top: 2rem;
   display: grid;
@@ -310,10 +394,12 @@
   text-align: center;
   transition: all var(--transition);
   background: var(--bg-card);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .statCard:hover {
   transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 }
 
 .statCard.purchases {
@@ -328,6 +414,10 @@
   border-color: var(--soft-purple);
 }
 
+.statCard.shorts {
+  border-color: var(--coral-red);
+}
+
 .statCard.volume {
   border-color: var(--warning);
 }
@@ -336,6 +426,7 @@
   font-size: var(--font-size-2xl);
   font-weight: 800;
   margin: 0 0 4px 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .statNumber.purchases {
@@ -350,6 +441,10 @@
   color: var(--soft-purple);
 }
 
+.statNumber.shorts {
+  color: var(--coral-red);
+}
+
 .statNumber.volume {
   color: var(--warning);
 }
@@ -359,6 +454,287 @@
   margin: 0;
   color: var(--text-secondary);
   font-weight: 600;
+}
+
+/* Enhanced Modal Styles with global integration */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+
+.modalContent {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-primary);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+.modalHeader {
+  padding: 1.5rem;
+  border-bottom: 2px solid var(--border-primary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-section);
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: var(--font-size-xl);
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  transition: all var(--transition);
+}
+
+.closeButton:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+.modalBody {
+  padding: 1.5rem;
+}
+
+.activityDetails {
+  margin-top: 1rem;
+}
+
+.detailRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border-primary);
+  gap: 1rem;
+}
+
+.detailRow:last-child {
+  border-bottom: none;
+}
+
+.detailLabel {
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.opinionText {
+  font-style: italic;
+  color: var(--text-primary);
+  text-align: right;
+  flex: 1;
+  background: var(--bg-section);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.clickableUsername {
+  cursor: pointer;
+  transition: all var(--transition);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.clickableUsername:hover {
+  opacity: 0.8;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Enhanced Modal Actions */
+.modalActions {
+  padding: 1.5rem;
+  border-top: 2px solid var(--border-primary);
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  background: var(--bg-section);
+}
+
+.viewUserButton,
+.viewOpinionButton,
+.advancedDetailsButton,
+.closeModalButton {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  transition: all var(--transition);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.viewUserButton {
+  background: var(--soft-blue);
+  border-color: var(--soft-blue);
+  color: var(--text-primary);
+}
+
+.viewUserButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(99, 179, 237, 0.3);
+}
+
+.viewOpinionButton {
+  background: var(--soft-purple);
+  border-color: var(--soft-purple);
+  color: var(--text-primary);
+}
+
+.viewOpinionButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(183, 148, 246, 0.3);
+}
+
+.advancedDetailsButton {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: var(--text-black);
+}
+
+.advancedDetailsButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 211, 61, 0.3);
+}
+
+.closeModalButton {
+  background: var(--bg-card);
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+}
+
+.closeModalButton:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-secondary);
+}
+
+/* Enhanced Transaction Modal */
+.transactionModal {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-primary);
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+.transactionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.transactionType {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.typeTag {
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.typeTag.buy {
+  background: var(--lime-green);
+  color: var(--text-black);
+}
+
+.typeTag.sell {
+  background: var(--soft-blue);
+  color: var(--text-primary);
+}
+
+.typeTag.bet_place {
+  background: var(--soft-purple);
+  color: var(--text-primary);
+}
+
+.typeTag.generate {
+  background: var(--warning);
+  color: var(--text-black);
+}
+
+.botTag {
+  padding: 0.25rem 0.5rem;
+  background: var(--lime-green);
+  color: var(--text-black);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.shortTag {
+  padding: 0.25rem 0.5rem;
+  background: var(--coral-red);
+  color: var(--text-primary);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.transactionAmount {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.transactionDescription {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--bg-section);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--lime-green);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.transactionDetails {
+  margin: 1rem 0;
 }
 
 /* Activity Type Indicators */
@@ -397,7 +773,18 @@
   100% { opacity: 1; }
 }
 
-/* Responsive Design */
+/* Enhanced Bot Activity Indicators */
+.botActivity {
+  border-left: 4px solid var(--lime-green);
+  background: rgba(184, 255, 107, 0.05);
+}
+
+.shortActivity {
+  border-left: 4px solid var(--coral-red);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* Responsive Design Enhancements */
 @media (max-width: 768px) {
   .pageHeader {
     flex-direction: column;
@@ -412,6 +799,7 @@
   .filterControls {
     flex-wrap: wrap;
     justify-content: center;
+    padding: 0.75rem;
   }
 
   .filterButton {
@@ -446,368 +834,7 @@
   .feedContent {
     max-height: 60vh;
   }
-}
 
-@media (max-width: 480px) {
-  .activityItem {
-    padding: 0.75rem 1rem;
-  }
-
-  .feedHeader {
-    padding: 0.75rem 1rem;
-    font-size: var(--font-size-sm);
-  }
-
-  .filterControls {
-    padding: 0.75rem;
-  }
-
-  .headerTitle {
-    font-size: var(--font-size-3xl);
-  }
-
-  .marketStats {
-    grid-template-columns: 1fr;
-  }
-
-  .statCard {
-    padding: 0.75rem;
-  }
-
-  .statNumber {
-    font-size: var(--font-size-xl);
-  }
-}
-
-/* Add these modal styles to your page.module.css file */
-
-/* Modal Overlay */
-.modalOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-/* Modal Content */
-.modalContent {
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
-  max-width: 600px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-}
-
-/* Modal Header */
-.modalHeader {
-  padding: 1.5rem;
-  border-bottom: 2px solid var(--border-primary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg-section);
-}
-
-.modalTitle {
-  margin: 0;
-  font-size: var(--font-size-xl);
-  font-weight: 700;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.closeButton {
-  background: none;
-  border: none;
-  font-size: var(--font-size-xl);
-  cursor: pointer;
-  color: var(--text-secondary);
-  padding: 4px;
-  border-radius: var(--radius-md);
-  transition: all var(--transition);
-}
-
-.closeButton:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-/* Modal Body */
-.modalBody {
-  padding: 1.5rem;
-}
-
-.activityDetails {
-  margin-top: 1rem;
-}
-
-.detailRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--border-primary);
-  gap: 1rem;
-}
-
-.detailRow:last-child {
-  border-bottom: none;
-}
-
-.detailLabel {
-  font-weight: 600;
-  color: var(--text-secondary);
-  min-width: 120px;
-  flex-shrink: 0;
-}
-
-.opinionText {
-  font-style: italic;
-  color: var(--text-primary);
-  text-align: right;
-  flex: 1;
-}
-
-.clickableUsername {
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.clickableUsername:hover {
-  opacity: 0.8;
-}
-
-/* Modal Actions */
-.modalActions {
-  padding: 1.5rem;
-  border-top: 2px solid var(--border-primary);
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  background: var(--bg-section);
-}
-
-.viewUserButton,
-.viewOpinionButton,
-.advancedDetailsButton,
-.closeModalButton {
-  padding: 0.75rem 1.5rem;
-  border: 2px solid;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-weight: 600;
-  font-size: var(--font-size-sm);
-  transition: all var(--transition);
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.viewUserButton {
-  background: var(--soft-blue);
-  border-color: var(--soft-blue);
-  color: var(--text-primary);
-}
-
-.viewUserButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.viewOpinionButton {
-  background: var(--soft-purple);
-  border-color: var(--soft-purple);
-  color: var(--text-primary);
-}
-
-.viewOpinionButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.advancedDetailsButton {
-  background: var(--warning);
-  border-color: var(--warning);
-  color: var(--text-black);
-}
-
-.advancedDetailsButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.closeModalButton {
-  background: var(--bg-card);
-  border-color: var(--border-primary);
-  color: var(--text-secondary);
-}
-
-.closeModalButton:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-/* Transaction Modal (for advanced details) */
-.transactionModal {
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-}
-
-.transactionHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.transactionType {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.typeTag {
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.typeTag.buy {
-  background: var(--lime-green);
-  color: var(--text-black);
-}
-
-.typeTag.sell {
-  background: var(--soft-blue);
-  color: var(--text-primary);
-}
-
-.typeTag.bet_place {
-  background: var(--soft-purple);
-  color: var(--text-primary);
-}
-
-.typeTag.generate {
-  background: var(--warning);
-  color: var(--text-black);
-}
-
-.botTag {
-  padding: 0.25rem 0.5rem;
-  background: var(--lime-green);
-  color: var(--text-black);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-}
-
-.shortTag {
-  padding: 0.25rem 0.5rem;
-  background: var(--coral-red);
-  color: var(--text-primary);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-}
-
-.transactionAmount {
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-}
-
-.transactionDescription {
-  margin: 1rem 0;
-  padding: 1rem;
-  background: var(--bg-section);
-  border-radius: var(--radius-md);
-  border-left: 4px solid var(--lime-green);
-}
-
-.transactionDetails {
-  margin: 1rem 0;
-}
-
-/* Bot Activity Indicators */
-.botActivity {
-  border-left: 4px solid var(--lime-green);
-}
-
-.botBadge {
-  margin-left: 8px;
-  padding: 2px 8px;
-  background: var(--lime-green);
-  color: var(--text-black);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.shortActivity {
-  border-left: 4px solid var(--coral-red);
-}
-
-.shortBadge {
-  margin-left: 8px;
-  padding: 2px 8px;
-  background: var(--coral-red);
-  color: var(--text-primary);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Additional activity icons */
-.activityIcon.shortPlace,
-.activityIcon.shortWin,
-.activityIcon.shortLoss {
-  background: var(--coral-red);
-  border-color: var(--coral-bright);
-  color: var(--text-primary);
-}
-
-.activityIcon.shorts {
-  background: var(--coral-red);
-  border-color: var(--coral-bright);
-  color: var(--text-primary);
-}
-
-.statCard.shorts {
-  border-color: var(--coral-red);
-}
-
-.statNumber.shorts {
-  color: var(--coral-red);
-}
-
-/* Responsive modal styles */
-@media (max-width: 768px) {
   .modalOverlay {
     padding: 0.5rem;
   }
@@ -851,609 +878,54 @@
   }
 }
 
-/* Completely disable hover effects on activity items */
-.activityItem:hover {
-  background: transparent !important;
-}
-
-.activityItem.userActivity:hover {
-  background: var(--bg-elevated) !important;
-}
-
-.activityItem.botActivity:hover {
-  background: transparent !important;
-}
-
-.activityItem.shortActivity:hover {
-  background: transparent !important;
-}
-
-/* Add a green hover effect on activity items */
-.activityItem:hover {
-  background: rgba(16, 185, 129, 0.1) !important; /* Light green background */
-  border-left: 4px solid var(--lime-green) !important; /* Green left border */
-}
-
-.activityItem.userActivity:hover {
-  background: var(--bg-elevated) !important; /* Keep user activities as they were */
-}
-
-.activityItem.botActivity:hover {
-  background: rgba(16, 185, 129, 0.15) !important; /* Slightly more green for bots */
-}
-
-.activityItem.shortActivity:hover {
-  background: rgba(239, 68, 68, 0.1) !important; /* Light red for short activities */
-}
-
-/* Add these new modal section styles to your page.module.css */
-
-/* Modal Sections (the 3 rectangles) */
-.modalSection {
-  background: var(--bg-card);
-  border: 2px solid white;
-  border-radius: var(--radius-lg);
-  margin-bottom: 1.5rem;
-  overflow: hidden;
-}
-
-.modalSection:last-child {
-  margin-bottom: 0;
-}
-
-.sectionTitle {
-  background: var(--bg-section);
-  padding: 1rem 1.5rem;
-  margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-  color: var(--text-primary);
-  border-bottom: 2px solid white;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.sectionContent {
-  padding: 1.5rem;
-}
-
-/* Transaction Summary */
-.transactionSummary {
-  background: var(--bg-elevated);
-  padding: 1rem;
-  border-radius: var(--radius-md);
-  margin-bottom: 1rem;
-  font-size: var(--font-size-base);
-  line-height: 1.5;
-  color: var(--text-primary);
-  border-left: 4px solid var(--lime-green);
-}
-
-.quickDetails {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-}
-
-.quickDetailItem {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.quickLabel {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-/* Opinion Card */
-.opinionCard {
-  background: var(--bg-elevated);
-  padding: 1.5rem;
-  border-radius: var(--radius-md);
-  border-left: 4px solid var(--soft-purple);
-  margin-bottom: 1rem;
-}
-
-.opinionQuote {
-  font-size: var(--font-size-lg);
-  font-style: italic;
-  color: var(--text-primary);
-  margin: 0 0 1rem 0;
-  line-height: 1.4;
-}
-
-.opinionMeta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-/* Portfolio Card */
-.portfolioCard {
-  background: var(--bg-elevated);
-  padding: 1.5rem;
-  border-radius: var(--radius-md);
-  border-left: 4px solid var(--soft-blue);
-  margin-bottom: 1rem;
-}
-
-.portfolioHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.portfolioUser {
-  font-weight: 700;
-  font-size: var(--font-size-lg);
-  color: var(--text-primary);
-}
-
-.betDirection {
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  background: var(--lime-green);
-  color: var(--text-black);
-}
-
-.betDetails {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-base);
-}
-
-/* Link Buttons */
-.linkButton {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background: var(--soft-blue);
-  border: 2px solid var(--soft-blue);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  text-decoration: none;
-}
-
-.linkButton:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* Action Cards */
-.actionCard {
-  background: var(--bg-elevated);
-  padding: 1.5rem;
-  border-radius: var(--radius-md);
-  border: 2px solid var(--border-primary);
-}
-
-.actionDescription {
-  margin: 0 0 1rem 0;
-  font-size: var(--font-size-base);
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.actionButtons {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-}
-
-.actionButton {
-  padding: 1rem;
-  border: none;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  font-size: var(--font-size-base);
-  cursor: pointer;
-  transition: all var(--transition);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.actionButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-}
-
-/* Short Summary */
-.shortSummary {
-  margin-bottom: 1rem;
-}
-
-.shortSummary p {
-  margin: 0 0 0.5rem 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .quickDetails {
-    grid-template-columns: 1fr;
-  }
-  
-  .actionButtons {
-    grid-template-columns: 1fr;
-  }
-  
-  .portfolioHeader {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .opinionMeta {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  
-  .sectionContent {
-    padding: 1rem;
-  }
-  
-  .sectionTitle {
+@media (max-width: 480px) {
+  .activityItem {
     padding: 0.75rem 1rem;
   }
-}
 
-/* Green hover effect for activity items */
-.activityItem:hover {
-  background: rgba(16, 185, 129, 0.1) !important; /* Light green background */
-  border-left: 4px solid var(--lime-green) !important; /* Green left border */
-  transition: all 0.2s ease;
-}
-
-.activityItem.userActivity:hover {
-  background: rgba(16, 185, 129, 0.2) !important; /* Slightly more green for your activities */
-  border-left: 4px solid var(--lime-green) !important;
-}
-
-.activityItem.botActivity:hover {
-  background: rgba(16, 185, 129, 0.15) !important; /* Medium green for bot activities */
-  border-left: 4px solid var(--lime-green) !important;
-}
-
-.activityItem.shortActivity:hover {
-  background: rgba(239, 68, 68, 0.1) !important; /* Light red for short activities */
-  border-left: 4px solid #ef4444 !important;
-}
-
-/* Enhanced Square Modal Styles */
-.squareModal {
-  width: 600px;
-  height: 700px;
-  background: white;
-  border-radius: 16px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-  animation: slideUp 0.3s ease-out;
-  overflow: hidden;
-}
-
-@keyframes slideUp {
-  from { 
-    opacity: 0; 
-    transform: translateY(20px) scale(0.95); 
+  .feedHeader {
+    padding: 0.75rem 1rem;
+    font-size: var(--font-size-sm);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0) scale(1); 
+
+  .filterControls {
+    padding: 0.75rem;
   }
-}
 
-/* Modal Sections (Three Rectangles) */
-.modalSection {
-  flex: 1;
-  padding: 24px;
-  border: 2px solid #e5e7eb;
-  border-bottom: none;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.modalSection:first-child {
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-}
-
-.modalSection:nth-child(2) {
-  background: #ffffff;
-}
-
-.modalSection:last-child {
-  border-bottom: 2px solid #e5e7eb;
-  border-bottom-left-radius: 14px;
-  border-bottom-right-radius: 14px;
-  background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);
-}
-
-/* Section Headers */
-.sectionHeader {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.sectionHeader h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.activityIconLarge {
-  font-size: 24px;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f3f4f6;
-  border-radius: 8px;
-}
-
-/* Activity Details (Top Section) */
-.activityFullDescription {
-  margin: 0 0 16px 0;
-  line-height: 1.6;
-  color: #374151;
-  font-size: 14px;
-}
-
-.activityMeta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: #6b7280;
-  margin-top: auto;
-}
-
-.clickableUser {
-  color: #3b82f6;
-  cursor: pointer;
-  text-decoration: underline;
-  transition: color 0.2s;
-}
-
-.clickableUser:hover {
-  color: #1d4ed8;
-}
-
-/* Middle Section - Links and Impact */
-.portfolioDetails,
-.opinionDetails {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  height: 100%;
-}
-
-.portfolioLink,
-.opinionLink {
-  padding: 16px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-.clickableLink {
-  color: #3b82f6;
-  cursor: pointer;
-  text-decoration: underline;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.clickableLink:hover {
-  color: #1d4ed8;
-  background: #eff6ff;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-
-.priceImpact,
-.betDetails {
-  padding: 12px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.priceImpact p,
-.betDetails p {
-  margin: 0 0 8px 0;
-}
-
-.priceImpact p:last-child,
-.betDetails p:last-child {
-  margin-bottom: 0;
-}
-
-/* Action Interface (Bottom Section) */
-.actionInterface {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  height: 100%;
-}
-
-.tradingTabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.tabButton {
-  flex: 1;
-  padding: 8px 16px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.tabButton.active {
-  background: #3b82f6;
-  color: white;
-  border-color: #3b82f6;
-}
-
-.tabButton:not(.active):hover {
-  background: #f3f4f6;
-}
-
-/* Input Controls */
-.buyInterface,
-.shortInterface,
-.betControls {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.shortControls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.inputGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.inputGroup label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #374151;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.inputGroup input,
-.inputGroup select {
-  padding: 8px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-  transition: border-color 0.2s;
-}
-
-.inputGroup input:focus,
-.inputGroup select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-/* Price Display */
-.priceDisplay {
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.priceDisplay p {
-  margin: 0 0 4px 0;
-}
-
-.priceDisplay p:last-child {
-  margin-bottom: 0;
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.potentialWinnings {
-  padding: 12px;
-  background: #ecfdf5;
-  border: 1px solid #d1fae5;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.potentialWinnings p {
-  margin: 0;
-  color: #065f46;
-  font-weight: 500;
-}
-
-/* Action Button */
-.actionButton {
-  padding: 12px 24px;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-top: auto;
-}
-
-.actionButton:hover:not(:disabled) {
-  background: #2563eb;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-}
-
-.actionButton:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-/* Responsive Design for Square Modal */
-@media (max-width: 768px) {
-  .squareModal {
-    width: 90vw;
-    height: 80vh;
-    margin: 10vh 5vw;
+  .headerTitle {
+    font-size: var(--font-size-3xl);
   }
-  
-  .modalSection {
-    padding: 16px;
-  }
-  
-  .shortControls,
-  .betControls {
+
+  .marketStats {
     grid-template-columns: 1fr;
   }
+
+  .statCard {
+    padding: 0.75rem;
+  }
+
+  .statNumber {
+    font-size: var(--font-size-xl);
+  }
+}
+
+/* Enhanced Empty State */
+.emptyFeed {
+  padding: 3rem;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-section);
+  border-radius: var(--radius-lg);
+  margin: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.emptyFeed p:first-child {
+  font-size: var(--font-size-xl);
+  margin: 0 0 0.5rem 0;
+}
+
+.emptyFeed p:last-child {
+  margin: 0;
+  font-size: var(--font-size-base);
 }

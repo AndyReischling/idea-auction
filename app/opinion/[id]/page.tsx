@@ -880,12 +880,30 @@ export default function OpinionPage() {
     }
   }, [currentPrice, alreadyOwned, opinion, ownedOpinions, isClient]); // Added ownedOpinions and isClient dependency
 
-  // FIXED: Purchase opinion with proper feed integration
+  // FIXED: Purchase opinion with proper feed integration and SHORT POSITION BLOCKING
 const purchaseOpinion = () => {
   if (!opinion || !isClient) return;
 
   if (userProfile.balance < currentPrice) {
     setMessage('Insufficient funds! Generate more opinions to earn money.');
+    setTimeout(() => setMessage(''), 5000);
+    return;
+  }
+
+  // NEW: Check if user has active short position on this opinion
+  if (hasActiveShort) {
+    setMessage('❌ Cannot buy shares of an opinion you have shorted! Close your short position first.');
+    setTimeout(() => setMessage(''), 5000);
+    return;
+  }
+
+  // Additional check: Look through all active shorts for this opinion
+  const activeShortForThisOpinion = activeShorts.find(short => 
+    short.opinionText === opinion && short.status === 'active'
+  );
+  
+  if (activeShortForThisOpinion) {
+    setMessage('❌ You have an active short bet on this opinion. Cannot buy shares while shorting!');
     setTimeout(() => setMessage(''), 5000);
     return;
   }
@@ -1698,15 +1716,12 @@ const purchaseOpinion = () => {
                   <li><strong>WIN:</strong> Target reached in time → earn potential winnings</li>
                   <li><strong>EARLY EXIT:</strong> Sell shares → buy X units at current price (X = target %)</li>
                   <li><strong>EXPIRE:</strong> Time runs out → pay 100× current market price !</li>
-                  <li>Example: 20 % drop bet, exit early at $15 → buy 20 units = $300 penalty</li>
+                  <li>Example: 20% drop bet, exit early at $15 → buy 20 units = $300 penalty</li>
                 </ul>
               </div>
             </div>
           </Accordion>
         </div>
-
-    
-
 
           {/* Action Buttons */}
           <div className={styles.actionButtons}>
@@ -1721,24 +1736,28 @@ const purchaseOpinion = () => {
             {!alreadyOwned || ownedQuantity === 0 ? (
               <button
                 onClick={purchaseOpinion}
-                disabled={userProfile.balance < currentPrice}
+                disabled={userProfile.balance < currentPrice || hasActiveShort}
                 className={`${styles.actionButton} ${styles.buy}`}
               >
-                {userProfile.balance < currentPrice 
-                  ? `Need $${currentPrice - userProfile.balance} more`
-                  : `Buy for $${currentPrice}`
+                {hasActiveShort 
+                  ? 'Cannot Buy (Active Short)'
+                  : userProfile.balance < currentPrice 
+                  ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
+                  : `Buy for ${currentPrice.toFixed(2)}`
                 }
               </button>
             ) : (
               <>
                 <button
                   onClick={purchaseOpinion}
-                  disabled={userProfile.balance < currentPrice}
+                  disabled={userProfile.balance < currentPrice || hasActiveShort}
                   className={`${styles.actionButton} ${styles.buyMore}`}
                 >
-                  {userProfile.balance < currentPrice 
-                    ? `Need $${currentPrice - userProfile.balance} more`
-                    : `Buy More ($${currentPrice})`
+                  {hasActiveShort 
+                    ? 'Cannot Buy (Active Short)'
+                    : userProfile.balance < currentPrice 
+                    ? `Need ${(currentPrice - userProfile.balance).toFixed(2)} more`
+                    : `Buy More (${currentPrice.toFixed(2)})`
                   }
                 </button>
                 
@@ -1746,7 +1765,7 @@ const purchaseOpinion = () => {
                   onClick={sellOpinion}
                   className={`${styles.actionButton} ${styles.sell}`}
                 >
-                  Sell 1 for ${sellPrice}
+                  Sell 1 for ${sellPrice.toFixed(2)}
                 </button>
               </>
             )}
@@ -1763,15 +1782,6 @@ const purchaseOpinion = () => {
             </button>
           </div>
         </div>
-
-        {/* Status Messages */}
-        {/* {message && (
-          <div className={`${styles.statusMessage} ${styles[getMessageClass(message)]}`}>
-            {message}
-          </div>
-        )} */}
-
-        
         
       </main>
     </div>

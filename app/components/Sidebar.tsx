@@ -434,10 +434,10 @@ export default function Sidebar({
       {/* Header */}
       <div className={styles.sidebarHeader}>
         <h2 className={styles.headerTitle}>
-          Opinion Exchange
+          Hot Talk
         </h2>
         <p className={styles.headerSubtitle}>
-          Live Market Prices (Recent First)
+          A Dr. Hollywood Production
         </p>
 
         {/* Live Feed Link */}
