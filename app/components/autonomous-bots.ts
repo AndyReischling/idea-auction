@@ -1,5 +1,15 @@
 // autonomous-bots.ts
 // FIXED: Bot System with EXACT 0.1% Price Movements (NO volatility multiplier)
+// UPDATED: Now uses unified system for price calculations and transactions
+
+// ADD: Import unified system functions
+import { 
+  calculateUnifiedPrice, 
+  UnifiedMarketDataManager, 
+  UnifiedTransactionManager,
+  type UnifiedOpinionMarketData,
+  type UnifiedTransaction
+} from '../lib/unified-system';
 
 interface BotProfile {
   id: string;
@@ -98,30 +108,20 @@ interface Transaction {
   amount: number;
   date: string;
   botId?: string;
+  metadata?: any;
 }
 
-interface OpinionMarketData {
-  opinionText: string;
-  timesPurchased: number;
-  timesSold: number;
-  currentPrice: number;
-  basePrice: number;
-  volatility: number;
-  lastUpdated: string;
-  priceHistory: { price: number; timestamp: string; action: 'buy' | 'sell' | 'init' | 'create' | 'update' }[];
-  liquidityScore: number;
-  dailyVolume: number;
-  manipulation_protection: {
-    rapid_trades: number;
-    single_trader_percentage: number;
-    last_manipulation_check: string;
-  };
-}
+// Use unified interface instead of local one
+type OpinionMarketData = UnifiedOpinionMarketData;
 
 class AutonomousBotSystem {
   private bots: BotProfile[] = [];
   private isRunning: boolean = false;
   private intervalIds: NodeJS.Timeout[] = [];
+  // ADD: Unified system managers
+  private marketDataManager = UnifiedMarketDataManager.getInstance();
+  private transactionManager = UnifiedTransactionManager.getInstance();
+  private currentBotId: string = '';
 
   constructor() {
     this.initializeBots();
@@ -143,258 +143,273 @@ class AutonomousBotSystem {
     this.startBots();
     
     console.log('✅ Bot system auto-initialized with UI-optimized settings!');
-    console.log('📊 Active: 50 bots, Intervals: 60-300 seconds, UI-friendly');
   }
 
-  // ENSURE OPINIONS EXIST: Create test opinions if none exist
-  private ensureOpinionsExist(): void {
-    try {
-      const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-      
-      if (opinions.length === 0) {
-        console.log('📝 Creating test opinions for bot trading...');
-        
-        const testOpinions = [
-          "AI will replace most jobs by 2030",
-          "Remote work is the future of employment",
-          "Electric vehicles will dominate by 2028",
-          "Social media has negative mental health impacts",
-          "Cryptocurrency will replace traditional banking",
-          "Climate change is humanity's biggest threat",
-          "Space exploration should be top priority",
-          "Universal Basic Income is necessary",
-          "Renewable energy will be cheapest by 2025",
-          "Virtual reality will revolutionize education",
-          "NFTs are just a temporary trend",
-          "Streaming services killed traditional TV",
-          "Plant-based meat will outsell real meat",
-          "Automation will eliminate most service jobs",
-          "Digital currencies will replace physical cash",
-          "Quantum computing will break current encryption",
-          "Gene editing will cure most diseases",
-          "Self-driving cars will reduce accidents by 90%",
-          "Solar energy will power most homes by 2030",
-          "3D printing will revolutionize manufacturing"
-        ];
+  // UPDATED: Use unified price calculation
+  private calculatePrice(timesPurchased: number, timesSold: number, basePrice: number = 10): number {
+    return calculateUnifiedPrice(timesPurchased, timesSold, basePrice);
+  }
 
-        // Save opinions
-        localStorage.setItem('opinions', JSON.stringify(testOpinions));
+  // UPDATED: Use unified market data update
+  private updateOpinionMarketData(opinionText: string, action: 'buy' | 'sell', quantity: number = 1): UnifiedOpinionMarketData {
+    return this.marketDataManager.updateMarketData(opinionText, action, quantity, undefined, this.getCurrentBotId());
+  }
 
-        // Create market data for each opinion with EXACT price consistency
-        const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-        
-        testOpinions.forEach(opinion => {
-          const volatility = this.calculateVolatility(opinion);
-          const basePrice = 10; // All start at $10
-          const purchases = Math.floor(Math.random() * 20) + 5;
-          const sales = Math.floor(Math.random() * 15) + 2;
-          const currentPrice = this.calculatePrice(purchases, sales, basePrice);
-          
-          marketData[opinion] = {
-            opinionText: opinion,
-            timesPurchased: purchases,
-            timesSold: sales,
-            currentPrice: currentPrice,
-            basePrice: basePrice,
-            volatility: volatility,
-            lastUpdated: new Date().toISOString(),
-            priceHistory: [
-              { price: basePrice, timestamp: new Date(Date.now() - 86400000).toISOString(), action: 'create' },
-              { price: currentPrice, timestamp: new Date().toISOString(), action: 'update' }
-            ],
-            liquidityScore: Math.min((purchases + sales) / 20, 1),
-            dailyVolume: purchases + sales,
-            manipulation_protection: {
-              rapid_trades: 0,
-              single_trader_percentage: 0,
-              last_manipulation_check: new Date().toISOString()
-            }
-          };
-        });
-
-        localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
-        console.log(`✅ Created ${testOpinions.length} test opinions with CONSISTENT market data`);
-      } else {
-        console.log(`✅ Found ${opinions.length} existing opinions`);
+  // UPDATED: Use unified transaction recording
+  private addBotTransaction(
+    bot: BotProfile, 
+    type: string, 
+    opinionId: string, 
+    opinionText: string, 
+    amount: number, 
+    shortId?: string,
+    metadata: any = {}
+  ): void {
+    const transaction = this.transactionManager.createTransaction(
+      type as UnifiedTransaction['type'],
+      amount,
+      opinionText,
+      opinionId,
+      undefined, // userId
+      bot.id, // botId
+      {
+        ...metadata,
+        shortId
       }
-    } catch (error) {
-      console.error('Error ensuring opinions exist:', error);
+    );
+    this.transactionManager.saveTransaction(transaction);
+  }
+
+  // Helper to get current bot ID for tracking
+  private getCurrentBotId(): string {
+    return this.currentBotId || 'unknown_bot';
+  }
+
+  // UPDATED: Enhanced market data getter using unified system
+  private getOpinionMarketData(opinionText: string): UnifiedOpinionMarketData {
+    return this.marketDataManager.getMarketData(opinionText);
+  }
+
+  // Initialize bots
+  private initializeBots(): void {
+    const stored = localStorage.getItem('autonomousBots');
+    if (stored) {
+      this.bots = JSON.parse(stored);
+      console.log(`🤖 Loaded ${this.bots.length} existing bots`);
+    } else {
+      this.generateBots();
     }
   }
 
-  // Initialize bot profiles with realistic trading personalities - NOW WITH 1,000 BOTS
-  private initializeBots(): void {
+  // Generate massive bot population with diverse personalities and strategies
+  private generateBots(): void {
+    // Diverse bot personalities with distinct trading behaviors
     const botPersonalities: BotPersonality[] = [
       {
-        name: "The Contrarian",
-        description: "Always bets against popular trends and shorts overvalued opinions",
-        buyProbability: 0.3,
-        sellProbability: 0.7,
-        betProbability: 0.8,
-        shortProbability: 0.9,
-        preferredBetTypes: ['decrease'],
-        preferredShortTypes: ['aggressive'],
-        riskMultiplier: 1.5,
-        activityFrequency: 5
-      },
-      {
-        name: "The Trend Follower",
-        description: "Jumps on winning streaks but occasionally shorts declining trends",
-        buyProbability: 0.8,
-        sellProbability: 0.4,
-        betProbability: 0.6,
-        shortProbability: 0.3,
-        preferredBetTypes: ['increase'],
-        preferredShortTypes: ['conservative'],
-        riskMultiplier: 1.2,
-        activityFrequency: 3
-      },
-      {
-        name: "The Value Hunter",
-        description: "Looks for bargains and shorts overpriced opinions",
-        buyProbability: 0.6,
-        sellProbability: 0.5,
-        betProbability: 0.4,
-        shortProbability: 0.6,
-        preferredBetTypes: ['increase', 'decrease'],
-        preferredShortTypes: ['moderate'],
-        riskMultiplier: 0.8,
-        activityFrequency: 7
-      },
-      {
-        name: "The Day Trader",
-        description: "Makes frequent trades including quick short bets",
-        buyProbability: 0.9,
-        sellProbability: 0.9,
-        betProbability: 0.3,
-        shortProbability: 0.7,
-        preferredBetTypes: ['increase'],
-        preferredShortTypes: ['aggressive', 'moderate'],
-        riskMultiplier: 0.6,
-        activityFrequency: 2
-      },
-      {
-        name: "The Whale",
-        description: "Makes large moves including massive short positions",
-        buyProbability: 0.2,
-        sellProbability: 0.2,
-        betProbability: 0.9,
-        shortProbability: 0.8,
-        preferredBetTypes: ['increase', 'decrease'],
-        preferredShortTypes: ['aggressive'],
-        riskMultiplier: 2.0,
-        activityFrequency: 15
-      },
-      {
-        name: "The Gambler",
-        description: "Takes high-risk positions in all directions including shorts",
-        buyProbability: 0.7,
-        sellProbability: 0.6,
-        betProbability: 0.9,
-        shortProbability: 0.85,
-        preferredBetTypes: ['increase', 'decrease'],
-        preferredShortTypes: ['aggressive'],
-        riskMultiplier: 1.8,
-        activityFrequency: 4
-      },
-      {
-        name: "The Scalper",
-        description: "Makes quick micro-profits on small price movements",
-        buyProbability: 0.95,
-        sellProbability: 0.95,
+        name: 'Conservative Economist',
+        description: 'Focuses on stable, long-term investments with low risk',
+        buyProbability: 0.4,
+        sellProbability: 0.3,
         betProbability: 0.1,
-        shortProbability: 0.4,
-        preferredBetTypes: ['increase'],
-        preferredShortTypes: ['conservative'],
-        riskMultiplier: 0.4,
-        activityFrequency: 1
-      },
-      {
-        name: "The HODLer",
-        description: "Long-term holder that rarely sells",
-        buyProbability: 0.8,
-        sellProbability: 0.1,
-        betProbability: 0.2,
         shortProbability: 0.05,
         preferredBetTypes: ['increase'],
         preferredShortTypes: ['conservative'],
-        riskMultiplier: 1.0,
-        activityFrequency: 60
+        riskMultiplier: 0.6,
+        activityFrequency: 45
       },
       {
-        name: "The Swing Trader",
-        description: "Captures medium-term price swings",
-        buyProbability: 0.6,
-        sellProbability: 0.6,
-        betProbability: 0.5,
-        shortProbability: 0.5,
+        name: 'Aggressive Day Trader',
+        description: 'High-frequency trading with significant risk tolerance',
+        buyProbability: 0.8,
+        sellProbability: 0.7,
+        betProbability: 0.6,
+        shortProbability: 0.4,
         preferredBetTypes: ['increase', 'decrease'],
-        preferredShortTypes: ['moderate'],
-        riskMultiplier: 1.1,
+        preferredShortTypes: ['aggressive'],
+        riskMultiplier: 2.0,
         activityFrequency: 8
       },
       {
-        name: "The Arbitrageur",
-        description: "Exploits price differences and market inefficiencies",
+        name: 'Tech Futurist',
+        description: 'Invests heavily in technology and innovation predictions',
         buyProbability: 0.7,
-        sellProbability: 0.8,
-        betProbability: 0.3,
-        shortProbability: 0.6,
+        sellProbability: 0.4,
+        betProbability: 0.5,
+        shortProbability: 0.2,
+        preferredBetTypes: ['increase'],
+        preferredShortTypes: ['moderate'],
+        riskMultiplier: 1.4,
+        activityFrequency: 20
+      },
+      {
+        name: 'Contrarian Skeptic',
+        description: 'Bets against popular opinions and trends',
+        buyProbability: 0.3,
+        sellProbability: 0.6,
+        betProbability: 0.7,
+        shortProbability: 0.5,
         preferredBetTypes: ['decrease'],
-        preferredShortTypes: ['moderate', 'aggressive'],
+        preferredShortTypes: ['aggressive'],
+        riskMultiplier: 1.3,
+        activityFrequency: 25
+      },
+      {
+        name: 'Value Hunter',
+        description: 'Seeks undervalued opinions with growth potential',
+        buyProbability: 0.6,
+        sellProbability: 0.3,
+        betProbability: 0.2,
+        shortProbability: 0.1,
+        preferredBetTypes: ['increase'],
+        preferredShortTypes: ['conservative'],
         riskMultiplier: 0.9,
-        activityFrequency: 4
+        activityFrequency: 35
+      },
+      {
+        name: 'Momentum Rider',
+        description: 'Follows trends and popular movements',
+        buyProbability: 0.7,
+        sellProbability: 0.5,
+        betProbability: 0.4,
+        shortProbability: 0.2,
+        preferredBetTypes: ['increase'],
+        preferredShortTypes: ['moderate'],
+        riskMultiplier: 1.2,
+        activityFrequency: 15
+      },
+      {
+        name: 'Risk Arbitrageur',
+        description: 'Exploits price differences and market inefficiencies',
+        buyProbability: 0.5,
+        sellProbability: 0.5,
+        betProbability: 0.6,
+        shortProbability: 0.4,
+        preferredBetTypes: ['increase', 'decrease'],
+        preferredShortTypes: ['moderate', 'aggressive'],
+        riskMultiplier: 1.6,
+        activityFrequency: 12
+      },
+      {
+        name: 'Social Sentiment Analyst',
+        description: 'Makes decisions based on social and cultural trends',
+        buyProbability: 0.6,
+        sellProbability: 0.4,
+        betProbability: 0.3,
+        shortProbability: 0.2,
+        preferredBetTypes: ['increase'],
+        preferredShortTypes: ['conservative'],
+        riskMultiplier: 1.0,
+        activityFrequency: 30
+      },
+      {
+        name: 'Quantitative Strategist',
+        description: 'Uses mathematical models and statistical analysis',
+        buyProbability: 0.5,
+        sellProbability: 0.4,
+        betProbability: 0.3,
+        shortProbability: 0.2,
+        preferredBetTypes: ['increase', 'decrease'],
+        preferredShortTypes: ['moderate'],
+        riskMultiplier: 1.1,
+        activityFrequency: 28
+      },
+      {
+        name: 'Environmental Advocate',
+        description: 'Focuses on sustainability and environmental impact',
+        buyProbability: 0.6,
+        sellProbability: 0.3,
+        betProbability: 0.4,
+        shortProbability: 0.3,
+        preferredBetTypes: ['increase'],
+        preferredShortTypes: ['moderate'],
+        riskMultiplier: 0.8,
+        activityFrequency: 40
       }
     ];
 
+    // Complex trading strategies
     const strategies: TradingStrategy[] = [
-      { 
-        type: 'contrarian', 
-        minPrice: 1, 
-        maxPrice: 50, 
-        maxPositionSize: 5, 
-        portfolioTargetSize: 8,
-        shortPreferences: { minTargetDrop: 15, maxTargetDrop: 50, preferredTimeLimit: [6, 12, 24], maxShortAmount: 1000 }
-      },
-      { 
-        type: 'momentum', 
-        minPrice: 5, 
-        maxPrice: 200, 
-        maxPositionSize: 10, 
-        portfolioTargetSize: 15,
-        shortPreferences: { minTargetDrop: 10, maxTargetDrop: 30, preferredTimeLimit: [1, 6, 12], maxShortAmount: 500 }
-      },
-      { 
-        type: 'value', 
-        minPrice: 1, 
-        maxPrice: 30, 
-        maxPositionSize: 3, 
-        portfolioTargetSize: 20,
-        shortPreferences: { minTargetDrop: 20, maxTargetDrop: 40, preferredTimeLimit: [24, 48, 72], maxShortAmount: 800 }
-      },
-      { 
-        type: 'aggressive', 
-        minPrice: 10, 
-        maxPrice: 500, 
-        maxPositionSize: 15, 
+      {
+        type: 'value',
+        minPrice: 8,
+        maxPrice: 15,
+        maxPositionSize: 3,
         portfolioTargetSize: 5,
-        shortPreferences: { minTargetDrop: 25, maxTargetDrop: 60, preferredTimeLimit: [1, 6], maxShortAmount: 2000 }
+        shortPreferences: {
+          minTargetDrop: 5,
+          maxTargetDrop: 15,
+          preferredTimeLimit: [24, 48],
+          maxShortAmount: 500
+        }
       },
-      { 
-        type: 'random', 
-        minPrice: 1, 
-        maxPrice: 100, 
-        maxPositionSize: 8, 
+      {
+        type: 'aggressive',
+        minPrice: 3,
+        maxPrice: 50,
+        maxPositionSize: 8,
+        portfolioTargetSize: 15,
+        shortPreferences: {
+          minTargetDrop: 10,
+          maxTargetDrop: 40,
+          preferredTimeLimit: [12, 24, 48],
+          maxShortAmount: 2000
+        }
+      },
+      {
+        type: 'momentum',
+        minPrice: 10,
+        maxPrice: 30,
+        maxPositionSize: 5,
+        portfolioTargetSize: 8,
+        shortPreferences: {
+          minTargetDrop: 8,
+          maxTargetDrop: 25,
+          preferredTimeLimit: [24, 48, 72],
+          maxShortAmount: 1000
+        }
+      },
+      {
+        type: 'value',
+        minPrice: 5,
+        maxPrice: 20,
+        maxPositionSize: 4,
+        portfolioTargetSize: 10,
+        shortPreferences: {
+          minTargetDrop: 15,
+          maxTargetDrop: 35,
+          preferredTimeLimit: [48, 72, 168],
+          maxShortAmount: 800
+        }
+      },
+      {
+        type: 'contrarian',
+        minPrice: 8,
+        maxPrice: 40,
+        maxPositionSize: 6,
         portfolioTargetSize: 12,
-        shortPreferences: { minTargetDrop: 5, maxTargetDrop: 50, preferredTimeLimit: [6, 24, 48], maxShortAmount: 600 }
+        shortPreferences: {
+          minTargetDrop: 12,
+          maxTargetDrop: 45,
+          preferredTimeLimit: [24, 48],
+          maxShortAmount: 1500
+        }
       }
     ];
 
-    // Generate name variations for uniqueness
+    // Creative username variations for diversity
     const nameVariations = [
-      'Alpha', 'Beta', 'Gamma', 'Delta', 'Sigma', 'Omega', 'Prime', 'Pro', 'Elite', 'Max',
-      'Ultra', 'Mega', 'Super', 'Hyper', 'Turbo', 'Quantum', 'Cyber', 'Neo', 'Apex', 'Zero',
-      'X', 'Z', 'V2', 'V3', 'Plus', 'Advanced', 'Premium', 'Master', 'Expert', 'Titan'
+      'Pro', 'Elite', 'Master', 'Ace', 'Alpha', 'Beta', 'Gamma', 'Delta', 'Prime', 'Ultra',
+      'Mega', 'Super', 'Hyper', 'Turbo', 'Nitro', 'Boost', 'Power', 'Force', 'Storm', 'Blitz',
+      'Swift', 'Quick', 'Fast', 'Speed', 'Rapid', 'Flash', 'Lightning', 'Thunder', 'Volt', 'Spark',
+      'Fire', 'Flame', 'Blaze', 'Burn', 'Heat', 'Frost', 'Ice', 'Snow', 'Chill', 'Freeze',
+      'Steel', 'Iron', 'Gold', 'Silver', 'Copper', 'Bronze', 'Platinum', 'Diamond', 'Crystal', 'Gem',
+      'Shadow', 'Ghost', 'Phantom', 'Spirit', 'Soul', 'Mind', 'Brain', 'Think', 'Smart', 'Wise',
+      'Bold', 'Brave', 'Fierce', 'Wild', 'Free', 'Pure', 'True', 'Real', 'Live', 'Active',
+      'Sharp', 'Edge', 'Point', 'Peak', 'Top', 'High', 'Max', 'Plus', 'Extra', 'Bonus',
+      'Star', 'Nova', 'Comet', 'Meteor', 'Galaxy', 'Cosmic', 'Space', 'Orbit', 'Lunar', 'Solar',
+      'Neon', 'Laser', 'Pixel', 'Digital', 'Cyber', 'Tech', 'Data', 'Code', 'Logic', 'System',
+      'Wave', 'Pulse', 'Beat', 'Rhythm', 'Flow', 'Stream', 'Current', 'Charge', 'Energy', 'Power',
+      'Advanced', 'Premium', 'Master', 'Expert', 'Titan'
     ];
 
     // PERFORMANCE OPTIMIZED: Start with 1000 bots instead of 5000+ for immediate responsiveness
@@ -534,6 +549,10 @@ class AutonomousBotSystem {
   // Execute realistic bot actions
   private executeBotAction(bot: BotProfile): void {
     try {
+      this.currentBotId = bot.id; // Set current bot for tracking
+      
+      if (!bot.isActive) return;
+
       // SUPER SIMPLE: Cycle through actions to ensure diversity
       const actionIndex = Date.now() % 4;
       const actions = ['buy', 'sell', 'bet', 'generate'];
@@ -597,207 +616,10 @@ class AutonomousBotSystem {
     }
   }
 
-  // CRITICAL FIX: Price calculation method that EXACTLY matches opinion page (0.1% movements, NO volatility)
-  private calculatePrice(timesPurchased: number, timesSold: number, basePrice: number = 10): number {
-    const netDemand = timesPurchased - timesSold;
-    
-    let priceMultiplier;
-    if (netDemand >= 0) {
-      // EXACT MATCH: Ultra-micro multiplier: 1.001 (0.1% per purchase) - NO volatility multiplier
-      priceMultiplier = Math.pow(1.001, netDemand);
-    } else {
-      // EXACT MATCH: Ultra-small decline: 0.999 (0.1% decrease per sale) - NO volatility multiplier
-      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
-    }
-    
-    const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
-    
-    // EXACT MATCH: Return precise decimal (rounded to 2 decimal places for currency)
-    return Math.round(calculatedPrice * 100) / 100;
-  }
-
-  // FIXED: Centralized market data update that ensures 0.1% price movements
-  private updateOpinionMarketData(opinionText: string, action: 'buy' | 'sell', quantity: number = 1): OpinionMarketData {
-    try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      const currentData = this.getOpinionMarketData(opinionText);
-      
-      // CRITICAL: Update purchase/sale counts by exact quantity
-      const newTimesPurchased = action === 'buy' ? currentData.timesPurchased + quantity : currentData.timesPurchased;
-      const newTimesSold = action === 'sell' ? currentData.timesSold + quantity : currentData.timesSold;
-      
-      // CRITICAL: Calculate new price using EXACT same method as opinion page (0.1% per purchase, NO volatility)
-      const newPrice = this.calculatePrice(newTimesPurchased, newTimesSold, currentData.basePrice);
-      
-      // DEBUG: Log price changes to verify 0.1% movements
-      const priceChange = newPrice - currentData.currentPrice;
-      const percentChange = currentData.currentPrice > 0 ? (priceChange / currentData.currentPrice * 100) : 0;
-      
-      console.log(`💰 PRICE UPDATE: "${opinionText.slice(0, 30)}..." ${action} ${quantity}x`);
-      console.log(`   📊 $${currentData.currentPrice.toFixed(2)} → $${newPrice.toFixed(2)} (${percentChange > 0 ? '+' : ''}${percentChange.toFixed(3)}%)`);
-      console.log(`   📈 Purchases: ${currentData.timesPurchased} → ${newTimesPurchased} | Sales: ${currentData.timesSold} → ${newTimesSold}`);
-      
-      // Verify this is ~0.1% change for single purchases
-      if (quantity === 1 && action === 'buy') {
-        const expectedChange = 0.1;
-        if (Math.abs(percentChange - expectedChange) > 0.05) {
-          console.warn(`⚠️ Price change ${percentChange.toFixed(3)}% doesn't match expected 0.1%!`);
-        } else {
-          console.log(`✅ Price change ${percentChange.toFixed(3)}% matches expected ~0.1%`);
-        }
-      }
-      
-      // Update market data with new values
-      const updatedData: OpinionMarketData = {
-        ...currentData,
-        timesPurchased: newTimesPurchased,
-        timesSold: newTimesSold,
-        currentPrice: newPrice,
-        lastUpdated: new Date().toISOString(),
-        priceHistory: [
-          ...(currentData.priceHistory || []).slice(-19), // Keep last 19 entries
-          { price: newPrice, timestamp: new Date().toISOString(), action }
-        ]
-      };
-      
-      // Save to localStorage
-      marketData[opinionText] = updatedData;
-      localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
-      
-      // Track this trade for manipulation detection
-      this.trackBotTradeActivity(opinionText, action, newPrice, 'system');
-      
-      return updatedData;
-    } catch (error) {
-      console.error('Error updating opinion market data:', error);
-      return this.getOpinionMarketData(opinionText);
-    }
-  }
-
-  // FIXED: Get current price with fallback to calculated price
-  private getOpinionPrice(opinionId: string): number {
-    try {
-      const opinions = this.getAvailableOpinions();
-      const opinion = opinions.find(op => op.id === opinionId);
-      
-      if (!opinion) {
-        console.warn(`Opinion with ID ${opinionId} not found`);
-        return 10; // Base price fallback
-      }
-      
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      
-      if (marketData[opinion.text]) {
-        return marketData[opinion.text].currentPrice;
-      } else {
-        // Initialize market data if it doesn't exist
-        const basePrice = 10;
-        const volatility = this.calculateVolatility(opinion.text);
-        const initialPrice = this.calculatePrice(0, 0, basePrice);
-        
-        // Create initial market data
-        marketData[opinion.text] = {
-          opinionText: opinion.text,
-          timesPurchased: 0,
-          timesSold: 0,
-          currentPrice: initialPrice,
-          basePrice: basePrice,
-          volatility: volatility,
-          lastUpdated: new Date().toISOString(),
-          priceHistory: [{ price: initialPrice, timestamp: new Date().toISOString(), action: 'init' }],
-          liquidityScore: 0,
-          dailyVolume: 0,
-          manipulation_protection: {
-            rapid_trades: 0,
-            single_trader_percentage: 0,
-            last_manipulation_check: new Date().toISOString()
-          }
-        };
-        
-        localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
-        console.log(`📈 Initialized market data for "${opinion.text}" at $${initialPrice}`);
-        
-        return initialPrice;
-      }
-    } catch (error) {
-      console.error('Error getting opinion price:', error);
-      return 10; // Safe fallback
-    }
-  }
-
-  // FIXED: Enhanced market data getter with proper initialization
-  private getOpinionMarketData(opinionText: string): OpinionMarketData {
-    try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      
-      if (marketData[opinionText]) {
-        const data = marketData[opinionText];
-        return {
-          ...data,
-          liquidityScore: Math.min((data.timesPurchased + data.timesSold) / 20, 1),
-          dailyVolume: this.calculateDailyVolume(opinionText),
-          manipulation_protection: data.manipulation_protection || {
-            rapid_trades: 0,
-            single_trader_percentage: 0,
-            last_manipulation_check: new Date().toISOString()
-          }
-        };
-      } else {
-        // Initialize new market data
-        const basePrice = 10;
-        const volatility = this.calculateVolatility(opinionText);
-        const initialPrice = this.calculatePrice(0, 0, basePrice);
-        
-        const newData: OpinionMarketData = {
-          opinionText,
-          timesPurchased: 0,
-          timesSold: 0,
-          currentPrice: initialPrice,
-          basePrice,
-          volatility,
-          lastUpdated: new Date().toISOString(),
-          priceHistory: [{ price: initialPrice, timestamp: new Date().toISOString(), action: 'init' }],
-          liquidityScore: 0,
-          dailyVolume: 0,
-          manipulation_protection: {
-            rapid_trades: 0,
-            single_trader_percentage: 0,
-            last_manipulation_check: new Date().toISOString()
-          }
-        };
-        
-        // Save the new data
-        const allMarketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-        allMarketData[opinionText] = newData;
-        localStorage.setItem('opinionMarketData', JSON.stringify(allMarketData));
-        
-        return newData;
-      }
-    } catch (error) {
-      console.error('Error getting opinion market data:', error);
-      // Return safe fallback
-      return {
-        opinionText,
-        timesPurchased: 0,
-        timesSold: 0,
-        currentPrice: 10,
-        basePrice: 10,
-        volatility: 1.0,
-        lastUpdated: new Date().toISOString(),
-        priceHistory: [],
-        liquidityScore: 0,
-        dailyVolume: 0,
-        manipulation_protection: {
-          rapid_trades: 0,
-          single_trader_percentage: 0,
-          last_manipulation_check: new Date().toISOString()
-        }
-      };
-    }
-  }
-
-  // FIXED: Bot buying with proper 0.1% price updates and ACCURATE transaction recording
+  // UPDATED: Bot buying with unified system
   private botBuyOpinion(bot: BotProfile): boolean {
+    this.currentBotId = bot.id; // Set current bot for tracking
+    
     const opinions = this.getAvailableOpinions();
     if (opinions.length === 0) {
       console.log(`🤖❌ ${bot.username} can't buy - no opinions available`);
@@ -826,13 +648,13 @@ class AutonomousBotSystem {
       // Deduct cost from bot balance
       bot.balance -= totalCost;
       
-      // CRITICAL: Update market data with EXACT quantity for precise 0.1% per share price calculation
+      // UPDATED: Use unified market data update
       const updatedMarketData = this.updateOpinionMarketData(selectedOpinion.text, 'buy', quantity);
       
       // Add to bot's portfolio
       this.addBotOpinion(bot, selectedOpinion, purchasePricePerShare, quantity);
       
-      // CRITICAL FIX: Record transaction with ACCURATE price information
+      // UPDATED: Use unified transaction recording
       this.addBotTransaction(
         bot, 
         'buy', 
@@ -854,8 +676,10 @@ class AutonomousBotSystem {
     return false;
   }
 
-  // FIXED: Bot selling with proper 0.1% price updates
+  // UPDATED: Bot selling with unified system
   private botSellOpinion(bot: BotProfile): boolean {
+    this.currentBotId = bot.id; // Set current bot for tracking
+    
     const botOpinions = this.getBotOpinions(bot);
     if (botOpinions.length === 0) {
       console.log(`🤖📦 ${bot.username} has no opinions to sell`);
@@ -883,118 +707,87 @@ class AutonomousBotSystem {
       bot.totalLosses += Math.abs(profitLoss) * quantityToSell;
     }
 
-    // CRITICAL: Update market data with EXACT quantity for precise 0.1% per share price calculation
+    // UPDATED: Use unified market data update
     const updatedMarketData = this.updateOpinionMarketData(selectedOpinion.text, 'sell', quantityToSell);
 
     // Remove from bot's portfolio
     this.removeBotOpinion(bot, selectedOpinion.opinionId, quantityToSell);
     
-    // Record transaction
+    // UPDATED: Use unified transaction recording
     this.addBotTransaction(bot, 'sell', selectedOpinion.opinionId, selectedOpinion.text, totalSaleValue);
 
-    const profitMessage = profitLoss > 0 ? `(+$${(profitLoss * quantityToSell).toFixed(2)} profit)` : `(-$${Math.abs(profitLoss * quantityToSell).toFixed(2)} loss)`;
-    console.log(`🤖💸 ${bot.username} sold ${quantityToSell}x "${selectedOpinion.text.slice(0, 30)}..." for $${totalSaleValue.toFixed(2)} ${profitMessage} (market: $${currentPrice} → $${updatedMarketData.currentPrice})`);
+    const profitMessage = profitLoss > 0 ? `📈 +${(profitLoss * quantityToSell).toFixed(2)} profit` : `📉 ${(profitLoss * quantityToSell).toFixed(2)} loss`;
+    console.log(`🤖💰 ${bot.username} sold ${quantityToSell}x "${selectedOpinion.text.slice(0, 30)}..." for ${totalSaleValue.toFixed(2)} ${profitMessage}`);
+    
     return true;
   }
 
-  // Bot places a short bet with realistic pricing considerations
-  private botPlaceShort(bot: BotProfile): boolean {
-    const opinions = this.getAvailableOpinions();
-    if (opinions.length === 0) {
-      console.log(`🤖❌ ${bot.username} can't short - no opinions available`);
-      return false;
-    }
-
-    // SIMPLIFIED: Random opinion selection without complex filtering
-    const selectedOpinion = opinions[Math.floor(Math.random() * opinions.length)];
-    const currentPrice = this.getOpinionPrice(selectedOpinion.id);
+  // Bot generates new opinions
+  private botGenerateOpinion(bot: BotProfile): void {
+    this.currentBotId = bot.id; // Set current bot for tracking
     
-    const shortAmount = Math.min(
-      Math.floor(Math.random() * 1000) + 200,
-      bot.balance * 0.2
-    );
-    
-    if (shortAmount > bot.balance || shortAmount === 0) {
-      console.log(`🤖💸 ${bot.username} can't afford short of ${shortAmount} (balance: ${bot.balance})`);
-      return false;
-    }
-
-    const targetDropPercentage = Math.floor(Math.random() * 30) + 15;
-    const timeLimit = [6, 12, 24][Math.floor(Math.random() * 3)];
-    const targetPrice = Math.round(currentPrice * (1 - targetDropPercentage / 100) * 100) / 100;
-    const potentialWinnings = shortAmount * (1 + (targetDropPercentage / 100) * 2);
-
-    const expirationTime = new Date();
-    expirationTime.setHours(expirationTime.getHours() + timeLimit);
-
-    const shortPosition: ShortPosition = {
-      id: `short_${bot.id}_${Date.now()}`,
-      opinionText: selectedOpinion.text,
-      opinionId: selectedOpinion.id,
-      betAmount: shortAmount,
-      targetDropPercentage,
-      startingPrice: currentPrice,
-      targetPrice,
-      potentialWinnings,
-      expirationDate: expirationTime.toISOString(),
-      createdDate: new Date().toISOString(),
-      status: 'active',
-      botId: bot.id
-    };
-
-    bot.balance -= shortAmount;
-    this.addShortPosition(shortPosition);
-    this.addBotTransaction(bot, 'short_place', selectedOpinion.id, selectedOpinion.text, -shortAmount, shortPosition.id);
-
-    console.log(`🤖📉 ${bot.username} shorted "${selectedOpinion.text.slice(0, 30)}..." for ${shortAmount} targeting ${targetDropPercentage}% drop in ${timeLimit}h`);
-    return true;
-  }
-
-  // Check and resolve short positions
-  private checkAndResolveShorts(): void {
     try {
-      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]') as ShortPosition[];
-      const currentTime = new Date();
-      let updated = false;
-
-      const updatedShorts = shorts.map(short => {
-        if (short.status !== 'active' || !short.botId) return short;
-
-        const bot = this.bots.find(b => b.id === short.botId);
-        if (!bot) return short;
-
-        const expirationTime = new Date(short.expirationDate);
-        const currentPrice = this.getOpinionPrice(short.opinionId);
-
-        if (currentTime > expirationTime) {
-          updated = true;
-          this.addBotTransaction(bot, 'short_loss', short.opinionId, short.opinionText, -short.betAmount, short.id);
-          console.log(`🤖💸 ${bot.username} short expired: "${short.opinionText.slice(0, 30)}..." (lost ${short.betAmount})`);
-          return { ...short, status: 'expired' as const };
-        }
-
-        if (currentPrice <= short.targetPrice) {
-          updated = true;
-          
-          bot.balance += short.potentialWinnings;
-          bot.totalEarnings += short.potentialWinnings;
-          
-          this.addBotTransaction(bot, 'short_win', short.opinionId, short.opinionText, short.potentialWinnings, short.id);
-          console.log(`🤖💹 ${bot.username} short won: "${short.opinionText.slice(0, 30)}..." (won ${short.potentialWinnings})`);
-          
-          return { ...short, status: 'won' as const };
-        }
-
-        return short;
-      });
-
-      if (updated) {
-        localStorage.setItem('shortPositions', JSON.stringify(updatedShorts));
-        this.saveBots();
+      const newOpinion = this.generateRandomOpinion();
+      
+      // Add to opinions list
+      const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+      opinions.push(newOpinion);
+      localStorage.setItem('opinions', JSON.stringify(opinions));
+      
+      // UPDATED: Initialize market data using unified system
+      this.marketDataManager.getMarketData(newOpinion); // This will create it at $10.00
+      
+      // Reward bot for creating opinion
+      const reward = 100 + Math.floor(Math.random() * 50); // $100-150 reward
+      bot.balance += reward;
+      bot.totalEarnings += reward;
+      
+      // Record transaction
+      this.addBotTransaction(bot, 'earn', (opinions.length - 1).toString(), newOpinion, reward);
+      
+      console.log(`🤖💡 ${bot.username} generated: "${newOpinion.slice(0, 50)}..." (+$${reward})`);
+      
+      // Sometimes buy their own opinion
+      if (Math.random() < 0.3) {
+        setTimeout(() => {
+          const targetOpinion = { id: (opinions.length - 1).toString(), text: newOpinion };
+          this.botBuySpecificOpinion(bot, targetOpinion);
+        }, 1000);
       }
     } catch (error) {
-      console.error('Error checking short positions:', error);
+      console.error('Error generating opinion:', error);
     }
+  }
+
+  // NEW: Bot buys a specific opinion (for buying their own generated opinions)
+  private botBuySpecificOpinion(bot: BotProfile, targetOpinion: any): boolean {
+    this.currentBotId = bot.id; // Set current bot for tracking
+    
+    const price = this.getOpinionPrice(targetOpinion.id);
+    
+    // Simple affordability check
+    if (price > bot.balance) {
+      console.log(`🤖💸 ${bot.username} can't afford their own opinion at ${price} (balance: ${bot.balance})`);
+      return false;
+    }
+
+    const quantity = Math.min(Math.floor(Math.random() * 2) + 1, Math.floor(bot.balance / price)); // 1-2 shares
+    const totalCost = price * quantity;
+
+    if (totalCost <= bot.balance) {
+      bot.balance -= totalCost;
+      
+      // UPDATED: Use unified market data update
+      const updatedMarketData = this.updateOpinionMarketData(targetOpinion.text, 'buy', quantity);
+      
+      this.addBotTransaction(bot, 'buy', targetOpinion.id, targetOpinion.text, -totalCost);
+      this.addBotOpinion(bot, targetOpinion, price, quantity);
+      
+      console.log(`🤖💰 ${bot.username} bought ${quantity}x their own opinion "${targetOpinion.text.slice(0, 30)}..." for ${totalCost} (price: ${price} → ${updatedMarketData.currentPrice})`);
+      return true;
+    }
+    
+    return false;
   }
 
   // Bot places regular bets
@@ -1037,227 +830,924 @@ class AutonomousBotSystem {
       timeFrame,
       initialPortfolioValue: targetUser.portfolioValue,
       currentPortfolioValue: targetUser.portfolioValue,
-      placedDate: new Date().toLocaleDateString(),
-      expiryDate: this.calculateExpiryDate(timeFrame),
+      placedDate: new Date().toISOString(),
+      expiryDate: new Date(Date.now() + timeFrame * 24 * 60 * 60 * 1000).toISOString(),
       status: 'active',
       multiplier: this.calculateMultiplier(betType, targetPercentage),
-      potentialPayout: 0,
+      potentialPayout: betAmount * this.calculateMultiplier(betType, targetPercentage),
       volatilityRating: this.getVolatilityRating(targetUser.username)
     };
 
-    bet.potentialPayout = betAmount * bet.multiplier;
-
+    // Deduct bet amount
     bot.balance -= betAmount;
-    this.addAdvancedBet(bet);
-    this.addBotTransaction(bot, 'bet', undefined, `Bet on ${targetUser.username}`, -betAmount);
 
-    console.log(`🤖🎰 ${bot.username} placed ${betAmount} bet on ${targetUser.username} to ${betType} ${targetPercentage}%`);
-    return true;
-  }
-
-  // FIXED: Bot generates opinions WITHOUT earning money (trading-only profits)
-  private botGenerateOpinion(bot: BotProfile): void {
-    // 70% chance to use curated high-quality opinions, 30% chance to generate new ones
-    const useTemplate = Math.random() < 0.3;
-    
-    let newOpinion: string;
-    let category: string;
-
-    if (useTemplate) {
-      // TEMPLATE-BASED GENERATION for infinite variety
-      newOpinion = this.generateTemplateOpinion();
-      category = 'generated';
-    } else {
-      // CURATED HIGH-QUALITY opinions for guaranteed engagement
-      const curatedOpinions = this.getCuratedOpinions();
-      const categories = Object.keys(curatedOpinions);
-      category = categories[Math.floor(Math.random() * categories.length)];
-      const categoryOpinions = curatedOpinions[category as keyof typeof curatedOpinions];
-      newOpinion = categoryOpinions[Math.floor(Math.random() * categoryOpinions.length)];
-    }
-
-    // FIXED: Enhanced opinion creation with proper market data initialization
-    this.addNewOpinion(newOpinion, 10); // Always start at $10
-    
-    // NO EARNINGS FOR GENERATING - Bots only make money through trading!
-    // Record the generation without any monetary reward
-    this.addBotTransaction(bot, 'earn', undefined, newOpinion, 0); // $0 for generation
-
-    console.log(`🤖💡 ${bot.username} generated ${category} opinion: "${newOpinion}" (no earnings - trading only)`);
-    
-    // OPTIONAL: After generating, bot might immediately buy their own opinion (25% chance)
-    if (Math.random() < 0.25) {
-      console.log(`🤖📈 ${bot.username} is interested in their own opinion - attempting to buy...`);
-      setTimeout(() => {
-        // Find the opinion they just created
-        const opinions = this.getAvailableOpinions();
-        const theirOpinion = opinions.find(op => op.text === newOpinion);
-        if (theirOpinion) {
-          const price = this.getOpinionPrice(theirOpinion.id);
-          if (price <= bot.balance) {
-            this.botBuySpecificOpinion(bot, theirOpinion);
-          }
-        }
-      }, 1000); // Buy 1 second after generating
-    }
-  }
-
-  // FIXED: Enhanced opinion creation with proper market data initialization and proper event dispatch
-  private addNewOpinion(text: string, price: number = 10): void {
     try {
-      const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-      
-      // Check if opinion already exists
-      if (!opinions.includes(text)) {
-        opinions.push(text);
-        localStorage.setItem('opinions', JSON.stringify(opinions));
+      // Save bet
+      const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      bets.push(bet);
+      localStorage.setItem('advancedBets', JSON.stringify(bets));
 
-        // CRITICAL FIX: Dispatch events to update Sidebar immediately
-        if (typeof window !== 'undefined') {
-          // Dispatch storage event for cross-tab updates
-          window.dispatchEvent(new StorageEvent('storage', {
-            key: 'opinions',
-            newValue: JSON.stringify(opinions),
-            oldValue: JSON.stringify(opinions.slice(0, -1)),
-            url: window.location.href,
-            storageArea: localStorage
-          }));
-          
-          // Dispatch custom event for same-tab updates
-          window.dispatchEvent(new CustomEvent('botActivityUpdate', { 
-            detail: { type: 'newOpinion', text, price, timestamp: Date.now() } 
-          }));
-          
-          console.log('🚀 Dispatched events for new opinion: storage + botActivityUpdate');
-        }
+      // Record transaction
+      this.addBotTransaction(bot, 'bet', '', `Bet on ${targetUser.username}`, -betAmount);
 
-        // FIXED: Initialize market data with proper structure and volatility
-        const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-        const volatility = this.calculateVolatility(text);
-        const basePrice = 10; // Always start at $10
-        const initialPrice = this.calculatePrice(0, 0, basePrice); // Should be $10.00
-        
-        marketData[text] = {
-          opinionText: text,
-          timesPurchased: 0,
-          timesSold: 0,
-          currentPrice: initialPrice,
-          basePrice: basePrice,
-          volatility: volatility,
-          lastUpdated: new Date().toISOString(),
-          priceHistory: [{ price: initialPrice, timestamp: new Date().toISOString(), action: 'create' }],
-          liquidityScore: 0,
-          dailyVolume: 0,
-          manipulation_protection: {
-            rapid_trades: 0,
-            single_trader_percentage: 0,
-            last_manipulation_check: new Date().toISOString()
-          }
-        };
-        localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
-        
-        console.log(`✅ Added new opinion: "${text}" at ${initialPrice} (volatility: ${volatility.toFixed(2)})`);
-      }
+      console.log(`🤖🎲 ${bot.username} bet $${betAmount} on ${targetUser.username} to ${betType} by ${targetPercentage}% (potential: $${bet.potentialPayout})`);
+      return true;
     } catch (error) {
-      console.error('Error adding new opinion:', error);
-    }
-  }
-
-  // NEW: Bot buys a specific opinion (for buying their own generated opinions)
-  private botBuySpecificOpinion(bot: BotProfile, targetOpinion: any): boolean {
-    const price = this.getOpinionPrice(targetOpinion.id);
-    
-    // Simple affordability check
-    if (price > bot.balance) {
-      console.log(`🤖💸 ${bot.username} can't afford their own opinion at ${price} (balance: ${bot.balance})`);
+      console.error('Error placing bet:', error);
+      bot.balance += betAmount; // Refund on error
       return false;
     }
-
-    const quantity = Math.min(Math.floor(Math.random() * 2) + 1, Math.floor(bot.balance / price)); // 1-2 shares
-    const totalCost = price * quantity;
-
-    if (totalCost <= bot.balance) {
-      bot.balance -= totalCost;
-      
-      // FIXED: Update market data with proper 0.1% price calculation
-      const updatedMarketData = this.updateOpinionMarketData(targetOpinion.text, 'buy', quantity);
-      
-      this.addBotTransaction(bot, 'buy', targetOpinion.id, targetOpinion.text, -totalCost);
-      this.addBotOpinion(bot, targetOpinion, price, quantity);
-      
-      console.log(`🤖💰 ${bot.username} bought ${quantity}x their own opinion "${targetOpinion.text.slice(0, 30)}..." for ${totalCost} (price: ${price} → ${updatedMarketData.currentPrice})`);
-      return true;
-    }
-    
-    return false;
   }
 
-  // NEW: Calculate volatility based on content (same as opinion page)
-  private calculateVolatility(opinionText: string): number {
-    const text = opinionText.toLowerCase();
-    let volatility = 1.0;
+  // Bot places short positions
+  private botPlaceShort(bot: BotProfile): boolean {
+    this.currentBotId = bot.id; // Set current bot for tracking
     
-    if (text.includes('crypto') || text.includes('bitcoin') || text.includes('stock')) volatility += 0.5;
-    if (text.includes('controversial') || text.includes('hot take') || text.includes('unpopular')) volatility += 0.3;
-    if (text.includes('prediction') || text.includes('will') || text.includes('future')) volatility += 0.2;
-    if (text.includes('politics') || text.includes('election')) volatility += 0.4;
-    
-    if (text.includes('safe') || text.includes('boring') || text.includes('obvious')) volatility -= 0.2;
-    if (text.includes('traditional') || text.includes('conservative')) volatility -= 0.1;
-    
-    return Math.max(0.5, Math.min(2.0, volatility));
-  }
+    const opinions = this.getAvailableOpinions();
+    if (opinions.length === 0) return false;
 
-  // Calculate daily trading volume
-  private calculateDailyVolume(opinionText: string): number {
+    const targetOpinion = opinions[Math.floor(Math.random() * opinions.length)];
+    const currentPrice = this.getOpinionPrice(targetOpinion.id);
+    
+    const shortAmount = Math.min(
+      bot.balance * 0.1, // Max 10% of balance
+      bot.tradingStrategy.shortPreferences.maxShortAmount
+    );
+
+    if (shortAmount < 50) return false; // Minimum short amount
+
+    const targetDropPercentage = Math.floor(Math.random() * 
+      (bot.tradingStrategy.shortPreferences.maxTargetDrop - bot.tradingStrategy.shortPreferences.minTargetDrop)) + 
+      bot.tradingStrategy.shortPreferences.minTargetDrop;
+
+    const targetPrice = currentPrice * (1 - targetDropPercentage / 100);
+    const potentialWinnings = shortAmount * (targetDropPercentage / 10); // 10% return per 1% drop
+
+    const timeLimit = bot.tradingStrategy.shortPreferences.preferredTimeLimit[
+      Math.floor(Math.random() * bot.tradingStrategy.shortPreferences.preferredTimeLimit.length)
+    ];
+
+    const shortPosition: ShortPosition = {
+      id: `short_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      opinionText: targetOpinion.text,
+      opinionId: targetOpinion.id,
+      betAmount: shortAmount,
+      targetDropPercentage,
+      startingPrice: currentPrice,
+      targetPrice,
+      potentialWinnings,
+      expirationDate: new Date(Date.now() + timeLimit * 60 * 60 * 1000).toISOString(),
+      createdDate: new Date().toISOString(),
+      status: 'active',
+      botId: bot.id
+    };
+
+    // Deduct short amount
+    bot.balance -= shortAmount;
+
     try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      const data = marketData[opinionText];
-      
-      if (!data || !data.priceHistory) return 0;
-      
-      const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
-      const recentTrades = data.priceHistory.filter((trade: any) => 
-        new Date(trade.timestamp).getTime() > oneDayAgo
-      );
-      
-      return recentTrades.length;
-    } catch {
-      return 0;
+      // Save short position
+      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      shorts.push(shortPosition);
+      localStorage.setItem('shortPositions', JSON.stringify(shorts));
+
+      // Record transaction
+      this.addBotTransaction(bot, 'short_place', targetOpinion.id, targetOpinion.text, -shortAmount, shortPosition.id);
+
+      console.log(`🤖📉 ${bot.username} shorted "${targetOpinion.text.slice(0, 30)}..." $${shortAmount} targeting ${targetDropPercentage}% drop`);
+      return true;
+    } catch (error) {
+      console.error('Error placing short:', error);
+      bot.balance += shortAmount; // Refund on error
+      return false;
     }
   }
 
-  // INFINITE VARIETY: Template-based opinion generation
-  private generateTemplateOpinion(): string {
-    const templates = [
-      // Technology predictions
-      "{technology} will {action} {target} by {year}",
-      "{technology} will make {industry} {outcome} within {timeframe}",
-      "The future of {field} depends on {technology}",
-      "{technology} will {change} how we {activity}",
+  // Check and resolve short positions
+  private checkAndResolveShorts(): void {
+    try {
+      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      const activeShorts = shorts.filter((s: ShortPosition) => s.status === 'active' && s.botId);
       
-      // Economic/social predictions
-      "{concept} will become {status} by {year}",
-      "{industry} will be {outcome} due to {cause}",
-      "Most {group} will {action} {target} by {year}",
-      "{trend} is the {superlative} {change} in {field}",
-      
-      // Impact predictions
-      "{cause} will {effect} {target} {timeframe}",
-      "The rise of {technology} means {outcome}",
-      "{field} will never be the same after {innovation}",
-      "By {year}, {prediction} will be {status}",
-      
-      // Comparative predictions
-      "{newThing} will be more {quality} than {oldThing}",
-      "{technology} will replace {traditional} completely",
-      "People will prefer {newWay} over {oldWay}",
-      "{innovation} will outperform {traditional} by {metric}",
+      if (activeShorts.length === 0) return;
 
-      // Controversial predictions
-      "{technology} will be {banned/regulated} due to {concern}",
-      "{activity} will become {illegal/mandatory} for {reason}",
-      "Society will {reject/embrace} {concept} because of {factor}",
+      let updated = false;
+
+      const updatedShorts = shorts.map((short: ShortPosition) => {
+        if (short.status !== 'active' || !short.botId) return short;
+
+        const currentPrice = this.getOpinionPrice(short.opinionId);
+        const bot = this.bots.find(b => b.id === short.botId);
+        
+        if (!bot) return { ...short, status: 'expired' as const };
+
+        // Check expiration
+        const now = new Date();
+        const expiry = new Date(short.expirationDate);
+        if (now > expiry) {
+          console.log(`🤖⏰ ${bot.username} short expired: "${short.opinionText.slice(0, 30)}..."`);
+          updated = true;
+          return { ...short, status: 'expired' as const };
+        }
+
+        // Check if target reached
+        if (currentPrice <= short.targetPrice) {
+          bot.balance += short.potentialWinnings;
+          bot.totalEarnings += short.potentialWinnings;
+          updated = true;
+          
+          this.addBotTransaction(bot, 'short_win', short.opinionId, short.opinionText, short.potentialWinnings, short.id);
+          console.log(`🤖💹 ${bot.username} short won: "${short.opinionText.slice(0, 30)}..." (won ${short.potentialWinnings})`);
+          
+          return { ...short, status: 'won' as const };
+        }
+
+        return short;
+      });
+
+      if (updated) {
+        localStorage.setItem('shortPositions', JSON.stringify(updatedShorts));
+        this.saveBots();
+      }
+    } catch (error) {
+      console.error('Error checking short positions:', error);
+    }
+  }
+
+  private saveBots(): void {
+    try {
+      localStorage.setItem('autonomousBots', JSON.stringify(this.bots));
+    } catch (error) {
+      console.error('Error saving bots:', error);
+    }
+  }
+
+  // Public methods for managing the bot system
+  public getBots(): BotProfile[] {
+    return this.bots;
+  }
+
+  public getBotTransactions(): any[] {
+    try {
+      return JSON.parse(localStorage.getItem('botTransactions') || '[]');
+    } catch {
+      return [];
+    }
+  }
+
+  public getBotShorts(): ShortPosition[] {
+    try {
+      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      return shorts.filter((short: ShortPosition) => short.botId);
+    } catch {
+      return [];
+    }
+  }
+
+  public isSystemRunning(): boolean {
+    return this.isRunning;
+  }
+
+  public pauseBot(botId: string): void {
+    const bot = this.bots.find(b => b.id === botId);
+    if (bot) {
+      bot.isActive = false;
+      this.saveBots();
+    }
+  }
+
+  public resumeBot(botId: string): void {
+    const bot = this.bots.find(b => b.id === botId);
+    if (bot) {
+      bot.isActive = true;
+      this.saveBots();
+    }
+  }
+
+  public getBotShortStats(): any {
+    const botShorts = this.getBotShorts();
+    const activeShorts = botShorts.filter(s => s.status === 'active');
+    const wonShorts = botShorts.filter(s => s.status === 'won');
+    const lostShorts = botShorts.filter(s => s.status === 'lost');
+    
+    return {
+      total: botShorts.length,
+      active: activeShorts.length,
+      won: wonShorts.length,
+      lost: lostShorts.length,
+      totalWinnings: wonShorts.reduce((sum, s) => sum + s.potentialWinnings, 0),
+      totalLosses: lostShorts.reduce((sum, s) => sum + s.betAmount, 0)
+    };
+  }
+
+  public getBotPerformanceStats(): any {
+    return this.bots.map(bot => {
+      const portfolioValue = this.calculateBotPortfolioValue(bot);
+      const totalValue = bot.balance + portfolioValue;
+      const initialBalance = 30000;
+      const totalReturn = ((totalValue - initialBalance) / initialBalance) * 100;
+      
+      return {
+        id: bot.id,
+        username: bot.username,
+        balance: bot.balance,
+        portfolioValue,
+        totalValue,
+        totalReturn: totalReturn.toFixed(2),
+        totalEarnings: bot.totalEarnings,
+        totalLosses: bot.totalLosses,
+        netProfit: bot.totalEarnings - bot.totalLosses,
+        strategy: bot.tradingStrategy.type,
+        riskTolerance: bot.riskTolerance,
+        isActive: bot.isActive
+      };
+    });
+  }
+
+  // NEW: Performance optimization methods for 1,000+ bots
+  public optimizeForPerformance(): void {
+    console.log('🔧 Optimizing bot system for UI performance...');
+    
+    // DRASTICALLY reduce activity frequency for all bots
+    this.bots.forEach(bot => {
+      bot.personality.activityFrequency = Math.max(60, bot.personality.activityFrequency * 5);
+    });
+    
+    // Only activate first 50 bots for UI stability
+    this.bots.forEach((bot, index) => {
+      bot.isActive = index < 50;
+    });
+    
+    console.log('✅ Performance optimization complete: 50 active bots, much slower frequency (60-300s intervals)');
+    this.saveBots();
+  }
+
+  // UPDATED: Price validation using unified system
+  public validatePriceConsistency(): void {
+    console.log('🔍 VALIDATING PRICE CONSISTENCY ACROSS SYSTEM:');
+    console.log('================================================');
+    
+    const opinions = this.getAvailableOpinions();
+    let inconsistencies = 0;
+    
+    opinions.forEach(opinion => {
+      const data = this.marketDataManager.getMarketData(opinion.text);
+      const expectedPrice = calculateUnifiedPrice(data.timesPurchased, data.timesSold, 10.00);
+      const actualPrice = data.currentPrice;
+      const difference = Math.abs(expectedPrice - actualPrice);
+        
+      if (difference > 0.01) { // More than 1 cent difference
+        console.log(`❌ INCONSISTENCY: "${opinion.text.slice(0, 40)}..."`);
+        console.log(`   Expected: ${expectedPrice} | Actual: ${actualPrice} | Diff: ${difference.toFixed(4)}`);
+        console.log(`   Purchases: ${data.timesPurchased} | Sales: ${data.timesSold} | Net: ${data.timesPurchased - data.timesSold}`);
+        inconsistencies++;
+        
+        // Auto-fix using unified system
+        this.marketDataManager.updateMarketData(opinion.text, 'buy', 0); // Recalculate with 0 quantity
+        console.log(`   🔧 FIXED: Updated using unified system`);
+      } else {
+        console.log(`✅ CONSISTENT: "${opinion.text.slice(0, 40)}..." - ${actualPrice}`);
+      }
+    });
+    
+    if (inconsistencies > 0) {
+      console.log(`🔧 Fixed ${inconsistencies} price inconsistencies using unified system`);
+    } else {
+      console.log(`✅ All ${opinions.length} opinions have consistent pricing`);
+    }
+  }
+
+  // NEW: Debug opinion creation and pricing issues
+  public debugOpinionCreation(): void {
+    console.log('🔍 DEBUGGING OPINION CREATION AND PRICING:');
+    console.log('============================================');
+    
+    const opinions = this.getAvailableOpinions();
+    const botTransactions = this.getBotTransactions();
+    
+    console.log(`📊 Total opinions: ${opinions.length}`);
+    console.log(`📊 Total bot transactions: ${botTransactions.length}`);
+    
+    // Check each opinion's pricing
+    opinions.slice(0, 5).forEach((opinion, index) => { // Check first 5 for detail
+      const opinionText = opinion.text;
+      console.log(`\n📝 Opinion ${index + 1}: "${opinionText.slice(0, 50)}..."`);
+      
+      const data = this.marketDataManager.getMarketData(opinionText);
+      if (data) {
+        console.log(`💰 Current Price: ${data.currentPrice}`);
+        console.log(`📈 Purchases: ${data.timesPurchased} | Sales: ${data.timesSold}`);
+        console.log(`📅 Last Updated: ${data.lastUpdated}`);
+        
+        // Check if price should be $10
+        const expectedPrice = calculateUnifiedPrice(data.timesPurchased, data.timesSold, 10.00);
+        if (Math.abs(expectedPrice - data.currentPrice) > 0.01) {
+          console.log(`❌ PRICE MISMATCH: Expected ${expectedPrice}, Got ${data.currentPrice}`);
+        } else {
+          console.log(`✅ Price matches calculation: ${expectedPrice}`);
+        }
+        
+        // Check creation transaction
+        const creationTx = botTransactions.find((tx: any) => 
+          tx.type === 'earn' && tx.opinionText === opinionText
+        );
+        if (creationTx) {
+          console.log(`🤖 Created by: ${creationTx.botId} at ${creationTx.date}`);
+          console.log(`💰 Creation earnings: ${creationTx.amount}`);
+        } else {
+          console.log(`❓ No creation transaction found`);
+        }
+      } else {
+        console.log(`❌ NO MARKET DATA FOUND - This should not happen!`);
+      }
+    });
+    
+    // Test price calculation for new opinion
+    console.log('\n🧪 TESTING NEW OPINION PRICE CALCULATION:');
+    const testPrice = calculateUnifiedPrice(0, 0, 10);
+    console.log(`📊 New opinion with 0 purchases, 0 sales should be: ${testPrice}`);
+    
+    if (testPrice !== 10) {
+      console.log(`❌ ERROR: New opinions should start at exactly $10.00!`);
+    } else {
+      console.log(`✅ New opinion pricing is correct: $10.00`);
+    }
+  }
+
+  // NEW: Test price calculation method
+  public testPriceCalculation(): void {
+    console.log('🧪 TESTING UNIFIED PRICE CALCULATION:');
+    console.log('====================================');
+    
+    const basePrice = 10;
+    
+    console.log('Testing purchase sequence (0.1% increases):');
+    for (let purchases = 0; purchases <= 10; purchases++) {
+      const price = this.calculatePrice(purchases, 0, basePrice);
+      const percentChange = purchases > 0 ? ((price - basePrice) / basePrice * 100).toFixed(3) : '0.000';
+      console.log(`  ${purchases} purchases: ${price} (+${percentChange}%)`);
+    }
+    
+    console.log('\nTesting sale sequence (0.1% decreases):');
+    for (let sales = 0; sales <= 10; sales++) {
+      const price = this.calculatePrice(0, sales, basePrice);
+      const percentChange = sales > 0 ? ((price - basePrice) / basePrice * 100).toFixed(3) : '0.000';
+      console.log(`  ${sales} sales: ${price} (${percentChange}%)`);
+    }
+    
+    console.log('\nTesting large numbers:');
+    const largePurchases = [100, 500, 1000, 5000];
+    largePurchases.forEach(count => {
+      const price = this.calculatePrice(count, 0, basePrice);
+      const percentChange = ((price - basePrice) / basePrice * 100).toFixed(1);
+      console.log(`  ${count} purchases: ${price} (+${percentChange}%)`);
+    });
+  }
+
+  // NEW: Force specific opinion generation for testing
+  public forceOpinionGeneration(count: number = 5): void {
+    console.log(`🎯 FORCING ${count} OPINION GENERATIONS for sidebar testing...`);
+    
+    const activeBots = this.bots.filter(b => b.isActive).slice(0, count);
+    
+    activeBots.forEach((bot, index) => {
+      setTimeout(() => {
+        console.log(`🤖💡 FORCING ${bot.username} to generate opinion...`);
+        this.botGenerateOpinion(bot);
+        
+        // Log current opinion count after each generation
+        setTimeout(() => {
+          const currentOpinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+          console.log(`📊 After ${bot.username} generation: ${currentOpinions.length} total opinions`);
+          console.log(`📝 Latest opinion: "${currentOpinions[currentOpinions.length - 1]}"`);
+        }, 100);
+        
+      }, index * 2000); // 2 seconds apart
+    });
+    
+    console.log(`✅ Scheduled ${activeBots.length} opinion generations with 2-second intervals`);
+  }
+
+  // NEW: Restart system with optimized settings
+  public restartOptimized(): void {
+    console.log('🔄 Restarting bot system with optimized settings...');
+    
+    this.stopBots();
+    this.optimizeForPerformance();
+    
+    setTimeout(() => {
+      this.startBots();
+      
+      // Force immediate activity
+      setTimeout(() => {
+        this.forceBotActivity(20);
+      }, 2000);
+      
+    }, 1000);
+  }
+
+  // NEW: Manual start method for troubleshooting
+  public manualStart(): void {
+    console.log('🔧 Manual start initiated...');
+    console.log('🧪 TESTING ALL BOT ACTION TYPES:');
+    
+    // Ensure opinions exist
+    this.ensureOpinionsExist();
+    
+    // Start with immediate activity
+    this.startBots();
+    
+    // Test each action type explicitly
+    setTimeout(() => {
+      console.log('🎯 TESTING BUY ACTIONS:');
+      const buyers = this.bots.filter(b => b.isActive).slice(0, 5);
+      buyers.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing buy for ${bot.username}...`);
+          const result = this.botBuyOpinion(bot);
+          console.log(`Buy result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 1000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING BET ACTIONS:');
+      const bettors = this.bots.filter(b => b.isActive).slice(5, 10);
+      bettors.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing bet for ${bot.username}...`);
+          const result = this.botPlaceBet(bot);
+          console.log(`Bet result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 2000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING GENERATE ACTIONS:');
+      const generators = this.bots.filter(b => b.isActive).slice(10, 15);
+      generators.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing generate for ${bot.username}...`);
+          this.botGenerateOpinion(bot);
+          console.log(`Generate result for ${bot.username}: SUCCESS`);
+        }, i * 200);
+      });
+    }, 3000);
+    
+    setTimeout(() => {
+      console.log('🎯 TESTING SELL ACTIONS:');
+      const sellers = this.bots.filter(b => b.isActive).slice(15, 20);
+      sellers.forEach((bot, i) => {
+        setTimeout(() => {
+          console.log(`🔍 Testing sell for ${bot.username}...`);
+          const result = this.botSellOpinion(bot);
+          console.log(`Sell result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
+        }, i * 200);
+      });
+    }, 4000);
+    
+    // Force diverse activity
+    setTimeout(() => {
+      console.log('🚀 Forcing diverse bot activity...');
+      this.forceBotActivity(20);
+    }, 5000);
+    
+    console.log('✅ Manual start complete - check console for detailed testing results!');
+  }
+
+  public forceBotActivity(count: number = 10): void {
+    console.log(`🎯 FORCING ${count} BOT ACTIONS for immediate activity...`);
+    
+    const activeBots = this.bots.filter(b => b.isActive).slice(0, count);
+    
+    activeBots.forEach((bot, index) => {
+      setTimeout(() => {
+        console.log(`🤖⚡ FORCING ${bot.username} to act...`);
+        this.executeBotAction(bot);
+      }, index * 500); // 500ms apart
+    });
+    
+    console.log(`✅ Scheduled ${activeBots.length} forced bot actions with 500ms intervals`);
+  }
+
+  public debugFeedActivity(): any {
+    console.log('🔍 FEED DEBUG REPORT:');
+    console.log('===================');
+    
+    const transactions = this.getBotTransactions();
+    const recentTransactions = transactions.slice(-10);
+    
+    console.log(`📊 Total bot transactions: ${transactions.length}`);
+    console.log(`🕐 Recent transactions (last 10):`, recentTransactions);
+    
+    const activeBots = this.bots.filter(b => b.isActive);
+    console.log(`🤖 Active bots: ${activeBots.length}/${this.bots.length}`);
+    
+    const runningStatus = this.isSystemRunning();
+    console.log(`⚡ System running: ${runningStatus}`);
+    
+    if (!runningStatus) {
+      console.log('❌ Bot system is stopped! Run botSystem.startBots() to restart.');
+    }
+    
+    // Test if opinions exist
+    const opinions = this.getAvailableOpinions();
+    console.log(`💭 Available opinions: ${opinions.length}`);
+    
+    if (opinions.length === 0) {
+      console.log('❌ No opinions found! Bots need opinions to trade.');
+    }
+    
+    return {
+      totalTransactions: transactions.length,
+      recentTransactions: recentTransactions.length,
+      activeBots: activeBots.length,
+      totalBots: this.bots.length,
+      systemRunning: runningStatus,
+      opinionsAvailable: opinions.length
+    };
+  }
+
+  // Transaction debugging and fixing methods
+  public fixBotTransactions(): void {
+    console.log('🔧 FIXING BOT TRANSACTIONS...');
+    
+    try {
+      const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      
+      console.log(`📊 Found ${transactions.length} bot transactions`);
+      
+      let fixedCount = 0;
+      let removedCount = 0;
+      
+      // Fix transactions with missing fields
+      const fixedTransactions = transactions.filter((transaction: any, index: number) => {
+        if (!transaction.id) {
+          transaction.id = `fixed_${Date.now()}_${index}`;
+          fixedCount++;
+        }
+        
+        if (!transaction.date) {
+          transaction.date = new Date().toISOString();
+          fixedCount++;
+        }
+        
+        if (!transaction.type) {
+          console.log(`❌ Removing transaction without type at index ${index}`);
+          removedCount++;
+          return false;
+        }
+        
+        if (typeof transaction.amount !== 'number') {
+          console.log(`❌ Removing transaction with invalid amount at index ${index}:`, transaction.amount);
+          removedCount++;
+          return false;
+        }
+        
+        return true;
+      });
+      
+      // Remove duplicates
+      const uniqueTransactions = fixedTransactions.filter((transaction: any, index: number, arr: any[]) => {
+        const firstIndex = arr.findIndex(t => t.id === transaction.id);
+        if (firstIndex !== index) {
+          removedCount++;
+          return false;
+        }
+        return true;
+      });
+      
+      localStorage.setItem('botTransactions', JSON.stringify(uniqueTransactions));
+      
+      console.log(`✅ Transaction fix complete:`);
+      console.log(`   🔧 Fixed fields: ${fixedCount}`);
+      console.log(`   🗑️ Removed invalid: ${removedCount}`);
+      console.log(`   📈 Final count: ${uniqueTransactions.length}`);
+      
+      // Dispatch event to update feed
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('botTransactionsFixed', { 
+          detail: { 
+            count: uniqueTransactions.length,
+            fixed: fixedCount,
+            removed: removedCount
+          } 
+        }));
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fixing bot transactions:', error);
+    }
+  }
+
+  // Method to validate transaction integrity
+  public validateTransactionIntegrity(): boolean {
+    try {
+      const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      let isValid = true;
+      const issues: string[] = [];
+      
+      console.log('🔍 VALIDATING TRANSACTION INTEGRITY...');
+      
+      // Check for required fields
+      transactions.forEach((transaction: any, index: number) => {
+        if (!transaction.id) {
+          issues.push(`Transaction ${index} missing ID`);
+          isValid = false;
+        }
+        
+        if (!transaction.botId) {
+          issues.push(`Transaction ${index} missing botId`);
+          isValid = false;
+        }
+        
+        if (!transaction.type) {
+          issues.push(`Transaction ${index} missing type`);
+          isValid = false;
+        }
+        
+        if (typeof transaction.amount !== 'number') {
+          issues.push(`Transaction ${index} has invalid amount: ${transaction.amount}`);
+          isValid = false;
+        }
+        
+        if (!transaction.date) {
+          issues.push(`Transaction ${index} missing date`);
+          isValid = false;
+        }
+      });
+      
+      // Check for duplicates
+      const ids = transactions.map((t: any) => t.id).filter(Boolean);
+      const uniqueIds = new Set(ids);
+      if (ids.length !== uniqueIds.size) {
+        issues.push(`Found ${ids.length - uniqueIds.size} duplicate transaction IDs`);
+        isValid = false;
+      }
+      
+      if (isValid) {
+        console.log(`✅ Transaction integrity check passed: ${transactions.length} transactions are valid`);
+      } else {
+        console.log(`❌ Transaction integrity check failed:`);
+        issues.forEach(issue => console.log(`   - ${issue}`));
+        console.log(`🔧 Run botSystem.fixBotTransactions() to fix these issues`);
+      }
+      
+      return isValid;
+      
+    } catch (error) {
+      console.error('❌ Error validating transaction integrity:', error);
+      return false;
+    }
+  }
+
+  // Enhanced debug method for transaction issues
+  public debugTransactionIssues(): void {
+    console.log('🔍 DEBUGGING TRANSACTION ISSUES...');
+    console.log('=====================================');
+    
+    try {
+      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      const bots = this.getBots();
+      
+      console.log(`📊 STORAGE SUMMARY:`);
+      console.log(`   🤖 Bot transactions: ${botTransactions.length}`);
+      console.log(`   👤 User transactions: ${userTransactions.length}`);
+      console.log(`   🌐 Global feed: ${globalFeed.length}`);
+      console.log(`   🤖 Total bots: ${bots.length}`);
+      console.log(`   🤖 Active bots: ${bots.filter(b => b.isActive).length}`);
+      console.log(`   🤖 System running: ${this.isSystemRunning()}`);
+      
+      // Analyze bot transactions
+      if (botTransactions.length > 0) {
+        console.log(`\n📊 BOT TRANSACTION ANALYSIS:`);
+        
+        const recentTransactions = botTransactions.slice(-10);
+        console.log(`   🕐 Last 10 transactions:`);
+        recentTransactions.forEach((t: any, i: number) => {
+          const botName = bots.find(b => b.id === t.botId)?.username || `UnknownBot_${t.botId?.slice(-3)}`;
+          console.log(`     ${i + 1}. ${botName} - ${t.type} - ${t.amount} - ${t.date || 'NO DATE'}`);
+        });
+        
+        // Check for missing fields
+        const missingIds = botTransactions.filter((t: any) => !t.id).length;
+        const missingDates = botTransactions.filter((t: any) => !t.date).length;
+        const missingBotIds = botTransactions.filter((t: any) => !t.botId).length;
+        const missingTypes = botTransactions.filter((t: any) => !t.type).length;
+        
+        console.log(`   ❌ Transactions missing IDs: ${missingIds}`);
+        console.log(`   ❌ Transactions missing dates: ${missingDates}`);
+        console.log(`   ❌ Transactions missing botIds: ${missingBotIds}`);
+        console.log(`   ❌ Transactions missing types: ${missingTypes}`);
+        
+        // Transaction type breakdown
+        const typeBreakdown = botTransactions.reduce((acc: any, t: any) => {
+          acc[t.type] = (acc[t.type] || 0) + 1;
+          return acc;
+        }, {});
+        console.log(`   📈 Transaction types:`, typeBreakdown);
+        
+        // Bot activity breakdown
+        const botBreakdown = botTransactions.reduce((acc: any, t: any) => {
+          const botName = bots.find(b => b.id === t.botId)?.username || `Unknown_${t.botId?.slice(-3)}`;
+          acc[botName] = (acc[botName] || 0) + 1;
+          return acc;
+        }, {});
+        const topBots = Object.entries(botBreakdown)
+          .sort(([,a], [,b]) => (b as number) - (a as number))
+          .slice(0, 5);
+        console.log(`   🏆 Top 5 most active bots:`, topBots);
+        
+      } else {
+        console.log(`\n❌ NO BOT TRANSACTIONS FOUND!`);
+        console.log(`   This means either:`);
+        console.log(`   1. Bot system hasn't started yet`);
+        console.log(`   2. Bots aren't performing actions`);
+        console.log(`   3. Transaction recording is broken`);
+        
+        if (this.isSystemRunning()) {
+          console.log(`   🤖 Bot system is running - forcing activity...`);
+          this.forceBotActivity(5);
+        } else {
+          console.log(`   🤖 Bot system is stopped - starting...`);
+          this.startBots();
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in debugTransactionIssues:', error);
+    }
+    
+    console.log('\n🔧 SUGGESTED FIXES:');
+    console.log('   1. Run: botSystem.fixBotTransactions()');
+    console.log('   2. Run: botSystem.validateTransactionIntegrity()');
+    console.log('   3. Run: botSystem.forceBotActivity(10)');
+    console.log('   4. Run: botSystem.restartOptimized()');
+  }
+
+  // Helper methods
+  private calculateBotPortfolioValue(bot: BotProfile): number {
+    const botOpinions = this.getBotOpinions(bot);
+    return botOpinions.reduce((total, opinion) => {
+      const currentPrice = this.getOpinionPrice(opinion.opinionId);
+      return total + (currentPrice * opinion.quantity);
+    }, 0);
+  }
+
+  private addBotOpinion(bot: BotProfile, opinion: any, price: number, quantity: number): void {
+    const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+    if (!botOpinions[bot.id]) {
+      botOpinions[bot.id] = [];
+    }
+
+    const existingOpinion = botOpinions[bot.id].find((o: any) => o.opinionId === opinion.id);
+    if (existingOpinion) {
+      existingOpinion.quantity += quantity;
+      existingOpinion.purchasePrice = ((existingOpinion.purchasePrice * existingOpinion.quantity) + (price * quantity)) / (existingOpinion.quantity + quantity);
+    } else {
+      botOpinions[bot.id].push({
+        opinionId: opinion.id,
+        text: opinion.text,
+        purchasePrice: price,
+        quantity: quantity,
+        purchaseDate: new Date().toISOString()
+      });
+    }
+
+    localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
+  }
+
+  private removeBotOpinion(bot: BotProfile, opinionId: string, quantity: number): void {
+    const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+    if (!botOpinions[bot.id]) return;
+
+    const opinionIndex = botOpinions[bot.id].findIndex((o: any) => o.opinionId === opinionId);
+    if (opinionIndex !== -1) {
+      const opinion = botOpinions[bot.id][opinionIndex];
+      opinion.quantity -= quantity;
+      
+      if (opinion.quantity <= 0) {
+        botOpinions[bot.id].splice(opinionIndex, 1);
+      }
+      
+      localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
+    }
+  }
+
+  private getBotOpinions(bot: BotProfile): any[] {
+    const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+    return botOpinions[bot.id] || [];
+  }
+
+  private selectOpinionByStrategy(opinions: any[], bot: BotProfile): any {
+    switch (bot.tradingStrategy.type) {
+      case 'contrarian':
+        return opinions.sort((a, b) => this.getOpinionPopularity(a.id) - this.getOpinionPopularity(b.id))[0];
+      case 'momentum':
+        return opinions.sort((a, b) => this.getOpinionTrend(b.id) - this.getOpinionTrend(a.id))[0];
+      case 'value':
+        return opinions.sort((a, b) => this.getOpinionValue(a.id) - this.getOpinionValue(b.id))[0];
+      default:
+        return opinions[Math.floor(Math.random() * opinions.length)];
+    }
+  }
+
+  private getOpinionPopularity(opinionId: string): number {
+    // Simple popularity metric based on transaction volume
+    const transactions = this.getBotTransactions();
+    const opinionTransactions = transactions.filter((t: any) => t.opinionId === opinionId);
+    return opinionTransactions.length;
+  }
+
+  private getOpinionTrend(opinionId: string): number {
+    // Simple trend metric based on recent price movements
+    const opinions = this.getAvailableOpinions();
+    const opinion = opinions.find(o => o.id === opinionId);
+    if (!opinion) return 0;
+
+    const marketData = this.marketDataManager.getMarketData(opinion.text);
+    const recentHistory = marketData.priceHistory.slice(-5);
+    if (recentHistory.length < 2) return 0;
+
+    const oldPrice = recentHistory[0].price;
+    const newPrice = recentHistory[recentHistory.length - 1].price;
+    return newPrice - oldPrice;
+  }
+
+  private getOpinionValue(opinionId: string): number {
+    // Simple value metric - lower current price = higher value
+    const currentPrice = this.getOpinionPrice(opinionId);
+    return 50 - currentPrice; // Invert so lower prices have higher value
+  }
+
+  private weightedRandomChoice(choices: string[], weights: number[]): string {
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    let random = Math.random() * totalWeight;
+    
+    for (let i = 0; i < choices.length; i++) {
+      random -= weights[i];
+      if (random <= 0) {
+        return choices[i];
+      }
+    }
+    
+    return choices[0];
+  }
+
+  private calculateMultiplier(betType: string, percentage: number): number {
+    const baseMultiplier = percentage / 20;
+    return Math.max(1.1, Math.min(5.0, baseMultiplier));
+  }
+
+  private getVolatilityRating(username: string): 'Low' | 'Medium' | 'High' {
+    const ratings = ['Low', 'Medium', 'High'];
+    return ratings[Math.abs(username.length % 3)] as 'Low' | 'Medium' | 'High';
+  }
+
+  // Get all available opinions
+  private getAvailableOpinions(): any[] {
+    try {
+      const stored = localStorage.getItem('opinions');
+      if (!stored) return [];
+      
+      const opinions = JSON.parse(stored);
+      return Array.isArray(opinions) ? 
+        opinions.map((text, index) => ({ id: index.toString(), text })) : [];
+    } catch (error) {
+      console.error('Error getting opinions:', error);
+      return [];
+    }
+  }
+
+  // Get opinion price using unified system
+  private getOpinionPrice(opinionId: string): number {
+    const opinions = this.getAvailableOpinions();
+    const opinion = opinions.find(o => o.id === opinionId);
+    if (!opinion) return 10;
+
+    const marketData = this.marketDataManager.getMarketData(opinion.text);
+    return marketData.currentPrice;
+  }
+
+  // Generate random opinions
+  private generateRandomOpinion(): string {
+    const templates = [
+      "{technology} will {action} {target} by {year}",
+      "In {timeframe}, {newThing} will replace {oldThing}",
+      "{newThing} will be {quality} within {timeframe}",
+      "By {year}, {traditional} will be {outcome}",
+      "{field} will change {change} we {activity} in the next {timeframe}",
+      "{newWay} will become more popular than {oldWay} by {year}",
+      "We'll see {metric} improvement in {field} by {year}",
+      "{concern} will be a major issue for {technology} adoption",
+      "Governments will regulate {technology} due to {reason}",
+      "{factor} will drive {technology} adoption faster than expected",
+      "{trend} will be the {superlative} trend of {year}",
+      "{innovation} will solve the problem of {concern}",
+      "By {year}, {prediction}",
+      "{cause} will {effect} {field} permanently",
       "{group} will {lose/gain} {power/influence} due to {change}"
     ];
 
@@ -1457,1192 +1947,23 @@ class AutonomousBotSystem {
     return opinion;
   }
 
-  // CURATED HIGH-QUALITY opinions for guaranteed engagement
-  private getCuratedOpinions() {
-    return {
-      technology: [
-        "AI will replace most creative jobs by 2028",
-        "Quantum computing will break all current encryption by 2027",
-        "Brain-computer interfaces will be mainstream by 2030",
-        "Deepfakes will destroy trust in video evidence",
-        "Neural networks will develop consciousness within 10 years",
-        "5G will cause significant health problems",
-        "Smart contact lenses will replace smartphones",
-        "Digital twins will predict most system failures",
-        "Swarm robotics will reshape manufacturing",
-        "Photonic computing will replace silicon chips"
-      ],
-      economy: [
-        "Universal Basic Income will be implemented globally by 2030",
-        "Cryptocurrency will replace traditional banking completely",
-        "The 4-day work week will become standard worldwide",
-        "Gig economy workers will outnumber traditional employees",
-        "Automation will create more jobs than it destroys",
-        "Digital nomadism will become the dominant lifestyle",
-        "Algorithmic trading will cause market instability",
-        "Social credit systems will spread globally",
-        "Space mining will crash precious metal prices",
-        "Basic goods will become free due to automation"
-      ],
-      environment: [
-        "Climate change will be reversed by 2040 through technology",
-        "Lab-grown meat will completely replace animal agriculture",
-        "Vertical farming will feed most of the world's population",
-        "Fusion power will make energy essentially free",
-        "Weather modification will become routine by 2030",
-        "Genetically modified trees will absorb 10x more CO2",
-        "Solar paint will make every surface an energy generator",
-        "Floating cities will house climate refugees",
-        "Bioengineered coral will restore dead reefs",
-        "Space-based solar power will solve energy crisis"
-      ],
-      social: [
-        "Social media will be regulated like tobacco companies",
-        "Virtual reality will cause widespread social isolation",
-        "Cancel culture will be replaced by restorative justice",
-        "Influencer marketing will be classified as gambling",
-        "Metaverse relationships will be as common as real ones",
-        "Digital wellness will become a human right",
-        "Social media addiction will be treated like substance abuse",
-        "Digital citizenship will require formal education",
-        "Virtual reality dating will become the norm",
-        "Parasocial relationships will replace real friendships"
-      ],
-      health: [
-        "Gene therapy will cure most cancers by 2030",
-        "Brain uploading will achieve digital immortality",
-        "3D printed organs will eliminate transplant waiting lists",
-        "Longevity escape velocity will be reached by 2035",
-        "Precision nutrition will be tailored to individual genetics",
-        "Robotic caregivers will assist most elderly people",
-        "Psychedelic therapy will treat most mental illnesses",
-        "Neural stimulation will cure depression permanently",
-        "Artificial wombs will revolutionize pregnancy",
-        "Preventive medicine will make most hospitals obsolete"
-      ],
-      culture: [
-        "NFTs will become the primary way artists monetize work",
-        "AI-generated content will dominate entertainment",
-        "Traditional sports will be overshadowed by esports",
-        "Virtual concerts will replace live music performances",
-        "Literature will be written collaboratively by AI and humans",
-        "Digital fashion will become more valuable than physical",
-        "Virtual tourism will reduce physical travel",
-        "Interactive storytelling will replace passive entertainment",
-        "Community-created content will surpass professional media",
-        "Algorithmic curation will shape all cultural consumption"
-      ]
-    };
-  }
-
-  // Helper methods and calculations
-  private weightedRandomChoice(choices: string[], weights: number[]): string {
-    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-    let random = Math.random() * totalWeight;
-    
-    for (let i = 0; i < choices.length; i++) {
-      random -= weights[i];
-      if (random <= 0) {
-        return choices[i];
-      }
-    }
-    
-    return choices[0];
-  }
-
-  private selectOpinionByStrategy(opinions: any[], bot: BotProfile): any {
-    switch (bot.tradingStrategy.type) {
-      case 'contrarian':
-        return opinions.sort((a, b) => this.getOpinionPopularity(a.id) - this.getOpinionPopularity(b.id))[0];
-      case 'momentum':
-        return opinions.sort((a, b) => this.getOpinionTrend(b.id) - this.getOpinionTrend(a.id))[0];
-      case 'value':
-        return opinions.sort((a, b) => this.getOpinionValue(a.id) - this.getOpinionValue(b.id))[0];
-      default:
-        return opinions[Math.floor(Math.random() * opinions.length)];
-    }
-  }
-
-  private calculateBetAmount(bot: BotProfile): number {
-    const baseAmount = bot.balance * 0.1;
-    const riskAdjusted = baseAmount * bot.personality.riskMultiplier;
-    return Math.floor(Math.random() * riskAdjusted) + 50;
-  }
-
-  private calculateMultiplier(betType: string, percentage: number): number {
-    const baseMultiplier = percentage / 20;
-    return Math.max(1.1, Math.min(5.0, baseMultiplier));
-  }
-
-  private calculateExpiryDate(days: number): string {
-    const expiry = new Date();
-    expiry.setDate(expiry.getDate() + days);
-    return expiry.toLocaleDateString();
-  }
-
-  private getVolatilityRating(username: string): 'Low' | 'Medium' | 'High' {
-    const ratings = ['Low', 'Medium', 'High'];
-    return ratings[Math.abs(username.length % 3)] as 'Low' | 'Medium' | 'High';
-  }
-
-  // Integration methods with localStorage system
-  private getAvailableOpinions(): any[] {
-    try {
-      const stored = localStorage.getItem('opinions');
-      if (!stored) return [];
-      
-      const opinions = JSON.parse(stored);
-      return Array.isArray(opinions) ? 
-        opinions.filter(op => op && typeof op === 'string').map((text, index) => ({
-          id: index.toString(),
-          text
-        })) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private getAvailableUsers(): any[] {
-    try {
-      const humanUser = JSON.parse(localStorage.getItem('userProfile') || '{}');
-      const allUsers = [humanUser, ...this.bots].filter(user => user.username);
-      
-      return allUsers.map(user => ({
-        username: user.username,
-        portfolioValue: this.calculateUserPortfolioValue(user.username)
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  private calculateUserPortfolioValue(username: string): number {
-    try {
-      if (username === JSON.parse(localStorage.getItem('userProfile') || '{}').username) {
-        const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
-        return ownedOpinions.reduce((total: number, opinion: any) => 
-          total + (opinion.currentPrice * opinion.quantity), 0
-        );
-      }
-      
-      const botOpinions = this.getBotOpinions(this.bots.find(b => b.username === username));
-      return botOpinions.reduce((total, opinion) => 
-        total + (this.getOpinionPrice(opinion.opinionId) * opinion.quantity), 0
-      );
-    } catch {
-      return 0;
-    }
-  }
-
-  // Enhanced portfolio calculation with realistic selling prices
-  private calculateBotPortfolioValue(bot: BotProfile): number {
-    try {
-      const botOpinions = this.getBotOpinions(bot);
-      return botOpinions.reduce((total, opinion) => {
-        const currentPrice = this.getOpinionPrice(opinion.opinionId);
-        const realisticSellPrice = Math.round(currentPrice * 0.95 * 100) / 100; // 95% like opinion page
-        return total + (realisticSellPrice * opinion.quantity);
-      }, 0);
-    } catch {
-      return 0;
-    }
-  }
-
-  private getOpinionPopularity(opinionId: string): number {
-    try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      const opinions = this.getAvailableOpinions();
-      const opinion = opinions.find(op => op.id === opinionId);
-      
-      if (opinion && marketData[opinion.text]) {
-        return marketData[opinion.text].timesPurchased || 0;
-      }
-      
-      return Math.floor(Math.random() * 100);
-    } catch {
-      return Math.floor(Math.random() * 100);
-    }
-  }
-
-  private getOpinionTrend(opinionId: string): number {
-    try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      const opinions = this.getAvailableOpinions();
-      const opinion = opinions.find(op => op.id === opinionId);
-      
-      if (opinion && marketData[opinion.text]) {
-        const data = marketData[opinion.text];
-        const netDemand = data.timesPurchased - data.timesSold;
-        return netDemand;
-      }
-      
-      return Math.floor(Math.random() * 100) - 50;
-    } catch {
-      return Math.floor(Math.random() * 100) - 50;
-    }
-  }
-
-  private getOpinionValue(opinionId: string): number {
-    try {
-      const price = this.getOpinionPrice(opinionId);
-      const popularity = this.getOpinionPopularity(opinionId);
-      
-      return popularity > 0 ? price / popularity : price;
-    } catch {
-      return Math.floor(Math.random() * 100);
-    }
-  }
-
-  // Bot opinion and transaction management
-  private addBotOpinion(bot: BotProfile, opinion: any, price: number, quantity: number): void {
-    try {
-      const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
-      
-      const existingOpinionIndex = botOpinions.findIndex((op: any) => 
-        op.botId === bot.id && op.opinionId === opinion.id
-      );
-
-      if (existingOpinionIndex !== -1) {
-        const existingOpinion = botOpinions[existingOpinionIndex];
-        existingOpinion.quantity += quantity;
-        existingOpinion.currentPrice = price;
-      } else {
-        const opinionAsset: BotOpinionAsset = {
-          id: `${bot.id}_${opinion.id}_${Date.now()}`,
-          botId: bot.id,
-          opinionId: opinion.id,
-          text: opinion.text,
-          purchasePrice: price,
-          currentPrice: price,
-          purchaseDate: new Date().toLocaleDateString(),
-          quantity
-        };
-
-        botOpinions.push(opinionAsset);
-      }
-
-      localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
-    } catch (error) {
-      console.error('Error adding bot opinion:', error);
-    }
-  }
-
-  private removeBotOpinion(bot: BotProfile, opinionId: string, quantity: number): void {
-    try {
-      const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
-      const opinionIndex = botOpinions.findIndex((op: any) => 
-        op.botId === bot.id && op.opinionId === opinionId
-      );
-
-      if (opinionIndex !== -1) {
-        const opinion = botOpinions[opinionIndex];
-        if (opinion.quantity <= quantity) {
-          botOpinions.splice(opinionIndex, 1);
-        } else {
-          opinion.quantity -= quantity;
-        }
-        localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
-      }
-    } catch (error) {
-      console.error('Error removing bot opinion:', error);
-    }
-  }
-
-  private getBotOpinions(bot: BotProfile | undefined): BotOpinionAsset[] {
-    if (!bot) return [];
-    
-    try {
-      const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
-      return botOpinions.filter((op: any) => op.botId === bot.id);
-    } catch {
-      return [];
-    }
-  }
-
-  // ENHANCED: Bot transaction recording with comprehensive fixes
-  private addBotTransaction(bot: BotProfile, type: string, opinionId?: string, opinionText?: string, amount?: number, shortId?: string, metadata?: any): void {
-    // Generate truly unique ID with microsecond precision and better randomness
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substr(2, 12);
-    const microIncrement = Math.floor(Math.random() * 1000);
-    const sequenceId = Math.floor(Math.random() * 10000);
-    
-    // Ensure absolutely unique ID
-    const uniqueId = `bot_${bot.id}_${timestamp}_${microIncrement}_${sequenceId}_${randomSuffix}`;
-
-    // Create standardized transaction with all required fields
-    const transaction = {
-      id: uniqueId,
-      type: type,
-      opinionId: opinionId || null,
-      opinionText: opinionText || null,
-      shortId: shortId || null,
-      amount: amount || 0,
-      date: new Date().toISOString(), // Always use ISO format
-      botId: bot.id,
-      botUsername: bot.username, // Add bot username for easier processing
-      timestamp: timestamp + microIncrement, // Unique timestamp for sorting
-      metadata: metadata || {}, // Always include metadata object
-      processed: false, // Flag to track if this has been processed by feed
-      feedReady: true // Flag to indicate this is ready for feed display
-    };
-
-    try {
-      const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      
-      // Check for duplicates before adding (extra safety)
-      const isDuplicate = transactions.some((t: any) => 
-        t.id === transaction.id || 
-        (t.botId === bot.id && 
-         t.type === type && 
-         t.amount === amount && 
-         Math.abs(new Date(t.date).getTime() - timestamp) < 100)
-      );
-      
-      if (isDuplicate) {
-        console.warn(`⚠️ Prevented duplicate transaction for ${bot.username}: ${type} ${amount}`);
-        return;
-      }
-      
-      transactions.push(transaction);
-      
-      // Keep only last 2000 transactions to prevent memory issues
-      const maxTransactions = 2000;
-      if (transactions.length > maxTransactions) {
-        const removedCount = transactions.length - maxTransactions;
-        transactions.splice(0, removedCount);
-        console.log(`🗑️ Removed ${removedCount} old bot transactions to maintain performance`);
-      }
-      
-      localStorage.setItem('botTransactions', JSON.stringify(transactions));
-      
-      // Dispatch event to notify feed of new transaction
-      if (typeof window !== 'undefined') {
-        // Dispatch custom event for immediate feed updates
-        window.dispatchEvent(new CustomEvent('botTransactionAdded', { 
-          detail: { 
-            transaction: transaction,
-            botUsername: bot.username,
-            type: type,
-            amount: amount,
-            timestamp: Date.now()
-          } 
-        }));
-        
-        // Also dispatch storage event for cross-tab updates
-        window.dispatchEvent(new StorageEvent('storage', {
-          key: 'botTransactions',
-          newValue: JSON.stringify(transactions),
-          oldValue: JSON.stringify(transactions.slice(0, -1)),
-          url: window.location.href,
-          storageArea: localStorage
-        }));
-      }
-      
-      // Log successful transaction for debugging
-      console.log(`💾 Recorded bot transaction: ${bot.username} - ${type} - ${amount} (ID: ${uniqueId.slice(-8)})`);
-      
-    } catch (error) {
-      console.error(`❌ Error recording bot transaction for ${bot.username}:`, error);
-      
-      // Fallback: try to save just this transaction
-      try {
-        const fallbackTransactions = [transaction];
-        localStorage.setItem('botTransactions_fallback', JSON.stringify(fallbackTransactions));
-        console.log(`🚨 Saved transaction to fallback storage: ${bot.username} - ${type}`);
-      } catch (fallbackError) {
-        console.error(`❌ Fallback transaction save failed:`, fallbackError);
-      }
-    }
-  }
-
-  // Enhanced method to fix any existing transaction issues
-  public fixBotTransactions(): void {
-    console.log('🔧 FIXING BOT TRANSACTIONS...');
-    
-    try {
-      const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      const fixedTransactions: any[] = [];
-      let fixedCount = 0;
-      let removedCount = 0;
-      
-      const botMap = this.getBots().reduce((map, bot) => {
-        map[bot.id] = bot.username;
-        return map;
-      }, {} as Record<string, string>);
-      
-      transactions.forEach((transaction: any, index: number) => {
-        // Skip completely invalid transactions
-        if (!transaction || typeof transaction !== 'object') {
-          removedCount++;
-          return;
-        }
-        
-        let needsFix = false;
-        const fixedTransaction = { ...transaction };
-        
-        // Fix missing or invalid ID
-        if (!fixedTransaction.id || typeof fixedTransaction.id !== 'string') {
-          fixedTransaction.id = `fixed_${fixedTransaction.botId || 'unknown'}_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 6)}`;
-          needsFix = true;
-        }
-        
-        // Fix missing bot username
-        if (!fixedTransaction.botUsername && fixedTransaction.botId && botMap[fixedTransaction.botId]) {
-          fixedTransaction.botUsername = botMap[fixedTransaction.botId];
-          needsFix = true;
-        }
-        
-        // Fix missing or invalid timestamp
-        if (!fixedTransaction.timestamp || typeof fixedTransaction.timestamp !== 'number') {
-          if (fixedTransaction.date) {
-            try {
-              fixedTransaction.timestamp = new Date(fixedTransaction.date).getTime();
-            } catch {
-              fixedTransaction.timestamp = Date.now() - (transactions.length - index) * 1000;
-            }
-          } else {
-            fixedTransaction.timestamp = Date.now() - (transactions.length - index) * 1000;
-          }
-          needsFix = true;
-        }
-        
-        // Fix missing or invalid date (ensure ISO format)
-        if (!fixedTransaction.date || typeof fixedTransaction.date !== 'string') {
-          fixedTransaction.date = new Date(fixedTransaction.timestamp || Date.now()).toISOString();
-          needsFix = true;
-        } else {
-          // Ensure date is in ISO format
-          try {
-            const parsedDate = new Date(fixedTransaction.date);
-            if (isNaN(parsedDate.getTime())) {
-              fixedTransaction.date = new Date().toISOString();
-              needsFix = true;
-            } else {
-              fixedTransaction.date = parsedDate.toISOString();
-            }
-          } catch {
-            fixedTransaction.date = new Date().toISOString();
-            needsFix = true;
-          }
-        }
-        
-        // Fix missing metadata
-        if (!fixedTransaction.metadata || typeof fixedTransaction.metadata !== 'object') {
-          fixedTransaction.metadata = {};
-          needsFix = true;
-        }
-        
-        // Add feed flags
-        if (fixedTransaction.feedReady === undefined) {
-          fixedTransaction.feedReady = true;
-          needsFix = true;
-        }
-        
-        if (fixedTransaction.processed === undefined) {
-          fixedTransaction.processed = false;
-          needsFix = true;
-        }
-        
-        // Fix amount to be a number
-        if (typeof fixedTransaction.amount !== 'number') {
-          fixedTransaction.amount = parseFloat(fixedTransaction.amount) || 0;
-          needsFix = true;
-        }
-        
-        if (needsFix) {
-          fixedCount++;
-        }
-        
-        fixedTransactions.push(fixedTransaction);
-      });
-      
-      // Remove duplicates
-      const uniqueTransactions = fixedTransactions.filter((transaction, index, self) => {
-        return index === self.findIndex(t => t.id === transaction.id);
-      });
-      
-      const duplicatesRemoved = fixedTransactions.length - uniqueTransactions.length;
-      
-      // Sort by timestamp
-      uniqueTransactions.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      
-      // Save fixed transactions
-      localStorage.setItem('botTransactions', JSON.stringify(uniqueTransactions));
-      
-      console.log(`✅ BOT TRANSACTIONS FIXED:`);
-      console.log(`   📊 Total processed: ${transactions.length}`);
-      console.log(`   🔧 Fixed: ${fixedCount}`);
-      console.log(`   🗑️ Removed invalid: ${removedCount}`);
-      console.log(`   🔗 Removed duplicates: ${duplicatesRemoved}`);
-      console.log(`   📈 Final count: ${uniqueTransactions.length}`);
-      
-      // Dispatch event to update feed
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('botTransactionsFixed', { 
-          detail: { 
-            count: uniqueTransactions.length,
-            fixed: fixedCount,
-            removed: removedCount + duplicatesRemoved
-          } 
-        }));
-      }
-      
-    } catch (error) {
-      console.error('❌ Error fixing bot transactions:', error);
-    }
-  }
-
-  // Method to validate transaction integrity
-  public validateTransactionIntegrity(): boolean {
-    try {
-      const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      let isValid = true;
-      const issues: string[] = [];
-      
-      console.log('🔍 VALIDATING TRANSACTION INTEGRITY...');
-      
-      // Check for required fields
-      transactions.forEach((transaction: any, index: number) => {
-        if (!transaction.id) {
-          issues.push(`Transaction ${index} missing ID`);
-          isValid = false;
-        }
-        
-        if (!transaction.botId) {
-          issues.push(`Transaction ${index} missing botId`);
-          isValid = false;
-        }
-        
-        if (!transaction.type) {
-          issues.push(`Transaction ${index} missing type`);
-          isValid = false;
-        }
-        
-        if (typeof transaction.amount !== 'number') {
-          issues.push(`Transaction ${index} has invalid amount: ${transaction.amount}`);
-          isValid = false;
-        }
-        
-        if (!transaction.date) {
-          issues.push(`Transaction ${index} missing date`);
-          isValid = false;
-        }
-      });
-      
-      // Check for duplicates
-      const ids = transactions.map((t: any) => t.id).filter(Boolean);
-      const uniqueIds = new Set(ids);
-      if (ids.length !== uniqueIds.size) {
-        issues.push(`Found ${ids.length - uniqueIds.size} duplicate transaction IDs`);
-        isValid = false;
-      }
-      
-      if (isValid) {
-        console.log(`✅ Transaction integrity check passed: ${transactions.length} transactions are valid`);
-      } else {
-        console.log(`❌ Transaction integrity check failed:`);
-        issues.forEach(issue => console.log(`   - ${issue}`));
-        console.log(`🔧 Run botSystem.fixBotTransactions() to fix these issues`);
-      }
-      
-      return isValid;
-      
-    } catch (error) {
-      console.error('❌ Error validating transaction integrity:', error);
-      return false;
-    }
-  }
-
-  // Enhanced debug method for transaction issues
-  public debugTransactionIssues(): void {
-    console.log('🔍 DEBUGGING TRANSACTION ISSUES...');
-    console.log('=====================================');
-    
-    try {
-      const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-      const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
-      const bots = this.getBots();
-      
-      console.log(`📊 STORAGE SUMMARY:`);
-      console.log(`   🤖 Bot transactions: ${botTransactions.length}`);
-      console.log(`   👤 User transactions: ${userTransactions.length}`);
-      console.log(`   🌐 Global feed: ${globalFeed.length}`);
-      console.log(`   🤖 Total bots: ${bots.length}`);
-      console.log(`   🤖 Active bots: ${bots.filter(b => b.isActive).length}`);
-      console.log(`   🤖 System running: ${this.isSystemRunning()}`);
-      
-      // Analyze bot transactions
-      if (botTransactions.length > 0) {
-        console.log(`\n📊 BOT TRANSACTION ANALYSIS:`);
-        
-        const recentTransactions = botTransactions.slice(-10);
-        console.log(`   🕐 Last 10 transactions:`);
-        recentTransactions.forEach((t: any, i: number) => {
-          const botName = bots.find(b => b.id === t.botId)?.username || `UnknownBot_${t.botId?.slice(-3)}`;
-          console.log(`     ${i + 1}. ${botName} - ${t.type} - ${t.amount} - ${t.date || 'NO DATE'}`);
-        });
-        
-        // Check for missing fields
-        const missingIds = botTransactions.filter((t: any) => !t.id).length;
-        const missingDates = botTransactions.filter((t: any) => !t.date).length;
-        const missingBotIds = botTransactions.filter((t: any) => !t.botId).length;
-        const missingTypes = botTransactions.filter((t: any) => !t.type).length;
-        
-        console.log(`   ❌ Transactions missing IDs: ${missingIds}`);
-        console.log(`   ❌ Transactions missing dates: ${missingDates}`);
-        console.log(`   ❌ Transactions missing botIds: ${missingBotIds}`);
-        console.log(`   ❌ Transactions missing types: ${missingTypes}`);
-        
-        // Transaction type breakdown
-        const typeBreakdown = botTransactions.reduce((acc: any, t: any) => {
-          acc[t.type] = (acc[t.type] || 0) + 1;
-          return acc;
-        }, {});
-        console.log(`   📈 Transaction types:`, typeBreakdown);
-        
-        // Bot activity breakdown
-        const botBreakdown = botTransactions.reduce((acc: any, t: any) => {
-          const botName = bots.find(b => b.id === t.botId)?.username || `Unknown_${t.botId?.slice(-3)}`;
-          acc[botName] = (acc[botName] || 0) + 1;
-          return acc;
-        }, {});
-        const topBots = Object.entries(botBreakdown)
-          .sort(([,a], [,b]) => (b as number) - (a as number))
-          .slice(0, 5);
-        console.log(`   🏆 Top 5 most active bots:`, topBots);
-        
-      } else {
-        console.log(`\n❌ NO BOT TRANSACTIONS FOUND!`);
-        console.log(`   This means either:`);
-        console.log(`   1. Bot system hasn't started yet`);
-        console.log(`   2. Bots aren't performing actions`);
-        console.log(`   3. Transaction recording is broken`);
-        
-        if (this.isSystemRunning()) {
-          console.log(`   🤖 Bot system is running - forcing activity...`);
-          this.forceBotActivity(5);
-        } else {
-          console.log(`   🤖 Bot system is stopped - starting...`);
-          this.startBots();
-        }
-      }
-      
-    } catch (error) {
-      console.error('❌ Error in debugTransactionIssues:', error);
-    }
-    
-    console.log('\n🔧 SUGGESTED FIXES:');
-    console.log('   1. Run: botSystem.fixBotTransactions()');
-    console.log('   2. Run: botSystem.validateTransactionIntegrity()');
-    console.log('   3. Run: botSystem.forceBotActivity(10)');
-    console.log('   4. Run: forceRefreshFeed()');
-  }
-
-  // Track bot trade activity for manipulation detection
-  private trackBotTradeActivity(opinionText: string, action: 'buy' | 'sell', price: number, botId: string): void {
-    try {
-      const recentTrades = JSON.parse(localStorage.getItem('recentTradeActivity') || '{}');
-      if (!recentTrades[opinionText]) recentTrades[opinionText] = [];
-      
-      recentTrades[opinionText].push({
-        action,
-        price,
-        timestamp: Date.now(),
-        isCurrentUser: false,
-        botId: botId
-      });
-      
-      recentTrades[opinionText] = recentTrades[opinionText].slice(-20);
-      localStorage.setItem('recentTradeActivity', JSON.stringify(recentTrades));
-      
-      const botRapidTrades = JSON.parse(localStorage.getItem('botRapidTrades') || '{}');
-      const key = `${botId}_${opinionText}`;
-      if (!botRapidTrades[key]) botRapidTrades[key] = [];
-      
-      botRapidTrades[key].push(Date.now());
-      
-      const twoHoursAgo = Date.now() - (2 * 60 * 60 * 1000);
-      botRapidTrades[key] = botRapidTrades[key].filter((timestamp: number) => timestamp > twoHoursAgo);
-      
-      localStorage.setItem('botRapidTrades', JSON.stringify(botRapidTrades));
-    } catch (error) {
-      console.error('Error tracking bot trade activity:', error);
-    }
-  }
-
-  private addShortPosition(shortPosition: ShortPosition): void {
-    try {
-      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
-      shorts.push(shortPosition);
-      localStorage.setItem('shortPositions', JSON.stringify(shorts));
-    } catch (error) {
-      console.error('Error adding short position:', error);
-    }
-  }
-
-  private addAdvancedBet(bet: any): void {
-    try {
-      const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
-      bets.push(bet);
-      localStorage.setItem('advancedBets', JSON.stringify(bets));
-    } catch (error) {
-      console.error('Error adding advanced bet:', error);
-    }
-  }
-
-  private saveBots(): void {
-    try {
-      localStorage.setItem('autonomousBots', JSON.stringify(this.bots));
-    } catch (error) {
-      console.error('Error saving bots:', error);
-    }
-  }
-
-  // Public methods for managing the bot system
-  public getBots(): BotProfile[] {
-    return this.bots;
-  }
-
-  public getBotTransactions(): any[] {
-    try {
-      return JSON.parse(localStorage.getItem('botTransactions') || '[]');
-    } catch {
-      return [];
-    }
-  }
-
-  public getBotShorts(): ShortPosition[] {
-    try {
-      const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
-      return shorts.filter((short: ShortPosition) => short.botId);
-    } catch {
-      return [];
-    }
-  }
-
-  public isSystemRunning(): boolean {
-    return this.isRunning;
-  }
-
-  public pauseBot(botId: string): void {
-    const bot = this.bots.find(b => b.id === botId);
-    if (bot) {
-      bot.isActive = false;
-      this.saveBots();
-    }
-  }
-
-  public resumeBot(botId: string): void {
-    const bot = this.bots.find(b => b.id === botId);
-    if (bot) {
-      bot.isActive = true;
-      this.saveBots();
-    }
-  }
-
-  public getBotShortStats(): any {
-    const botShorts = this.getBotShorts();
-    const activeShorts = botShorts.filter(s => s.status === 'active');
-    const wonShorts = botShorts.filter(s => s.status === 'won');
-    const lostShorts = botShorts.filter(s => s.status === 'lost');
-    
-    return {
-      total: botShorts.length,
-      active: activeShorts.length,
-      won: wonShorts.length,
-      lost: lostShorts.length,
-      totalWinnings: wonShorts.reduce((sum, s) => sum + s.potentialWinnings, 0),
-      totalLosses: lostShorts.reduce((sum, s) => sum + s.betAmount, 0)
-    };
-  }
-
-  public getBotPerformanceStats(): any {
-    return this.bots.map(bot => {
-      const portfolioValue = this.calculateBotPortfolioValue(bot);
-      const totalValue = bot.balance + portfolioValue;
-      const initialBalance = 30000;
-      const totalReturn = ((totalValue - initialBalance) / initialBalance) * 100;
-      
-      return {
-        id: bot.id,
-        username: bot.username,
-        balance: bot.balance,
-        portfolioValue,
-        totalValue,
-        totalReturn: totalReturn.toFixed(2),
-        totalEarnings: bot.totalEarnings,
-        totalLosses: bot.totalLosses,
-        netProfit: bot.totalEarnings - bot.totalLosses,
-        strategy: bot.tradingStrategy.type,
-        riskTolerance: bot.riskTolerance,
-        isActive: bot.isActive
-      };
-    });
-  }
-
-  // NEW: Performance optimization methods for 1,000+ bots
-  public optimizeForPerformance(): void {
-    console.log('🔧 Optimizing bot system for UI performance...');
-    
-    // DRASTICALLY reduce activity frequency for all bots
-    this.bots.forEach(bot => {
-      bot.personality.activityFrequency = Math.max(60, bot.personality.activityFrequency * 5);
-    });
-    
-    // Only activate first 50 bots for UI stability
-    this.bots.forEach((bot, index) => {
-      bot.isActive = index < 50;
-    });
-    
-    console.log('✅ Performance optimization complete: 50 active bots, much slower frequency (60-300s intervals)');
-    this.saveBots();
-  }
-
-  // NEW: Price validation method to catch inconsistencies
-  public validatePriceConsistency(): void {
-    console.log('🔍 VALIDATING PRICE CONSISTENCY ACROSS SYSTEM:');
-    console.log('================================================');
-    
-    const opinions = this.getAvailableOpinions();
-    const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-    
-    let inconsistencies = 0;
-    
-    opinions.forEach(opinion => {
-      const data = marketData[opinion.text];
-      if (data) {
-        const expectedPrice = this.calculatePrice(data.timesPurchased, data.timesSold, data.basePrice);
-        const actualPrice = data.currentPrice;
-        const difference = Math.abs(expectedPrice - actualPrice);
-        
-        if (difference > 0.01) { // More than 1 cent difference
-          console.log(`❌ INCONSISTENCY: "${opinion.text.slice(0, 40)}..."`);
-          console.log(`   Expected: ${expectedPrice} | Actual: ${actualPrice} | Diff: ${difference.toFixed(4)}`);
-          console.log(`   Purchases: ${data.timesPurchased} | Sales: ${data.timesSold} | Net: ${data.timesPurchased - data.timesSold}`);
-          inconsistencies++;
-          
-          // Auto-fix the inconsistency
-          data.currentPrice = expectedPrice;
-          console.log(`   🔧 FIXED: Updated to ${expectedPrice}`);
-        } else {
-          console.log(`✅ CONSISTENT: "${opinion.text.slice(0, 40)}..." - ${actualPrice}`);
-        }
-      }
-    });
-    
-    if (inconsistencies > 0) {
-      console.log(`🔧 Fixed ${inconsistencies} price inconsistencies`);
-      localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
-    } else {
-      console.log(`✅ All ${opinions.length} opinions have consistent pricing`);
-    }
-  }
-
-  // NEW: Quick debug method for feed issues
-  public debugFeedActivity(): {
-    totalTransactions: number;
-    recentTransactions: number;
-    activeBots: number;
-    totalBots: number;
-    systemRunning: boolean;
-    opinionsAvailable: number;
-  } {
-    console.log('🔍 FEED DEBUG REPORT:');
-    console.log('===================');
-    
-    const transactions = this.getBotTransactions();
-    const recentTransactions = transactions.slice(-10);
-    
-    console.log(`📊 Total bot transactions: ${transactions.length}`);
-    console.log(`🕐 Recent transactions (last 10):`, recentTransactions);
-    
-    const activeBots = this.bots.filter(b => b.isActive);
-    console.log(`🤖 Active bots: ${activeBots.length}/${this.bots.length}`);
-    
-    const runningStatus = this.isSystemRunning();
-    console.log(`⚡ System running: ${runningStatus}`);
-    
-    if (!runningStatus) {
-      console.log('❌ Bot system is stopped! Run botSystem.startBots() to restart.');
-    }
-    
-    // Test if opinions exist
-    const opinions = this.getAvailableOpinions();
-    console.log(`💭 Available opinions: ${opinions.length}`);
-    
-    if (opinions.length === 0) {
-      console.log('❌ No opinions found! Bots need opinions to trade.');
-    }
-    
-    return {
-      totalTransactions: transactions.length,
-      recentTransactions: recentTransactions.length,
-      activeBots: activeBots.length,
-      totalBots: this.bots.length,
-      systemRunning: runningStatus,
-      opinionsAvailable: opinions.length
-    };
-  }
-
-  // NEW: Force immediate bot activity for testing
-  public forceBotActivity(count: number = 10): void {
-    console.log(`🚀 Forcing ${count} bot actions for UI testing...`);
-    console.log('🔍 FORCING DIVERSE ACTIONS WITH UI-FRIENDLY TIMING:');
-    
-    const activeBots = this.bots.filter(b => b.isActive).slice(0, count);
-    const actions = ['buy', 'sell', 'bet', 'generate'];
-    
-    activeBots.forEach((bot, index) => {
-      // MUCH SLOWER STAGGERING: 5 seconds apart so UI can keep up
-      setTimeout(() => {
-        // Force specific action types to test
-        const forcedAction = actions[index % actions.length];
-        console.log(`🎯 FORCING ${bot.username} to: ${forcedAction.toUpperCase()}`);
-        
-        let actionSucceeded = false;
-        
-        switch (forcedAction) {
-          case 'buy':
-            actionSucceeded = this.botBuyOpinion(bot);
-            if (!actionSucceeded) {
-              console.log(`❌ ${bot.username} buy failed - generating opinion instead`);
-              this.botGenerateOpinion(bot);
-              actionSucceeded = true;
-            }
-            break;
-          case 'sell':
-            actionSucceeded = this.botSellOpinion(bot);
-            if (!actionSucceeded) {
-              console.log(`❌ ${bot.username} sell failed - buying opinion instead`);
-              actionSucceeded = this.botBuyOpinion(bot);
-            }
-            break;
-          case 'bet':
-            actionSucceeded = this.botPlaceBet(bot);
-            if (!actionSucceeded) {
-              console.log(`❌ ${bot.username} bet failed - buying opinion instead`);
-              actionSucceeded = this.botBuyOpinion(bot);
-            }
-            break;
-          case 'generate':
-            this.botGenerateOpinion(bot);
-            actionSucceeded = true;
-            break;
-        }
-        
-        bot.lastActive = new Date().toISOString();
-      }, index * 5000); // 5 seconds apart for UI stability
-    });
-    
-    console.log(`✅ Scheduled ${activeBots.length} DIVERSE bot actions with 5-second intervals for UI stability`);
-  }
-
-  // NEW: Debug method specifically for opinion creation and pricing issues
-  public debugOpinionCreation(): void {
-    console.log('🔍 DEBUGGING OPINION CREATION AND PRICING:');
-    console.log('==========================================');
-    
+  // Ensure opinions exist for bot trading
+  private ensureOpinionsExist(): void {
     const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-    const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-    const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
-    
-    console.log(`📊 Total opinions: ${opinions.length}`);
-    console.log(`📊 Market data entries: ${Object.keys(marketData).length}`);
-    console.log(`📊 Bot transactions: ${botTransactions.length}`);
-    
-    // Check last 5 opinions for pricing issues
-    const recentOpinions = opinions.slice(-5);
-    console.log('\n📋 RECENT OPINIONS ANALYSIS:');
-    
-    recentOpinions.forEach((opinionText: string, index: number) => {
-      const actualIndex = opinions.indexOf(opinionText);
-      const data = marketData[opinionText];
+    if (opinions.length < 10) {
+      console.log('🤖 Generating initial opinions for bot system...');
       
-      console.log(`\n--- Opinion ${actualIndex}: "${opinionText.slice(0, 40)}..." ---`);
-      
-      if (data) {
-        console.log(`💰 Current Price: ${data.currentPrice} (Base: ${data.basePrice})`);
-        console.log(`📈 Purchases: ${data.timesPurchased} | Sales: ${data.timesSold}`);
-        console.log(`📊 Net Demand: ${data.timesPurchased - data.timesSold}`);
-        console.log(`🔄 Volatility: ${data.volatility}`);
-        console.log(`⏰ Last Updated: ${data.lastUpdated}`);
+      for (let i = opinions.length; i < 15; i++) {
+        const newOpinion = this.generateRandomOpinion();
+        opinions.push(newOpinion);
         
-        // Check if price should be $10
-        const expectedPrice = this.calculatePrice(data.timesPurchased, data.timesSold, data.basePrice);
-        if (Math.abs(expectedPrice - data.currentPrice) > 0.01) {
-          console.log(`❌ PRICE MISMATCH: Expected ${expectedPrice}, Got ${data.currentPrice}`);
-        } else {
-          console.log(`✅ Price matches calculation: ${expectedPrice}`);
-        }
-        
-        // Check creation transaction
-        const creationTx = botTransactions.find((tx: any) => 
-          tx.type === 'earn' && tx.opinionText === opinionText
-        );
-        if (creationTx) {
-          console.log(`🤖 Created by: ${creationTx.botId} at ${creationTx.date}`);
-          console.log(`💰 Creation earnings: ${creationTx.amount}`);
-        } else {
-          console.log(`❓ No creation transaction found`);
-        }
-      } else {
-        console.log(`❌ NO MARKET DATA FOUND - This should not happen!`);
+        // UPDATED: Initialize market data using unified system
+        this.marketDataManager.getMarketData(newOpinion); // This will create it at $10.00
       }
-    });
-    
-    // Test price calculation for new opinion
-    console.log('\n🧪 TESTING NEW OPINION PRICE CALCULATION:');
-    const testPrice = this.calculatePrice(0, 0, 10);
-    console.log(`📊 New opinion with 0 purchases, 0 sales should be: ${testPrice}`);
-    
-    if (testPrice !== 10) {
-      console.log(`❌ ERROR: New opinions should start at exactly $10.00!`);
-    } else {
-      console.log(`✅ New opinion pricing is correct: $10.00`);
-    }
-  }
-
-  // NEW: Test price calculation method
-  public testPriceCalculation(): void {
-    console.log('🧪 TESTING PRICE CALCULATION (Bot System):');
-    console.log('==========================================');
-    
-    const basePrice = 10;
-    
-    console.log('Testing purchase sequence (0.1% increases):');
-    for (let purchases = 0; purchases <= 10; purchases++) {
-      const price = this.calculatePrice(purchases, 0, basePrice);
-      const percentChange = purchases > 0 ? ((price - basePrice) / basePrice * 100).toFixed(3) : '0.000';
-      console.log(`  ${purchases} purchases: ${price} (+${percentChange}%)`);
-    }
-    
-    console.log('\nTesting sale sequence (0.1% decreases):');
-    for (let sales = 0; sales <= 10; sales++) {
-      const price = this.calculatePrice(0, sales, basePrice);
-      const percentChange = sales > 0 ? ((price - basePrice) / basePrice * 100).toFixed(3) : '0.000';
-      console.log(`  ${sales} sales: ${price} (${percentChange}%)`);
-    }
-    
-    console.log('\nTesting large numbers:');
-    const largePurchases = [100, 500, 1000, 5000];
-    largePurchases.forEach(count => {
-      const price = this.calculatePrice(count, 0, basePrice);
-      const percentChange = ((price - basePrice) / basePrice * 100).toFixed(1);
-      console.log(`  ${count} purchases: ${price} (+${percentChange}%)`);
-    });
-  }
-
-  // NEW: Force specific opinion generation for testing
-  public forceOpinionGeneration(count: number = 5): void {
-    console.log(`🎯 FORCING ${count} OPINION GENERATIONS for sidebar testing...`);
-    
-    const activeBots = this.bots.filter(b => b.isActive).slice(0, count);
-    
-    activeBots.forEach((bot, index) => {
-      setTimeout(() => {
-        console.log(`🤖💡 FORCING ${bot.username} to generate opinion...`);
-        this.botGenerateOpinion(bot);
-        
-        // Log current opinion count after each generation
-        setTimeout(() => {
-          const currentOpinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-          console.log(`📊 After ${bot.username} generation: ${currentOpinions.length} total opinions`);
-          console.log(`📝 Latest opinion: "${currentOpinions[currentOpinions.length - 1]}"`);
-        }, 100);
-        
-      }, index * 2000); // 2 seconds apart
-    });
-    
-    console.log(`✅ Scheduled ${activeBots.length} opinion generations with 2-second intervals`);
-  }
-
-  // NEW: Restart system with optimized settings
-  public restartOptimized(): void {
-    console.log('🔄 Restarting bot system with optimized settings...');
-    
-    this.stopBots();
-    this.optimizeForPerformance();
-    
-    setTimeout(() => {
-      this.startBots();
       
-      // Force immediate activity
-      setTimeout(() => {
-        this.forceBotActivity(20);
-      }, 2000);
-      
-    }, 1000);
-  }
-
-  // NEW: Manual start method for troubleshooting
-  public manualStart(): void {
-    console.log('🔧 Manual start initiated...');
-    console.log('🧪 TESTING ALL BOT ACTION TYPES:');
-    
-    // Ensure opinions exist
-    this.ensureOpinionsExist();
-    
-    // Start with immediate activity
-    this.startBots();
-    
-    // Test each action type explicitly
-    setTimeout(() => {
-      console.log('🎯 TESTING BUY ACTIONS:');
-      const buyers = this.bots.filter(b => b.isActive).slice(0, 5);
-      buyers.forEach((bot, i) => {
-        setTimeout(() => {
-          console.log(`🔍 Testing buy for ${bot.username}...`);
-          const result = this.botBuyOpinion(bot);
-          console.log(`Buy result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
-        }, i * 200);
-      });
-    }, 1000);
-    
-    setTimeout(() => {
-      console.log('🎯 TESTING BET ACTIONS:');
-      const bettors = this.bots.filter(b => b.isActive).slice(5, 10);
-      bettors.forEach((bot, i) => {
-        setTimeout(() => {
-          console.log(`🔍 Testing bet for ${bot.username}...`);
-          const result = this.botPlaceBet(bot);
-          console.log(`Bet result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
-        }, i * 200);
-      });
-    }, 2000);
-    
-    setTimeout(() => {
-      console.log('🎯 TESTING GENERATE ACTIONS:');
-      const generators = this.bots.filter(b => b.isActive).slice(10, 15);
-      generators.forEach((bot, i) => {
-        setTimeout(() => {
-          console.log(`🔍 Testing generate for ${bot.username}...`);
-          this.botGenerateOpinion(bot);
-          console.log(`Generate result for ${bot.username}: SUCCESS`);
-        }, i * 200);
-      });
-    }, 3000);
-    
-    setTimeout(() => {
-      console.log('🎯 TESTING SELL ACTIONS:');
-      const sellers = this.bots.filter(b => b.isActive).slice(15, 20);
-      sellers.forEach((bot, i) => {
-        setTimeout(() => {
-          console.log(`🔍 Testing sell for ${bot.username}...`);
-          const result = this.botSellOpinion(bot);
-          console.log(`Sell result for ${bot.username}: ${result ? 'SUCCESS' : 'FAILED'}`);
-        }, i * 200);
-      });
-    }, 4000);
-    
-    // Force diverse activity
-    setTimeout(() => {
-      console.log('🚀 Forcing diverse bot activity...');
-      this.forceBotActivity(20);
-    }, 5000);
-    
-    console.log('✅ Manual start complete - check console for detailed testing results!');
+      localStorage.setItem('opinions', JSON.stringify(opinions));
+      console.log(`✅ Generated ${15 - opinions.length} initial opinions`);
+    }
   }
 }
 
@@ -2669,15 +1990,15 @@ if (typeof window !== 'undefined') {
   (window as any).debugTransactionIssues = () => botSystem.debugTransactionIssues();
   
   // AUTO-START LOGGING
-  console.log('🤖 FIXED Bot System loaded - 0.1% price movements + $10 starting prices + NO VOLATILITY MULTIPLIER!');
+  console.log('🤖 Bot System loaded with UNIFIED SYSTEM integration!');
   console.log('📱 Available commands:');
   console.log('  - debugBots() - Check system status');
   console.log('  - forceBotActivity(10) - Force bot actions');
   console.log('  - forceOpinionGeneration(5) - Force opinion generation specifically');
   console.log('  - restartBots() - Restart with optimization');
   console.log('  - manualStartBots() - Manual troubleshooting start');
-  console.log('  - validatePrices() - Check price consistency');
-  console.log('  - testPriceCalc() - Test 0.1% price calculation');
+  console.log('  - validatePrices() - Check price consistency with unified system');
+  console.log('  - testPriceCalc() - Test unified price calculation');
   console.log('  - debugOpinionCreation() - Debug opinion creation and pricing issues');
   console.log('  - fixBotTransactions() - Fix transaction recording issues');
   console.log('  - validateTransactionIntegrity() - Validate all transactions');
@@ -2692,7 +2013,7 @@ export default botSystem;
 export type { BotProfile, BotPersonality, TradingStrategy, ShortPosition };
 
 // AUTOMATIC INITIALIZATION AND STARTUP
-console.log('🚀 FIXED Bot system will auto-start in 2 seconds...');
-console.log('💡 Price movements are now EXACTLY 0.1% per purchase/sale');
+console.log('🚀 Bot system will auto-start in 2 seconds...');
+console.log('💡 Price movements are now EXACTLY 0.1% per purchase/sale using UNIFIED SYSTEM');
 console.log('💡 NO MORE VOLATILITY MULTIPLIER - all opinions behave consistently');
 console.log('💡 If you don\'t see bot activity, run: manualStartBots() in console');

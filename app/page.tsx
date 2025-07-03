@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import styles from './page.module.css';
 import './global.css'; 
-import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Robot } from "@phosphor-icons/react";
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, Wallet, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Robot } from "@phosphor-icons/react";
 
 
 interface UserProfile {
@@ -333,12 +333,7 @@ export default function UserProfile() {
             <a href="/generate" className="nav-button generate">
             <Balloon size={24} /> Generate
             </a>
-            {/* Bot Control button */}
-            <a href="/admin" className="nav-button admin" style={{ 
-              textDecoration: 'none'
-            }}>
-              <Robot size={24} /> Bot Control
-            </a>
+
           </div>
         </div>
 
@@ -476,7 +471,7 @@ export default function UserProfile() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <span className={`${styles.betType} ${styles[activity.type]}`}>
-                              {activity.type === 'portfolio_bet' ? '📊 Portfolio' : '📉 Short'}
+                              {activity.type === 'portfolio_bet' ? 'Portfolio' : 'Short'}
                             </span>
                             <span className={`${styles.betStatus} ${styles[activity.status]}`}>
                               {activity.status}

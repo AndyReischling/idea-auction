@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ScanSmiley } from '@phosphor-icons/react/dist/icons/ScanSmiley';
+import { Balloon } from '@phosphor-icons/react/dist/icons/Balloon';
+import { Rss, WalletIcon } from '@phosphor-icons/react/dist/ssr';
+import { Wallet } from '@phosphor-icons/react';
 
 interface ActivityFeedItem {
   id: string;
@@ -2317,24 +2321,47 @@ export default function FeedPage() {
     <div className="page-container">
       <Sidebar opinions={opinions} />
       
-      <main className="main-content">
-        {/* Navigation Buttons - Added back as requested */}
+      <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px' }}>
+        {/* Header with Title and Navigation */}
         <div style={{ 
           display: 'flex', 
-          gap: '12px', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
           marginBottom: '20px',
-          justifyContent: 'center',
-          flexWrap: 'wrap'
+          flexWrap: 'wrap',
+          gap: '20px'
         }}>
-          <a href="/generate" className="nav-button generate">
-            ✨ GENERATE OPINIONS
-          </a>
-          <a href="/users" className="nav-button traders">
-            👥 TRADERS
-          </a>
-          <a href="/" className="nav-button traders">
-            👤 MY WALLET
-          </a>
+          {/* Left side - Title */}
+          <h1 style={{ 
+            margin: 0, 
+            fontSize: '28px', 
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginLeft: '20px'
+          }}>
+            <Rss size={32} />  Live Feed
+          </h1>
+          
+          {/* Right side - Navigation Buttons */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '12px',
+            flexWrap: 'wrap',
+            paddingRight: '20px'
+          }}>
+            <a href="/generate" className="nav-button generate">
+             <Balloon size={24} /> Generate Opinion
+            </a>
+            <a href="/users" className="nav-button traders">
+              <ScanSmiley size={24} /> View Traders
+            </a>
+            <a href="/" className="nav-button traders">
+              <Wallet size={24} /> My Portfolio
+            </a>
+          </div>
         </div>
 
         {/* Filter Controls */}

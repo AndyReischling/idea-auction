@@ -4,6 +4,11 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ScanSmiley } from '@phosphor-icons/react/dist/icons/ScanSmiley';
+import { RssSimple } from '@phosphor-icons/react/dist/icons/RssSimple';
+import { Wallet } from '@phosphor-icons/react/dist/icons/Wallet';
+import { NotePencil } from '@phosphor-icons/react/dist/icons/NotePencil';
+import { PlayCircle } from '@phosphor-icons/react/dist/icons/PlayCircle';
 
 function GenerateOpinions() {
   const [opinion, setOpinion] = useState('Click the button to generate an opinion!');
@@ -122,13 +127,13 @@ function GenerateOpinions() {
           {/* Navigation Buttons */}
           <div className={styles.headerActions}>
             <a href="/users" className="nav-button traders">
-              📊 View Traders
+            <ScanSmiley size={24} />  View Traders
             </a>
             <a href="/feed" className="nav-button feed">
-              📡 Live Feed
+              <RssSimple size={24} /> Live Feed
             </a>
             <a href="/" className="nav-button traders">
-              ← Back to Profile
+             <Wallet size={24} /> My Portfolio
             </a>
           </div>
         </div>
@@ -152,12 +157,12 @@ function GenerateOpinions() {
         {/* Random Generator Section */}
         <div className={`${styles.generatorSection} ${styles.randomGenerator}`}>
           <h2 className={styles.sectionTitle}>
-            🎲 Random Opinion Generator
+          <PlayCircle size={32} />   Generate an Idea for Me
           </h2>
           
           <div className={styles.opinionDisplay}>
             <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}>
-              {loading ? 'Generating witty opinion...' : opinion}
+              {loading ? 'Generating opinion...' : opinion}
             </p>
           </div>
           
@@ -176,13 +181,13 @@ function GenerateOpinions() {
         {/* User Input Section */}
         <div className={`${styles.generatorSection} ${styles.userInput}`}>
           <h2 className={styles.sectionTitle}>
-            ✍️ Submit Your Opinion
+          <NotePencil size={32} />  Submit Your Idea
           </h2>
           
           <textarea
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
-            placeholder="What's your opinion on something? Share your thoughts here... Be creative, controversial, or just plain weird!"
+            placeholder="Share your thoughts here... !"
             className={styles.textarea}
             maxLength={MAX_CHARS + 50} // Allow slight overflow for warning
           />
