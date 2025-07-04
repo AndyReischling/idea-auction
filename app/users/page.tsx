@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ScanSmiley, Balloon, Wallet, Rss } from '@phosphor-icons/react';
 
 interface UserProfile {
   username: string;
@@ -891,6 +892,13 @@ export default function UsersPage() {
     }
   };
 
+  // Helper function to get color class for portfolio value
+  function getPortfolioValueClass(value: number) {
+    if (value > 0) return 'portfolioValue positive';
+    if (value < 0) return 'portfolioValue negative';
+    return 'portfolioValue';
+  }
+
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -980,92 +988,77 @@ export default function UsersPage() {
     <div className="page-container">
       <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
       
-      <main className="main-content">
+      <main className={styles.mainContent} style={{ marginTop: '24px' }}>
         {/* Updated Header with Right-Justified Navigation */}
         <div className={styles.topNavigation}>
-          {/* Page Title Section (Left side) */}
-          <div>
-            <h1 className={styles.pageTitle}>📊 View Traders</h1>
-            <p className={styles.pageSubtitle}>Explore trader portfolios and place bets</p>
+          {/* Page Title Section (aligned with Sort By section) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingLeft: '40px' }}>
+            <ScanSmiley size={40} weight="duotone" style={{ flexShrink: 0 }} />
+            <h1 className={styles.pageTitle} style={{ margin: 0 }}>View Traders</h1>
           </div>
-
           {/* Navigation Buttons (Right side) */}
-          <div className={styles.headerActions}>
-            <a href="/" className="nav-button" style={{ 
-              backgroundColor: 'var(--lime-green)',
-              color: 'var(--text-black)',
-              padding: '12px 20px',
-              borderRadius: 'var(--radius-pill)',
-              textDecoration: 'none',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all var(--transition)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}>
-              👤 My Profile
+          <div className={styles.headerActions} style={{ display: 'flex', gap: '12px' }}>
+            <a href="/generate" className="nav-button generate">
+              <Balloon size={24} /> Generate Opinion
             </a>
-            <a href="/feed" className="nav-button feed" style={{
-              backgroundColor: 'var(--coral-red)',
-              color: 'var(--text-black)',
-              padding: '12px 20px',
-              borderRadius: 'var(--radius-pill)',
-              textDecoration: 'none',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all var(--transition)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}>
-              📡 Live Feed
+            <a href="/feed" className="nav-button feed">
+              <Rss size={24} /> Live Feed
             </a>
-            <a href="/generate" className="nav-button generate" style={{
-              backgroundColor: 'var(--lime-green)',
-              color: 'var(--text-black)',
-              padding: '12px 20px',
-              borderRadius: 'var(--radius-pill)',
-              textDecoration: 'none',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '700',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all var(--transition)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}>
-              ✨ Generate
+            <a href="/" className="nav-button traders">
+              <Wallet size={24} /> My Portfolio
             </a>
           </div>
         </div>
 
-        <div className={styles.sortControls}>
-          <span className={styles.sortLabel}>Sort by:</span>
-          {(['recent_performance', 'value', 'performance', 'volatility'] as const).map(option => (
-            <button
-              key={option}
-              onClick={() => setSortBy(option)}
-              className={`${styles.sortButton} ${sortBy === option ? styles.active : ''}`}
-            >
-              {option === 'recent_performance' ? '7-Day Performance' :
-               option === 'value' ? 'Portfolio Value' : 
-               option === 'performance' ? 'Total Performance' :
-               'Volatility'}
-            </button>
-          ))}
-          <span className={styles.lastRefresh}>
-            Last updated: {new Date(lastRefresh).toLocaleTimeString()}
-          </span>
-        </div>
-
-        <section className="section">
-          <h2 className="section-title">📊 Portfolio Leaderboard ({sortedUsers.length}) - Real 7-Day Performance Tracking</h2>
+        <section className={styles.section}>
+          <div style={{ paddingLeft: 40, paddingRight: 40 }}>
+            <div className={styles.sortControls} style={{ margin: '0 auto', maxWidth: 1200, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '100%', textAlign: 'center', fontWeight: 700, fontSize: '1.25rem', marginBottom: '4px' }}>
+                Portfolio Leaderboard
+              </div>
+              <div style={{
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: '1.5fr 1fr 1fr 1fr 1fr 1.5fr',
+                alignItems: 'center',
+                gap: '0',
+                minHeight: '40px'
+              }}>
+                <span className={styles.sortLabel} style={{ justifySelf: 'start' }}>Sort by:</span>
+                <button
+                  onClick={() => setSortBy('recent_performance')}
+                  className={`${styles.sortButton} ${sortBy === 'recent_performance' ? styles.active : ''}`}
+                  style={{ justifySelf: 'center' }}
+                >
+                  7-Day Performance
+                </button>
+                <button
+                  onClick={() => setSortBy('value')}
+                  className={`${styles.sortButton} ${sortBy === 'value' ? styles.active : ''}`}
+                  style={{ justifySelf: 'center' }}
+                >
+                  Portfolio Value
+                </button>
+                <button
+                  onClick={() => setSortBy('performance')}
+                  className={`${styles.sortButton} ${sortBy === 'performance' ? styles.active : ''}`}
+                  style={{ justifySelf: 'center' }}
+                >
+                  Total Performance
+                </button>
+                <button
+                  onClick={() => setSortBy('volatility')}
+                  className={`${styles.sortButton} ${sortBy === 'volatility' ? styles.active : ''}`}
+                  style={{ justifySelf: 'center' }}
+                >
+                  Volatility
+                </button>
+                <span className={styles.lastRefresh} style={{ justifySelf: 'end', textAlign: 'right' }}>
+                  Last updated: {new Date(lastRefresh).toLocaleTimeString()}
+                </span>
+              </div>
+            </div>
+          </div>
           
           {sortedUsers.length === 0 ? (
             <div style={{ 
@@ -1123,7 +1116,33 @@ export default function UsersPage() {
                     </div>
                     
                     <div className={styles.portfolioStats}>
-                      <p className={styles.portfolioValue}>
+                      <div style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        color: '#18181b',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase',
+                        marginBottom: '6px',
+                        borderBottom: '1px solid #18181b',
+                        display: 'inline-block',
+                        paddingBottom: '2px',
+                        textDecoration: 'none',
+                      }}>
+                        Portfolio value
+                      </div>
+                      <p
+                        className={styles[getPortfolioValueClass(user.portfolioValue)]}
+                        style={{
+                          fontSize: '1.2rem',
+                          fontWeight: 900,
+                          color:
+                            user.portfolioValue > 0
+                              ? '#22c55e' // lime-green
+                              : user.portfolioValue < 0
+                              ? '#ef4444' // coral-red
+                              : '#18181b', // black
+                        }}
+                      >
                         ${user.portfolioValue.toLocaleString()}
                       </p>
                       <p className={`${styles.portfolioGains} ${getPerformanceClass(user.totalGainsLosses)}`}>
@@ -1131,7 +1150,7 @@ export default function UsersPage() {
                         ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
                       </p>
                       {(user.shortExposure || user.betExposure) && (
-                        <p style={{ fontSize: '12px', color: '#f59e0b' }}>
+                        <p className={styles.exposureText} style={{ fontSize: '16px', color: '#f59e0b' }}>
                           Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
                         </p>
                       )}
@@ -1140,19 +1159,19 @@ export default function UsersPage() {
 
                   <div className={styles.performanceMetrics}>
                     <div className={`${styles.metricCard} ${styles.performance} ${styles.primary}`}>
-                      <p>🎯 7-Day Performance (Real)</p>
+                      <p>7-DAY PERFORMANCE</p>
                       <p className={`${styles.metricValue} ${styles.highlight} ${getPerformanceClass(user.recentPerformance)}`}>
                         {user.recentPerformance >= 0 ? '+' : ''}{user.recentPerformance.toFixed(1)}%
                       </p>
                     </div>
                     <div className={`${styles.metricCard} ${styles.volatility}`}>
-                      <p>Volatility</p>
+                      <p>VOLATILITY</p>
                       <p className={`${styles.metricValue} ${getVolatilityClass(user.volatility)}`}>
                         {user.volatility > 2.0 ? 'High' : user.volatility > 1.3 ? 'Medium' : 'Low'}
                       </p>
                     </div>
                     <div className={styles.metricCard}>
-                      <p>Holdings</p>
+                      <p>HOLDINGS</p>
                       <p className={styles.metricValue}>{user.opinionsCount}</p>
                     </div>
                   </div>
@@ -1183,7 +1202,7 @@ export default function UsersPage() {
                       }}
                       className={styles.viewDetailsButton}
                     >
-                      👁️ Details
+                      Details
                     </button>
                     
                     {!user.isCurrentUser && (
@@ -1193,8 +1212,19 @@ export default function UsersPage() {
                           setShowBetModal(true);
                         }}
                         className={styles.placeBetButton}
+                        style={{
+                          backgroundColor: '#ff7602',
+                          color: '#fff',
+                          border: '1px solid var(--border-primary)',
+                          fontFamily: 'inherit',
+                          fontWeight: 500,
+                          fontSize: '13px',
+                          minHeight: '32px',
+                          borderRadius: 'var(--radius-md)',
+                          transition: 'all var(--transition)'
+                        }}
                       >
-                        🎯 Bet
+                        Bet
                       </button>
                     )}
                   </div>
@@ -1239,11 +1269,13 @@ export default function UsersPage() {
                   <div className={styles.summaryGrid}>
                     <div className={styles.summaryCard}>
                       <p>Total Value</p>
-                      <p className={styles.summaryValue}>${detailedUserView.user.portfolioValue.toLocaleString()}</p>
+                      <p className={styles[getPortfolioValueClass(detailedUserView.user.portfolioValue)]}>
+                        ${detailedUserView.user.portfolioValue.toLocaleString()}
+                      </p>
                     </div>
                     <div className={styles.summaryCard}>
                       <p>P&L</p>
-                      <p className={`${styles.summaryValue} ${getPerformanceClass(detailedUserView.user.totalGainsLosses)}`}>
+                      <p className={styles[getPortfolioValueClass(detailedUserView.user.totalGainsLosses)]}>
                         {detailedUserView.user.totalGainsLosses >= 0 ? '+' : ''}${detailedUserView.user.totalGainsLosses.toFixed(0)}
                       </p>
                     </div>
@@ -1303,7 +1335,7 @@ export default function UsersPage() {
                                 <p>Bought: ${opinion.purchasePrice}</p>
                                 <p>Current: ${opinion.currentPrice}</p>
                               </div>
-                              <p className={`${styles.opinionGainLoss} ${getPerformanceClass(gainLoss)}`}>
+                              <p className={styles[getPortfolioValueClass(gainLoss)]}>
                                 {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
                               </p>
                             </div>
@@ -1441,7 +1473,7 @@ export default function UsersPage() {
                             </p>
                             <p className={styles.transactionDate}>{transaction.date}</p>
                           </div>
-                          <div className={`${styles.transactionAmount} ${getPerformanceClass(transaction.amount)}`}>
+                          <div className={styles[getPortfolioValueClass(transaction.amount)]}>
                             {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
                           </div>
                         </div>

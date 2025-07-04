@@ -5,7 +5,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 0.5rem;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
   gap: 1rem;
 }
 
@@ -44,7 +46,7 @@
   padding: 1rem;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
   align-items: center;
   transition: all var(--transition);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -95,9 +97,9 @@
 
 /* Enhanced Activity Feed */
 .feedContainer {
-  background: var(--bg-card);
+  background: var(--white);
   border-radius: var(--radius-xl);
-  border: 2px solid var(--border-primary);
+  border: 1px solid var(--border-primary);
   overflow: hidden;
   transition: all var(--transition);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -110,8 +112,8 @@
 
 .feedHeader {
   padding: 1rem 1.5rem;
-  background: var(--bg-section);
-  border-bottom: 2px solid var(--border-primary);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-primary);
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
@@ -137,6 +139,7 @@
   max-height: 70vh;
   overflow-y: auto;
   padding: 0;
+  background: var(--white);
 }
 
 .feedContent::-webkit-scrollbar {
@@ -157,13 +160,15 @@
 }
 
 /* Enhanced Activity Items with global card integration */
-.activityItem {
+.activityItem,
+.activityItem.userActivity,
+.activityItem.botActivity,
+.activityItem.shortActivity {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-primary);
   transition: all var(--transition);
   position: relative;
-  /* Integration with global card styles */
-  background: var(--bg-card);
+  background: var(--white) !important;
 }
 
 .activityItem:last-child {
@@ -171,34 +176,18 @@
 }
 
 /* Enhanced hover effects */
-.activityItem:hover {
-  background: rgba(184, 255, 107, 0.1) !important; /* Light green background */
+.activityItem:hover,
+.activityItem.userActivity:hover,
+.activityItem.botActivity:hover,
+.activityItem.shortActivity:hover {
+  background: var(--white) !important;
   border-left: 4px solid var(--lime-green) !important; /* Green left border */
   transform: translateY(-1px);
 }
 
-.activityItem.userActivity {
-  background: var(--bg-elevated);
-  border-left: 4px solid var(--lime-green);
-}
-
-.activityItem.userActivity:hover {
-  background: var(--bg-elevated) !important; /* Keep user activities as they were */
-  box-shadow: 0 4px 8px rgba(184, 255, 107, 0.2);
-}
-
-.activityItem.botActivity:hover {
-  background: rgba(16, 185, 129, 0.15) !important; /* Slightly more green for bots */
-}
-
-.activityItem.shortActivity:hover {
-  background: rgba(239, 68, 68, 0.1) !important; /* Light red for short activities */
-  border-left-color: var(--coral-red) !important;
-}
-
 .activityLayout {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
 }
 
@@ -225,44 +214,44 @@
 /* Enhanced icon colors */
 .activityIcon.buy,
 .buyIcon {
-  background: var(--lime-green);
-  border-color: var(--lime-dark);
-  color: var(--text-black);
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--black);
 }
 
 .activityIcon.sell,
 .sellIcon {
-  background: var(--soft-blue);
-  border-color: var(--soft-blue);
-  color: var(--text-primary);
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--black);
 }
 
 .activityIcon.betPlace,
 .betIcon {
-  background: var(--soft-purple);
-  border-color: var(--soft-purple);
-  color: var(--text-primary);
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--black);
 }
 
 .activityIcon.betWin,
 .winIcon {
-  background: var(--lime-green);
-  border-color: var(--lime-dark);
-  color: var(--text-black);
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--black);
 }
 
 .activityIcon.betLoss,
 .lossIcon {
-  background: var(--coral-red);
-  border-color: var(--coral-bright);
-  color: var(--text-primary);
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--black);
 }
 
 .activityIcon.generate,
 .earnIcon {
-  background: var(--warning);
-  border-color: #ffc107;
-  color: var(--text-black);
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--black);
 }
 
 .activityIcon.shortPlace,
@@ -271,15 +260,15 @@
 .shortIcon,
 .shortWinIcon,
 .shortLossIcon {
-  background: var(--coral-red);
-  border-color: var(--coral-bright);
-  color: var(--text-primary);
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--black);
 }
 
 .defaultIcon {
-  background: var(--bg-elevated);
-  border-color: var(--border-secondary);
-  color: var(--text-secondary);
+  background: var(--white);
+  border-color: var(--medium-gray);
+  color: var(--light-gray);
 }
 
 /* Enhanced Activity Content */
@@ -298,11 +287,11 @@
 
 .activityDescription strong {
   font-weight: 700;
-  color: var(--lime-green);
+  color: var(--green);
 }
 
 .activityDescription em {
-  color: var(--text-secondary);
+  color: var(--light-gray);
   font-style: italic;
 }
 
@@ -310,8 +299,8 @@
 .userBadge {
   margin-left: 8px;
   padding: 2px 8px;
-  background: var(--lime-green);
-  color: var(--text-black);
+  background: var(--yellow);
+  color: var(--black);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -323,8 +312,8 @@
 .botBadge {
   margin-left: 8px;
   padding: 2px 8px;
-  background: var(--lime-green);
-  color: var(--text-black);
+  background: var(--yellow);
+  color: var(--black);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -336,8 +325,8 @@
 .shortBadge {
   margin-left: 8px;
   padding: 2px 8px;
-  background: var(--coral-red);
-  color: var(--text-primary);
+  background: var(--red);
+  color: var(--black);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -363,20 +352,25 @@
 .activityAmount {
   font-weight: 700;
   font-size: var(--font-size-base);
-  padding: 2px 6px;
+  padding: 2px 12px;
   border-radius: var(--radius-sm);
+  color: var(--black) !important;
+  margin-left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .activityAmount.positive,
 .positiveAmount {
-  color: var(--lime-green);
-  background: rgba(184, 255, 107, 0.1);
+  color: var(--black) !important;
+  background: rgba(184, 255, 107, 0.35) !important;
 }
 
 .activityAmount.negative,
 .negativeAmount {
-  color: var(--coral-red);
-  background: rgba(255, 107, 107, 0.1);
+  color: var(--black) !important;
+  background: rgba(255, 107, 107, 0.35) !important;
 }
 
 /* Enhanced Market Stats with global grid integration */
@@ -419,7 +413,7 @@
 }
 
 .statCard.volume {
-  border-color: var(--warning);
+  border-color: var(--black) !important;
 }
 
 .statNumber {
@@ -446,7 +440,7 @@
 }
 
 .statNumber.volume {
-  color: var(--warning);
+  color: var(--black) !important;
 }
 
 .statLabel {
@@ -454,6 +448,11 @@
   margin: 0;
   color: var(--text-secondary);
   font-weight: 600;
+}
+
+/* Only override for volume card */
+.statCard.volume .statLabel {
+  color: var(--black) !important;
 }
 
 /* Enhanced Modal Styles with global integration */
@@ -680,29 +679,29 @@
 }
 
 .typeTag.buy {
-  background: var(--lime-green);
-  color: var(--text-black);
+  background: var(--green);
+  color: var(--black);
 }
 
 .typeTag.sell {
-  background: var(--soft-blue);
-  color: var(--text-primary);
+  background: var(--yellow);
+  color: var(--black);
 }
 
 .typeTag.bet_place {
-  background: var(--soft-purple);
-  color: var(--text-primary);
+  background: var(--orange);
+  color: var(--black);
 }
 
 .typeTag.generate {
-  background: var(--warning);
-  color: var(--text-black);
+  background: var(--yellow);
+  color: var(--black);
 }
 
 .botTag {
   padding: 0.25rem 0.5rem;
-  background: var(--lime-green);
-  color: var(--text-black);
+  background: var(--yellow);
+  color: var(--black);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -711,8 +710,8 @@
 
 .shortTag {
   padding: 0.25rem 0.5rem;
-  background: var(--coral-red);
-  color: var(--text-primary);
+  background: var(--red);
+  color: var(--black);
   border-radius: var(--radius-pill);
   font-size: var(--font-size-xs);
   font-weight: 700;
@@ -727,9 +726,9 @@
 .transactionDescription {
   margin: 1rem 0;
   padding: 1rem;
-  background: var(--bg-section);
+  background: var(--off-white);
   border-radius: var(--radius-md);
-  border-left: 4px solid var(--lime-green);
+  border-left: 4px solid var(--green);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
@@ -747,19 +746,19 @@
 }
 
 .tradeIndicator.buy {
-  background: var(--lime-green);
+  background: var(--green);
 }
 
 .tradeIndicator.sell {
-  background: var(--soft-blue);
+  background: var(--yellow);
 }
 
 .tradeIndicator.bet {
-  background: var(--soft-purple);
+  background: var(--orange);
 }
 
 .tradeIndicator.generate {
-  background: var(--warning);
+  background: var(--yellow);
 }
 
 /* Loading Animation */
@@ -928,4 +927,26 @@
 .emptyFeed p:last-child {
   margin: 0;
   font-size: var(--font-size-base);
+}
+
+body, .pageContainer, #__next {
+  background: var(--white) !important;
+}
+
+.feedPage, .main, .main-content, .content, .container {
+  background: var(--white) !important;
+}
+
+.page-container, .main-content {
+  background: var(--white) !important;
+}
+
+.main-content {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+.main-content > *:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }

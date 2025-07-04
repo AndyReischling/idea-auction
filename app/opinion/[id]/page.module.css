@@ -205,17 +205,17 @@
 
 .summaryValue {
   font-size: var(--font-size-4xl);
-  color: var(--text-primary);
+  color: var(--black);
   font-family: var(--font-number);
   font-weight: 800;
 }
 
 .summaryValue.positive {
-  color: var(--emerald-green);
+  color: var(--green);
 }
 
 .summaryValue.negative {
-  color: var(--coral-red);
+  color: var(--red);
 }
 
 .chartVisual {
@@ -225,7 +225,7 @@
   height: auto;
   min-height: 240px;
   padding: var(--spacing-xl);
-  background: black;
+  background: var(--black);
   /* border: 1px solid var(--border-primary); */
   position: relative;
 }
@@ -234,7 +234,7 @@
   position: absolute;
   left: 24px;
   font-size: var(--font-size-base);
-  color: white;
+  color: var(--white);
   font-weight: 600;
   font-family: var(--font-number);
 }
@@ -260,14 +260,15 @@
   font-size: var(--font-size-base);
   font-weight: 700;
   font-family: var(--font-number);
+  color: var(--black);
 }
 
 .barLabel.positive {
-  color: var(--emerald-green);
+  color: var(--green);
 }
 
 .barLabel.negative {
-  color: var(--coral-red);
+  color: var(--red);
 }
 
 .bar {
@@ -278,16 +279,16 @@
 }
 
 .bar.positive {
-  background: var(--emerald-green);
+  background: var(--green);
 }
 
 .bar.negative {
-  background: var(--coral-red);
+  background: var(--red);
 }
 
 .barDate {
   font-size: var(--font-size-base);
-  color: white;
+  color: var(--white);
   margin-top: 8px;
   text-align: center;
   max-width: 50px;
@@ -300,8 +301,8 @@
   align-items: center;
   gap: var(--spacing-4xl);
   font-size: var(--font-size-base);
-  color: var(--text-primary);
-  background: black;
+  color: var(--white);
+  background: var(--black);
   /* padding: var(--spacing-lg); */
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   height: 60px;
@@ -328,11 +329,11 @@
 }
 
 .legendColor.positive {
-  background: var(--emerald-green);
+  background: var(--green);
 }
 
 .legendColor.negative {
-  background: var(--coral-red);
+  background: var(--red);
 }
 
 /* Market Stats Grid */
@@ -341,8 +342,8 @@
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 0;
   margin-bottom:0;
-  border: 1px solid var(--border-primary);
-  background: #DEDAEA;
+  border: 1px solid var(--light-gray);
+  background: var(--off-white);
 }
 
 .statCard {
@@ -353,11 +354,7 @@
   gap: 16px;
   padding: var(--spacing-xl);
   transition: all var(--transition);
-}
-
-.statCard {
-  /* existing declarations … */
-  border-right: 1px solid var(--border-primary);   /* vertical divider */
+  border-right: 1px solid var(--light-gray);
 }
 
 .marketStats > .statCard:last-child {
@@ -386,7 +383,7 @@
 
 .statTitle {
   font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  color: var(--black);
   font-weight: 500;
   margin: 0;
 }
@@ -409,7 +406,7 @@
 
 .statValue {
   font-size: var(--font-size-4xl);
-  color: var(--text-primary);
+  color: var(--black);
   font-family: var(--font-number);
   font-weight: 800;
   margin: 0;
@@ -419,21 +416,21 @@
 }
 
 .statValue.bullish {
-  color: var(--emerald-green);
+  color: var(--green);
 }
 
 .statValue.bearish {
-  color: var(--coral-red);
+  color: var(--red);
 }
 
 .statValue.stable {
-  color: var(--text-primary);
+  color: var(--black);
 }
 
 .statSubtext {
   margin: 0;
   font-size: var(--font-size-sm);
-  color: var(--text-tertiary);
+  color: var(--medium-gray);
 }
 
 /* Action Buttons */

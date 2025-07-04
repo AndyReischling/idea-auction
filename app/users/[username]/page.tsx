@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import styles from '../page.module.css';
+import { ScanSmiley, Balloon, Wallet, CurrencyCircleDollar, ChartLine, Folder, DiceSix, BookOpenText, Play, CurrencyDollar, Rss } from '@phosphor-icons/react';
 
 interface UserProfile {
   username: string;
@@ -62,6 +63,7 @@ interface Transaction {
   date: string;
   description?: string;
   opinionText?: string;
+  quantity?: number;
 }
 
 interface BettingActivity {
@@ -82,6 +84,7 @@ interface BettingActivity {
   opinionText?: string;
   progress?: number;
   actualLoss?: number;
+  opinionId?: string;
 }
 
 // NEW: Betting form interface
@@ -507,7 +510,8 @@ export default function UserDetailPage() {
         daysRemaining: short.status === 'active' ? Math.ceil(hoursRemaining / 24) : undefined,
         additionalInfo: `$${short.startingPrice} → $${short.targetPrice} | ${hoursRemaining}h remaining`,
         opinionText: short.opinionText,
-        progress: Math.max(0, Math.min(100, progress))
+        progress: Math.max(0, Math.min(100, progress)),
+        opinionId: short.opinionId
       });
     });
 
@@ -664,69 +668,140 @@ export default function UserDetailPage() {
     <div className="page-container">
       <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
       
-      <main className="main-content">
-        <div className="header-section">
-          <div className="user-header">
-            <div className="user-avatar">
-              {userProfile.username[0].toUpperCase()}
-            </div>
-            <div className="user-info">
-              <h1>{isBot ? '🤖 ' : ''}{userProfile.username}</h1>
-              <p>Member since {userProfile.joinDate}</p>
-              <p>{isBot ? 'Autonomous Trading Bot' : 'Opinion Trader & Collector'}</p>
-              {isBot && (
-                <p style={{ 
-                  fontSize: '12px', 
-                  color: '#10b981',
-                  fontWeight: '600',
-                  marginTop: '4px'
-                }}>
-                  🤖 Algorithmic Trading Strategies (1-100% bet range with loss multipliers)
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="navigation-buttons">
-            <button
-              onClick={() => router.back()}
-              className="nav-button"
-              style={{ backgroundColor: '#6b7280' }}
-            >
-              ← Back
-            </button>
-            <a href="/users" className="nav-button traders">
-              📊 View Traders
-            </a>
+      <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px', paddingTop: '0', marginTop: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px', padding: '24px 0 8px 0', borderBottom: '1px solid #eee', marginBottom: '16px', paddingRight: '20px' }}>
+          <h1 style={{ 
+            margin: 0, 
+            fontSize: '28px', 
+            fontWeight: '700',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginLeft: '20px'
+          }}>
+            <ScanSmiley size={32} />  {userProfile.username}
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
             <a href="/feed" className="nav-button feed">
-              📡 Live Feed
+              <Rss size={24} /> Live Feed
             </a>
             <a href="/generate" className="nav-button generate">
-              ✨ Generate Opinions
+              <Balloon size={24} /> Generate Opinion
+            </a>
+            <a href="/users" className="nav-button traders">
+              <ScanSmiley size={24} /> View Traders
+            </a>
+            <a href="/" className="nav-button traders">
+              <Wallet size={24} /> My Portfolio
             </a>
           </div>
         </div>
 
-        <div className={styles.walletOverview}>
-          <div className={`${styles.walletCard} ${styles.balance}`}>
-            <h3>💰 {isBot ? 'Bot Balance' : 'Wallet Balance'}</h3>
-            <p>${userProfile.balance.toLocaleString()}</p>
+        <div className={styles.walletOverview} style={{ marginTop: '36px' }}>
+          <div className={`${styles.walletCard} ${styles.balance}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
+              <CurrencyCircleDollar size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
+              <span style={{ marginLeft: 0 }}>Wallet Balance</span>
+            </h3>
+            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>${userProfile.balance.toLocaleString()}</p>
           </div>
 
-          <div className={`${styles.walletCard} ${styles.portfolio}`}>
-            <h3>📊 Portfolio Value</h3>
-            <p>${portfolioValue.toLocaleString()}</p>
+          <div className={`${styles.walletCard} ${styles.portfolio}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
+              <ChartLine size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
+              <span style={{ marginLeft: 0 }}>Portfolio Value</span>
+            </h3>
+            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>${portfolioValue.toLocaleString()}</p>
           </div>
 
-          <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`}>
-            <h3>📈 P&L</h3>
-            <p>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
+          <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
+              <Folder size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
+              <span style={{ marginLeft: 0 }}>P&L</span>
+            </h3>
+            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
           </div>
 
-          <div className={`${styles.walletCard} ${styles.bets}`}>
-            <h3>🎲 Active Bets</h3>
-            <p>{totalActiveBets}</p>
+          <div className={`${styles.walletCard} ${styles.bets}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
+              <DiceSix size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
+              <span style={{ marginLeft: 0 }}>Active Bets</span>
+            </h3>
+            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>{totalActiveBets}</p>
           </div>
+        </div>
+
+        {/* Portfolio Holdings Section - grid card style */}
+        <div style={{ margin: '32px 0' }}>
+          <h2 className="section-title" style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <DiceSix size={28} style={{ verticalAlign: 'middle' }} /> My Opinion Portfolio
+          </h2>
+          {ownedOpinions.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
+              {ownedOpinions.map((opinion, index) => {
+                const gain = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
+                const gainPct = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
+                
+                // Find the correct opinion index in the opinions array
+                const allOpinions = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('opinions') || '[]') : [];
+                const opinionIndex = allOpinions.findIndex((op: string) => op === opinion.text);
+                const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
+                
+                return (
+                  <a
+                    key={index}
+                    href={`/opinion/${opinionId}`}
+                    style={{
+                      background: '#fff',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      padding: '16px',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
+                      display: 'block',
+                      textDecoration: 'none',
+                      transition: 'box-shadow 0.2s, transform 0.2s',
+                      cursor: 'pointer',
+                      color: '#222',
+                    }}
+                    onMouseOver={e => {
+                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(16,185,129,0.10)';
+                      e.currentTarget.style.transform = 'scale(1.03)';
+                    }}
+                    onMouseOut={e => {
+                      e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.03)';
+                      e.currentTarget.style.transform = 'scale(1)';
+                    }}
+                  >
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px', color: '#222', lineHeight: 1.2 }}>{opinion.text}</div>
+                    <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '10px' }}>
+                      Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}
+                    </div>
+                    <div style={{ color: '#444', fontSize: '1rem', marginBottom: '6px' }}>Bought: ${opinion.purchasePrice}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                      <span style={{ fontWeight: 900, fontSize: '1.5rem', color: '#111' }}>${opinion.currentPrice.toFixed(2)}</span>
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: gain >= 0 ? '#16a34a' : '#dc2626' }}>
+                        {gain >= 0 ? '+' : ''}${gain.toFixed(2)} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%)
+                      </span>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ 
+              padding: '20px', 
+              textAlign: 'center', 
+              color: '#666',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <p>📭 No holdings to display</p>
+              <p style={{ fontSize: '14px' }}>
+                {isBot ? 'This bot has not made any trades yet' : 'This user has not purchased any opinions yet'}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* NEW: Prominent Bet on Portfolio Button */}
@@ -773,45 +848,9 @@ export default function UserDetailPage() {
         )}
 
         <section className="section">
-          <h2 className="section-title">💼 {isBot ? 'Bot' : 'User'} Opinion Portfolio</h2>
-          
-          {ownedOpinions.length === 0 ? (
-            <div className="empty-state">
-              <p>{isBot ? 'This bot doesn\'t own any opinions yet!' : 'This user doesn\'t own any opinions yet!'}</p>
-              <p>{isBot ? 'The bot is still learning and will start trading soon.' : 'They haven\'t started buying opinions from the marketplace.'}</p>
-            </div>
-          ) : (
-            <div className="grid grid-2">
-              {ownedOpinions.map((opinion) => {
-                const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
-                const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
-                const opinionIndex = allOpinions.findIndex(op => op === opinion.text);
-                const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
-                
-                return (
-                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <div className="card-header">
-                      <div className="card-content">
-                        <p>{safeSlice(opinion.text, 80)}</p>
-                        <p className="card-subtitle">Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}</p>
-                      </div>
-                      <div className={styles.opinionPricing}>
-                        <p>Bought: ${opinion.purchasePrice}</p>
-                        <p>Current: ${opinion.currentPrice}</p>
-                        <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
-                          {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
-                        </p>
-                      </div>
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="section">
-          <h2 className="section-title">🎲 {isBot ? 'Bot' : 'User'} Portfolio Bets & Short Positions</h2>
+          <h2 className="section-title" style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <DiceSix size={28} style={{ verticalAlign: 'middle' }} /> User Portfolio Bets & Short Positions
+          </h2>
           
           {combinedBettingActivity.length === 0 ? (
             <div className="empty-state">
@@ -819,61 +858,79 @@ export default function UserDetailPage() {
               <p>{isBot ? 'The bot will start making strategic bets as it develops confidence.' : 'They can bet on portfolios (1-100% range with multiplied losses) or short specific opinions.'}</p>
             </div>
           ) : (
-            <div className="grid grid-2">
+            <div className={styles.betGrid}>
               {combinedBettingActivity.slice(0, 10).map((activity) => {
                 return (
-                  <div key={activity.id} className="card">
-                    <div className="card-header">
-                      <div className="card-content">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span className={`${styles.betType} ${styles[activity.type]}`}>
-                              {activity.type === 'portfolio_bet' ? '📊 Portfolio' : '📉 Short'}
-                            </span>
-                            <span className={`${styles.betStatus} ${styles[activity.status]}`}>
-                              {activity.status}
-                            </span>
-                          </div>
+                  <div className={styles.betCard} key={activity.id}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+                      {/* Left: Main Content */}
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '8px', marginLeft: '-12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                          {activity.type === 'short_bet' && (
+                            <>
+                              <span style={{ background: '#fde047', color: '#000', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                SHORT
+                              </span>
+                              {activity.status === 'lost' && (
+                                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  LOST
+                                </span>
+                              )}
+                              {activity.status === 'won' && (
+                                <span style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  WON
+                                </span>
+                              )}
+                              {activity.status === 'expired' && (
+                                <span style={{ background: '#222', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  EXPIRED
+                                </span>
+                              )}
+                            </>
+                          )}
+                          {!(activity.type === 'short_bet') && (
+                            <>
+                              {activity.status === 'active' && (
+                                <span className={`${styles.betStatus} ${styles[activity.status]}`} style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  ACTIVE
+                                </span>
+                              )}
+                              {activity.status === 'won' && (
+                                <span style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  WON
+                                </span>
+                              )}
+                              {activity.status === 'lost' && (
+                                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
+                                  LOST
+                                </span>
+                              )}
+                            </>
+                          )}
                           {activity.status === 'active' && activity.daysRemaining !== null && (
-                            <span className="card-subtitle">
-                              {activity.daysRemaining} days left
-                            </span>
+                            <span style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: '16px', marginLeft: '8px' }}>{activity.daysRemaining} days left</span>
                           )}
                         </div>
-                        
-                        <p style={{ fontWeight: '600', marginBottom: '4px' }}>
-                          {activity.title}
-                        </p>
-                        <p className="card-subtitle">
-                          {activity.subtitle}
-                        </p>
-                        
-                        {activity.type === 'short_bet' && activity.opinionText && (
-                          <p className="card-subtitle" style={{ 
-                            fontStyle: 'italic', 
-                            marginTop: '8px',
-                            padding: '8px',
-                            backgroundColor: '#f8f9fa',
-                            borderRadius: '4px',
-                            fontSize: '12px'
-                          }}>
-                            "{safeSlice(activity.opinionText, 60)}"
-                          </p>
+                        {activity.type === 'short_bet' ? (
+                          <a href={`/opinion/${activity.opinionId}`} style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 700, fontSize: '1.15rem', marginBottom: '2px', cursor: 'pointer' }}>
+                            {activity.title}
+                          </a>
+                        ) : (
+                          <div style={{ fontWeight: 700, fontSize: '1.15rem', marginBottom: '2px', color: 'var(--text-primary)' }}>{activity.title}</div>
                         )}
-                        
+                        <div style={{ color: 'var(--text-secondary)', fontSize: '15px', marginBottom: '6px' }}>{activity.subtitle}</div>
+                        {activity.type === 'short_bet' && activity.opinionText && (
+                          <div style={{ fontStyle: 'italic', margin: '8px 0', padding: '8px', background: '#f8f9fa', borderRadius: '4px', fontSize: '13px', color: '#555' }}>
+                            "{safeSlice(activity.opinionText, 60)}"
+                          </div>
+                        )}
                         {activity.type === 'short_bet' && activity.status === 'active' && activity.progress !== undefined && (
                           <div style={{ marginTop: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', color: 'var(--text-tertiary)' }}>
                               <span>Progress to target:</span>
                               <span>{activity.progress.toFixed(1)}%</span>
                             </div>
-                            <div style={{ 
-                              width: '100%', 
-                              height: '6px', 
-                              backgroundColor: '#e5e7eb', 
-                              borderRadius: '3px',
-                              overflow: 'hidden'
-                            }}>
+                            <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
                               <div style={{
                                 width: `${Math.min(100, activity.progress)}%`,
                                 height: '100%',
@@ -883,43 +940,30 @@ export default function UserDetailPage() {
                             </div>
                           </div>
                         )}
-                        
-                        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '10px', flexWrap: 'wrap' }}>
                           {activity.additionalInfo && <span>{activity.additionalInfo}</span>}
                           {activity.multiplier && (
-                            <span style={{ 
-                              color: activity.status === 'lost' ? '#ef4444' : 'inherit',
-                              fontWeight: activity.status === 'lost' ? '600' : 'normal'
-                            }}>
-                              Multiplier: {activity.multiplier}x
-                              {activity.status === 'lost' && ' (Applied to loss)'}
-                            </span>
+                            !activity.additionalInfo?.includes('multiplier') &&
+                              <span>8x multiplier</span>
                           )}
                         </div>
                       </div>
-                      
-                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                        <p className="card-subtitle">Placed: {activity.placedDate}</p>
-                        <p className={
-                          activity.status === 'won' ? 'status-positive' : 
-                          activity.status === 'lost' ? 'status-negative' : 
-                          'status-neutral'
-                        }>
+                      {/* Right: Meta/Stats */}
+                      <div style={{ textAlign: 'right', minWidth: '140px', flexShrink: 0, marginTop: '0px', marginRight: '8px' }}>
+                        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '2px', color: activity.status === 'won' ? '#22c55e' : activity.status === 'lost' ? '#ef4444' : 'var(--text-primary)' }}>
                           {activity.status === 'won' ? `Won $${activity.potentialPayout}` :
-                           activity.status === 'lost' ? 
-                             (activity.type === 'portfolio_bet' && activity.actualLoss ? 
-                               `Lost $${activity.actualLoss} (${activity.amount} × ${activity.multiplier}x)` : 
-                               `Lost $${activity.amount}`) :
+                           activity.status === 'lost' ? (activity.type === 'portfolio_bet' && activity.actualLoss ? `Lost $${activity.actualLoss} (${activity.amount} × ${activity.multiplier}x)` : `Lost $${activity.amount}`) :
                            activity.status === 'active' ? `Potential: $${activity.potentialPayout}` :
                            'Expired'}
-                        </p>
+                        </div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', marginBottom: '2px' }}>Placed: {activity.placedDate}</div>
                         {activity.status === 'active' && (
-                          <p className="card-subtitle">Expires: {activity.expiryDate}</p>
+                          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Expires: {activity.expiryDate}</div>
                         )}
                         {activity.status === 'active' && activity.type === 'portfolio_bet' && activity.multiplier && (
-                          <p className="card-subtitle" style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px' }}>
+                          <div style={{ color: '#ef4444', fontSize: '12px', marginTop: '4px', fontWeight: 600 }}>
                             Risk: ${activity.amount * activity.multiplier} if lost
-                          </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -937,7 +981,10 @@ export default function UserDetailPage() {
         </section>
 
         <section className="section">
-          <h2 className="section-title">📋 Recent Activity</h2>
+          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+            <Play size={28} weight="fill" style={{ marginBottom: '-2px' }} />
+            Recent Activity
+          </h2>
           
           {recentTransactions.length === 0 ? (
             <div>
@@ -1001,7 +1048,18 @@ export default function UserDetailPage() {
                     <div className="card-header">
                       <div className="card-content">
                         <p>
-                          {emoji} {activityText}
+                          {transaction.type === 'buy' ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#4ade80' }}>
+                                <CurrencyDollar size={18} color="#fff" weight="bold" />
+                              </span>
+                              <span style={{ fontWeight: 700, fontSize: '1.1rem', marginLeft: '6px' }}>
+                                Bought{transaction.quantity ? ` ${transaction.quantity} unit${transaction.quantity > 1 ? 's' : ''}` : ''}
+                              </span>
+                            </span>
+                          ) : (
+                            <span>{emoji} {activityText}</span>
+                          )}
                         </p>
                         <p className="card-subtitle">
                           {transaction.opinionText || transaction.description || 'Transaction activity'} • {transaction.date}
@@ -1263,20 +1321,21 @@ export default function UserDetailPage() {
                   </button>
                 </div>
 
-                <div className={styles.modalHoldings}>
-                  <h3>Top Holdings ({ownedOpinions.length} total)</h3>
+                <div className={styles.modalHoldings} style={{ margin: '32px 0' }}>
+                  <h3 style={{ fontWeight: 700, fontSize: '1.2rem', marginBottom: '16px' }}>Portfolio Holdings ({ownedOpinions.length} total)</h3>
                   {ownedOpinions.length > 0 ? (
                     <div className={styles.holdingsGrid}>
-                      {ownedOpinions.slice(0, 5).map((opinion, index) => (
+                      {ownedOpinions.map((opinion, index) => (
                         <div key={index} className={styles.holdingItem}>
                           <div>
-                            <p className={styles.holdingText}>
+                            <p className={styles.holdingText} style={{ fontStyle: 'italic', fontSize: '1rem', marginBottom: '8px' }}>
                               "{safeSlice(opinion.text, 60)}"
                             </p>
+                            <p style={{ color: '#888', fontSize: '0.95rem', margin: 0 }}>Qty: {opinion.quantity}</p>
                           </div>
                           <div className={styles.holdingStats}>
-                            <p>${opinion.currentPrice}</p>
-                            <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? 'positive' : 'negative'}>
+                            <p style={{ fontWeight: 700, fontSize: '1.1rem', margin: 0 }}>${opinion.currentPrice}</p>
+                            <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative} style={{ fontWeight: 700, fontSize: '1rem', margin: 0 }}>
                               {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
                             </p>
                           </div>

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import styles from './Sidebar.module.css';
-import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Lightbulb } from "@phosphor-icons/react";
 
 type OpinionItem = { id: string; text: string } | string;
 
@@ -439,22 +439,17 @@ export default function Sidebar({
         <p className={styles.headerSubtitle}>
           A Dr. Hollywood Production
         </p>
-
-        {/* Live Feed Link */}
-        <a href="/feed" className={styles.liveFeedLink}>
-          <RssSimple size={24}/> Live Feed
-        </a>
+        <div style={{ marginTop: '2.5rem' }}>
+          <a href="/feed" className={styles.liveFeedLink}>
+            <span className={styles.lightbulbPulse}>
+              <Lightbulb size={24} />
+            </span>
+            Opinions List
+          </a>
+        </div>
       </div>
 
       <div className={styles.scrollArea}>
-            {/* Loading State */}
-
-        {debugInfo && (
-          <p className={styles.debugInfo} style={{fontSize: '12px', color: '#666'}}>
-            {debugInfo}
-          </p>
-        )}
-
       {/* Loading State */}
 
       {isLoading && (

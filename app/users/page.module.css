@@ -39,10 +39,14 @@
 }
 
 .pageTitle {
-  font-size: var(--font-size-4xl);
-  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
   color: var(--text-primary);
-  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: inherit;
 }
 
 .pageSubtitle {
@@ -54,8 +58,40 @@
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.headerActions .nav-button {
+  padding: 8px 16px;
+  border: 2px solid var(--soft-blue);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-transform: capitalize;
+  transition: all var(--transition);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  white-space: nowrap;
+  font-family: inherit;
+  letter-spacing: 0.025em;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: none;
+}
+
+.headerActions .nav-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.headerActions .nav-button.active {
+  background: var(--soft-blue);
+  color: var(--text-primary);
+  border-color: var(--soft-blue);
+  box-shadow: 0 2px 8px rgba(99, 179, 237, 0.3);
 }
 
 .walletDisplay {
@@ -84,12 +120,14 @@
 .sortControls {
   display: flex;
   gap: 8px;
-  margin-bottom: 1.5rem;
+  margin-bottom: 10px !important;
   padding: 1rem;
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   border: 2px solid var(--border-primary);
   align-items: center;
+  padding-left: 40px !important;
+  padding-right: 40px !important;
 }
 
 .sortLabel {
@@ -211,16 +249,20 @@
 /* User Cards */
 .userCard {
   padding: 1.5rem;
-  background: var(--bg-card);
+  background: #fff !important;
   border: 2px solid var(--border-primary);
   border-radius: var(--radius-xl);
   cursor: pointer;
   transition: all var(--transition);
   position: relative;
+  margin-left: 40px !important;
+  margin-right: 40px !important;
+  margin-bottom: 10px !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
 }
 
 .userCard:hover {
-  transform: translateY(-3px);
   border-color: var(--lime-green);
   background: var(--bg-elevated);
 }
@@ -294,9 +336,22 @@
 
 .portfolioValue {
   margin: 0 0 0.5rem 0;
-  font-size: var(--font-size-3xl);
-  font-weight: 800;
-  color: var(--text-primary);
+  font-size: 3.25rem;
+  font-weight: 900;
+  color: var(--text-primary) !important;
+}
+
+.exposureText {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.portfolioValue.positive {
+  color: var(--lime-green) !important;
+}
+
+.portfolioValue.negative {
+  color: var(--coral-red) !important;
 }
 
 .portfolioGains {
@@ -323,6 +378,8 @@
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-bottom: 1rem;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .metricCard {
@@ -331,6 +388,8 @@
   border-radius: var(--radius-md);
   text-align: center;
   border: 1px solid var(--border-primary);
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .metricCard.primary {
@@ -388,6 +447,8 @@
   background: var(--bg-section);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .holdingsTitle {
@@ -429,6 +490,8 @@
   background: var(--bg-section);
   color: var(--text-primary);
   border-color: var(--border-primary);
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .viewDetailsButton:hover {
@@ -473,6 +536,8 @@
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .detailModalContent {
@@ -485,6 +550,8 @@
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .modalHeader {
@@ -619,6 +686,8 @@
 .portfolioSection {
   border-bottom: 1px solid var(--border-primary);
   padding-bottom: 1.5rem;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .portfolioSection:last-child {
@@ -643,17 +712,23 @@
 .portfolioGrid {
   display: grid;
   gap: 1rem;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .opinionCard {
-  padding: 1rem;
-  background: var(--bg-section);
-  border-radius: var(--radius-md);
   border: 1px solid var(--border-primary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--white);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  margin-bottom: 18px;
+  transition: box-shadow 0.2s;
+}
+
+.opinionCard:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border-color: var(--lime-green);
 }
 
 .opinionContent {
@@ -698,6 +773,8 @@
 .betsGrid, .shortsGrid, .transactionsGrid {
   display: grid;
   gap: 1rem;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .betCard, .shortCard, .transactionCard {
@@ -709,6 +786,8 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .betContent, .shortContent, .transactionContent {
@@ -727,31 +806,31 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-size-xs);
   font-weight: 600;
-  background: var(--soft-blue);
-  color: var(--text-primary);
+  background: var(--yellow);
+  color: var(--black);
 }
 
 .shortBadge {
-  background: var(--warning);
-  color: var(--text-black);
+  background: var(--yellow);
+  color: var(--black);
 }
 
 .betAmount, .shortAmount {
   font-weight: 700;
-  color: var(--lime-green);
+  color: var(--green);
 }
 
 .betDescription, .shortOpinion {
   margin: 0 0 0.5rem 0;
   font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  color: var(--black);
 }
 
 .betMeta, .shortMeta {
   display: flex;
   gap: 1rem;
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--medium-gray);
 }
 
 .shortDetails {
@@ -763,7 +842,7 @@
   gap: 1rem;
   margin-bottom: 0.5rem;
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--light-gray);
 }
 
 .shortProgress {
@@ -772,14 +851,14 @@
 
 .progressLabel {
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--light-gray);
   margin-bottom: 4px;
 }
 
 .progressBar {
   width: 100%;
   height: 6px;
-  background: var(--bg-card);
+  background: var(--white);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -798,6 +877,7 @@
   margin: 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
+  color: var(--black);
 }
 
 .transactionIcon {
@@ -806,7 +886,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-card);
+  background: var(--white);
   border-radius: 50%;
   font-size: var(--font-size-lg);
 }
@@ -815,25 +895,26 @@
   margin: 0 0 0.25rem 0;
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--black);
 }
 
 .transactionDescription {
   margin: 0 0 0.25rem 0;
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--light-gray);
 }
 
 .transactionDate {
   margin: 0;
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--medium-gray);
 }
 
 .transactionAmount {
   text-align: right;
   font-weight: 700;
   font-size: var(--font-size-lg);
+  color: var(--green);
 }
 
 /* Betting Form */
@@ -1149,66 +1230,40 @@
 }
 
 .walletCard {
-  padding: 1.5rem;
-  background: var(--bg-card);
-  border: 2px solid var(--border-primary);
-  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 2px solid #fde047;
+  border-radius: 16px;
   text-align: center;
   transition: all var(--transition);
+  min-width: 140px;
+  max-width: 200px;
+  box-sizing: border-box;
 }
 
 .walletCard:hover {
-  transform: translateY(-2px);
-  border-color: var(--lime-green);
+  border-color: #facc15;
 }
 
 .walletCard h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: var(--font-size-lg);
-  color: var(--text-secondary);
-  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  color: #111;
+  font-weight: 700;
 }
 
 .walletCard p {
   margin: 0;
-  font-size: var(--font-size-3xl);
+  font-size: 1.7rem;
   font-weight: 800;
-  color: var(--text-primary);
+  color: #111;
 }
 
-/* Wallet Card Variants */
-.walletCard.balance {
-  border-color: var(--lime-green);
-}
-
-.walletCard.balance:hover {
-  background: var(--lime-green);
-  color: var(--text-black);
-}
-
-.walletCard.balance:hover h3,
-.walletCard.balance:hover p {
-  color: var(--text-black);
-}
-
-.walletCard.portfolio {
-  border-color: var(--soft-blue);
-}
-
-.walletCard.portfolio:hover {
-  background: var(--soft-blue);
-}
-
-.walletCard.pnl {
-  border-color: var(--warning);
-}
-
-.walletCard.pnl.positive {
-  border-color: var(--lime-green);
-}
-
-.walletCard.pnl.negative {
-  border-color: var(--coral-red);
+.walletCard.balance,
+.walletCard.portfolio,
+.walletCard.pnl,
+.walletCard.bets {
+  border-color: #fde047;
 }
 
 .walletCard.pnl.positive p {
@@ -1219,20 +1274,6 @@
   color: var(--coral-red);
 }
 
-.walletCard.bets {
-  border-color: var(--warning);
-}
-
-.walletCard.bets:hover {
-  background: var(--warning);
-  color: var(--text-black);
-}
-
-.walletCard.bets:hover h3,
-.walletCard.bets:hover p {
-  color: var(--text-black);
-}
-
 /* Opinion Pricing */
 .opinionPricing {
   display: flex;
@@ -1241,6 +1282,7 @@
   justify-content: center;
   text-align: left;
   min-width: 120px;
+  margin-top: 24px;
 }
 
 .opinionPricing p {
@@ -1424,6 +1466,25 @@
     min-width: auto;
     width: 100%;
   }
+
+  .userCard,
+  .performanceMetrics,
+  .holdingsPreview,
+  .metricCard,
+  .portfolioGrid,
+  .betsGrid,
+  .shortsGrid,
+  .transactionsGrid,
+  .opinionCard,
+  .betCard,
+  .shortCard,
+  .transactionCard,
+  .portfolioSection,
+  .modalContent,
+  .detailModalContent {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1467,4 +1528,51 @@
   .betCalculations {
     font-size: var(--font-size-xs);
   }
+}
+
+.main-content {
+  margin-top: 24px !important;
+  padding-left: 5px !important;
+  padding-right: 5px !important;
+}
+
+.section {
+  padding-left: 5px !important;
+  padding-right: 5px !important;
+}
+
+.leaderboardHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.grid,
+.grid-1,
+.userCardContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.betCard {
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--white);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  margin-bottom: 24px;
+  transition: box-shadow 0.2s;
+}
+
+.betCard:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border-color: var(--lime-green);
+}
+
+.betGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }

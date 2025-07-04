@@ -9,6 +9,12 @@ import { ScanSmiley } from '@phosphor-icons/react/dist/icons/ScanSmiley';
 import { Balloon } from '@phosphor-icons/react/dist/icons/Balloon';
 import { Rss, WalletIcon } from '@phosphor-icons/react/dist/ssr';
 import { Wallet } from '@phosphor-icons/react';
+import { Money } from '@phosphor-icons/react';
+import { CurrencyDollar } from '@phosphor-icons/react';
+import { Plus } from '@phosphor-icons/react';
+import { HandPeace } from '@phosphor-icons/react';
+import { DiceSix } from '@phosphor-icons/react';
+import { ChartLineDown } from '@phosphor-icons/react';
 
 interface ActivityFeedItem {
   id: string;
@@ -2062,19 +2068,25 @@ export default function FeedPage() {
   };
 
   // Helper functions for UI rendering
-  const getActivityIcon = (type: string): string => {
+  const getActivityIcon = (type: string): React.ReactNode => {
     switch (type) {
-      case 'buy': return '🛒';
-      case 'sell': return '💰';
-      case 'bet_place': return '🎯';
-      case 'bet_win': return '🏆';
-      case 'bet_loss': return '😞';
+      case 'buy':
+        return <CurrencyDollar color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
+      case 'sell':
+        return <HandPeace color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
+      case 'bet_place':
+      case 'bet_win':
+      case 'bet_loss':
+        return <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
+      case 'short_place':
+      case 'short_win':
+      case 'short_loss':
+        return <ChartLineDown color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
       case 'earn':
-      case 'generate': return '✨';
-      case 'short_place': return '📉';
-      case 'short_win': return '📈';
-      case 'short_loss': return '📉';
-      default: return '📊';
+      case 'generate':
+        return <Plus size={24} />;
+      default:
+        return '\ud83d\udcca';
     }
   };
 
@@ -2321,7 +2333,7 @@ export default function FeedPage() {
     <div className="page-container">
       <Sidebar opinions={opinions} />
       
-      <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px' }}>
+      <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px', paddingTop: '0', marginTop: '24px' }}>
         {/* Header with Title and Navigation */}
         <div style={{ 
           display: 'flex', 
@@ -2329,7 +2341,9 @@ export default function FeedPage() {
           alignItems: 'center',
           marginBottom: '20px',
           flexWrap: 'wrap',
-          gap: '20px'
+          gap: '20px',
+          marginTop: 0,
+          paddingTop: 0
         }}>
           {/* Left side - Title */}
           <h1 style={{ 
@@ -2472,9 +2486,39 @@ export default function FeedPage() {
                   >
                     <div className={styles.activityLayout}>
                       {/* Activity Icon */}
-                      <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
-                        {getActivityIcon(activity.type)}
-                      </div>
+                      {(() => {
+                        if (activity.type === 'buy') {
+                          return (
+                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(92,184,92,1)' }}>
+                              <CurrencyDollar color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
+                            </div>
+                          );
+                        } else if (activity.type === 'sell') {
+                          return (
+                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(239,68,68,1)' }}>
+                              <HandPeace color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
+                            </div>
+                          );
+                        } else if (["bet_place", "bet_win", "bet_loss"].includes(activity.type)) {
+                          return (
+                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255,159,10,1)' }}>
+                              <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
+                            </div>
+                          );
+                        } else if (["short_place", "short_win", "short_loss"].includes(activity.type)) {
+                          return (
+                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(236,72,153,1)' }}>
+                              <ChartLineDown color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
+                              {getActivityIcon(activity.type)}
+                            </div>
+                          );
+                        }
+                      })()}
 
                       {/* Activity Content */}
                       <div className={styles.activityContent}>
@@ -2732,84 +2776,6 @@ export default function FeedPage() {
               ${activityFeed.reduce((sum, a) => sum + Math.abs(a.amount), 0).toFixed(2)}
             </div>
             <div className={styles.statLabel}>Total Volume</div>
-          </div>
-        </div>
-
-        {/* Enhanced Activity Status with Diagnostics */}
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '15px', 
-          backgroundColor: botActivityCount > 0 ? '#f0f9ff' : '#fef3c7', 
-          border: '1px solid ' + (botActivityCount > 0 ? '#e0f2fe' : '#fde68a'), 
-          borderRadius: '8px',
-          textAlign: 'center'
-        }}>
-          <p style={{ margin: 0, color: botActivityCount > 0 ? '#0369a1' : '#92400e' }}>
-            🤖 <strong>{botActivityCount}</strong> bot activities • 
-            👥 <strong>{humanActivityCount}</strong> human activities • 
-            📉 <strong>{shortActivityCount}</strong> short positions •
-            📊 <strong>{safeGetFromStorage('botTransactions', []).length}</strong> total bot transactions
-          </p>
-          <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#64748b' }}>
-            {botActivityCount > 0 ? 
-              'UNIFIED feed processor with consistent 0.1% pricing (NO volatility multiplier) - updates every 2 seconds' : 
-              'No bot activity detected - click "Start Bots" above to begin trading'
-            }
-          </p>
-          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            {botActivityCount === 0 && (
-              <button 
-                onClick={() => {
-                  if (typeof window !== 'undefined' && (window as any).debugBots) {
-                    (window as any).debugBots();
-                  }
-                }}
-                style={{
-                  padding: '4px 12px',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px'
-                }}
-              >
-                🔍 Debug Bot System
-              </button>
-            )}
-            
-            <button 
-              onClick={() => {
-                console.log('📊 HYBRID ACTIVITY STATS:');
-                console.log('Current feed length:', activityFeed.length);
-                console.log('Bot activities:', botActivityCount);
-                console.log('Bot transaction storage:', safeGetFromStorage('botTransactions', []).length);
-                console.log('Bot system exists:', typeof (window as any).botSystem !== 'undefined');
-                if ((window as any).botSystem) {
-                  console.log('Bot system running:', (window as any).botSystem.isSystemRunning());
-                }
-                
-                const recent = safeGetFromStorage('botTransactions', []).slice(-3);
-                console.log('Recent transactions with UNIFIED processing:');
-                recent.forEach((tx: any, i: number) => {
-                  console.log(`${i+1}. ${tx.type} - Amount: ${tx.amount} - Price data:`, {
-                    metadata: tx.metadata,
-                    calculatedPrice: tx.metadata?.purchasePricePerShare || (Math.abs(tx.amount) / (tx.metadata?.quantity || 1))
-                  });
-                });
-              }}
-              style={{
-                padding: '4px 12px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px'
-              }}
-            >
-              📊 Show Stats
-            </button>
           </div>
         </div>
       </main>

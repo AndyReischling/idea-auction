@@ -304,13 +304,13 @@
 .statNumber {
   font-size: var(--font-size-2xl);
   font-weight: 800;
-  color: var(--lime-green);
+  color: var(--green);
   margin: 0;
 }
 
 .statLabel {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--medium-gray);
   margin: 4px 0 0 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -322,8 +322,8 @@
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid var(--border-primary);
-  border-top: 2px solid var(--lime-green);
+  border: 2px solid var(--light-gray);
+  border-top: 2px solid var(--green);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin-right: 8px;
@@ -354,21 +354,21 @@
 }
 
 .characterCounter.warning {
-  color: var(--warning);
+  color: var(--yellow);
 }
 
 .characterCounter.error {
-  color: var(--coral-red);
+  color: var(--red);
 }
 
 /* Enhanced Hover Effects */
 .generatorSection:hover .sectionTitle {
-  color: var(--lime-green);
+  color: var(--green);
 }
 
 .generatorSection:hover .opinionDisplay {
-  border-color: var(--lime-green);
-  background: var(--bg-card);
+  border-color: var(--green);
+  background: var(--white);
 }
 
 /* Action Buttons Container */
