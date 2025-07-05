@@ -142,26 +142,33 @@
   height: 100%;
   min-height: 80px;
   display: flex;
-  align-items: center;
+  align-items: start;
   position: relative;
   overflow: hidden;
 }
 
 .opinionText {
   margin: 0;
-  font-size: var(--font-size-2xl);
+  font-size: var(--font-size-md);
   line-height: 1.5;
   font-weight: 400;
   z-index: 1;
   position: relative;
-  color: var(--text-primary);
-  opacity: 0.8;
-  font-family: var(--font-opinion);
+  color: var(--text-tertiary);
 }
 
 .opinionText.loading {
   color: var(--text-secondary);
   animation: pulse 1.5s ease-in-out infinite;
+}
+
+.generated {
+  background: rgba(139, 92, 246, 0.05);
+  padding: 0.5rem 1rem;
+  border-left: 4px solid var(--soft-purple);
+  color: var(--text-primary);
+  font-size: var(--font-size-4xl);
+  font-family: var(--font-opinion);
 }
 
 @keyframes pulse {
@@ -207,9 +214,9 @@
 .textarea {
   width: 100%;
   height: 100%;
-  padding: 12px;
+  padding: 20px;
   font-family: inherit;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-md);
   color: var(--text-primary);
   transition: all var(--transition);
   line-height: 1.5;

@@ -174,7 +174,14 @@ function GenerateOpinions() {
             </h2>
             
             <div className={styles.opinionDisplay}>
-              <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}>
+            <p
+  className={`
+    ${styles.opinionText}
+    ${loading ? styles.loading : ''}
+    ${lastGenerated === opinion ? styles.generated : ''}
+  `}
+>
+              {/* <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}> */}
                 {loading ? 'Generating witty opinion...' : opinion}
               </p>
             </div>
