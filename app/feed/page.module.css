@@ -531,7 +531,7 @@
 /* Modal Header */
 .modalHeader {
   padding: 1.5rem;
-  border-bottom: 2px solid var(--border-primary);
+  border-bottom: 1px solid var(--border-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -914,7 +914,7 @@
   font-size: var(--font-size-lg);
   font-weight: 700;
   color: var(--text-primary);
-  border-bottom: 2px solid white;
+  border-bottom: 1px solid white;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1193,7 +1193,7 @@
 }
 
 .modalSection:last-child {
-  border-bottom: 2px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
   border-bottom-left-radius: 14px;
   border-bottom-right-radius: 14px;
   background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%);

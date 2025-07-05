@@ -1,33 +1,46 @@
 /* page.module.css - Users/Leaderboard page specific styles */
 
-/* Header and Layout */
+/* Header and Navigation */
 .pageHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
   border-bottom: 1px solid var(--border-primary);
+  border-left: none;
   position: fixed;
   top: 0;
   width: 100%;
   max-width: 1200px;
   background: var(--bg-card);
+  height: 72px;
   z-index: 1000;
 }
 
-.headerTitle {
+.pageTitle{
+  font-size: var(--font-size-xl);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: var(--font-opinion);
+}
+
+.headerContent {
   flex: 1;
 }
 
-.headerTitle h1 {
+.headerTitle {
   font-size: var(--font-size-4xl);
   margin: 0;
   color: var(--text-primary);
   font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.headerTitle p {
-  margin: 0.5rem 0 0 0;
+.headerSubtitle {
+  margin: 0px 0 0 0;
   color: var(--text-secondary);
   font-size: var(--font-size-lg);
 }
@@ -35,73 +48,120 @@
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0px;
   flex-wrap: wrap;
+  padding: 0px 0px;
+}
+
+/* Filter Controls */
+.filterControls {
+  display: flex;
+  justify-content: space-between;
+  gap: 0px;
+  padding: 0 0;
+  align-items: center;
+  border-bottom: 1px solid var(--border-primary);
+  transition: all var(--transition);
+}
+
+.filterLabel {
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.5px;
+  /* border-right: 1px solid var(--border-primary); */
+}
+
+.refreshButton{
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 400;
+  font-size: var(--font-size-sm);
+  transition: all var(--transition);
+  border: none;
+  height: 100%;
+  letter-spacing: 0.5px;
+}
+
+.refreshControls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rempx;
 }
 
 .walletDisplay {
+  display: flex;
   padding: 12px 16px;
-  background: var(--lime-green);
-  border-radius: var(--radius-lg);
+  align-items: center;
+  gap: 12px;
   text-align: center;
-  border: 2px solid var(--lime-dark);
 }
 
 .walletDisplay p:first-child {
   margin: 0;
   font-size: var(--font-size-sm);
   color: var(--text-black);
-  font-weight: 600;
+  font-weight: 400;
+  letter-spacing: 0.5px;
 }
 
 .walletDisplay p:last-child {
   margin: 0;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-black);
-  font-size: var(--font-size-lg);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-number);
 }
 
 /* Sort Controls */
 .sortControls {
   display: flex;
-  gap: 8px;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  border: 2px solid var(--border-primary);
+  gap: 0px;
   align-items: center;
+  border-bottom: 1px solid var(--border-primary);
+  justify-content: space-between;
 }
 
 .sortLabel {
-  margin-right: 1rem;
-  font-weight: 700;
+  font-weight: 400;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-right: 1px solid var(--border-primary);
 }
 
 .sortButton {
-  padding: 8px 16px;
-  border: 2px solid var(--lime-green);
-  border-radius: var(--radius-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border: none;
   cursor: pointer;
-  font-weight: 600;
+  height: 43.19px;
+  font-weight: 400;
   font-size: var(--font-size-sm);
   text-transform: capitalize;
   transition: all var(--transition);
   background: var(--bg-card);
   color: var(--text-primary);
+  letter-spacing: 0.5px;
 }
 
 .sortButton:hover {
-  transform: translateY(-1px);
+  background: white;
 }
 
 .sortButton.active {
-  background: var(--lime-green);
+  background: white;
   color: var(--text-black);
+}
+
+.lastRefresh{
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
 }
 
 /* Active Bets Section */
@@ -185,33 +245,40 @@
 
 /* User Cards */
 .userCard {
-  padding: 1.5rem;
+  padding: var(--spacing-2xl);
   background: var(--bg-card);
-  border: 2px solid var(--border-primary);
-  border-radius: var(--radius-xl);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.9);
   cursor: pointer;
   transition: all var(--transition);
   position: relative;
+  border-left: 4px solid var(--bg-card);
+}
+
+.userCard:nth-child(odd) {
+  background:var(--bg-card); 
+}
+
+.userCard:nth-child(even) {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .userCard:hover {
-  transform: translateY(-3px);
-  border-color: var(--lime-green);
-  background: var(--bg-elevated);
+  background: #DEDAEA;
+  border-left: 4px solid var(--soft-purple);
 }
 
 .userCardHeader {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
-  gap: 1rem;
+  margin-bottom: 0px;
+  gap: var(--spacing-xl);
 }
 
 .userInfo {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  align-items: flex-start;
+  gap: var(--spacing-lg);
 }
 
 .rankAvatar {
@@ -222,10 +289,10 @@
   align-items: center;
   justify-content: center;
   color: var(--text-primary);
-  font-weight: 800;
+  font-weight: 400;
   font-size: var(--font-size-xl);
   background: var(--soft-blue);
-  border: 3px solid var(--border-secondary);
+  border: 1px solid var(--border-secondary);
 }
 
 .rankAvatar.topThree {
@@ -236,10 +303,10 @@
 }
 
 .userDetails h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: var(--font-size-xl);
+  margin: 0 0 0 0;
+  font-size: var(--font-size-md);
   color: var(--text-primary);
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .userDetails p {
@@ -253,20 +320,22 @@
 }
 
 .portfolioValue {
-  margin: 0 0 0.5rem 0;
-  font-size: var(--font-size-3xl);
-  font-weight: 800;
+  margin: 0 0 0 0;
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
   color: var(--text-primary);
+  font-family: var(--font-number);
 }
 
 .portfolioGains {
   margin: 0;
   font-size: var(--font-size-lg);
   font-weight: 700;
+  font-family: var(--font-number);
 }
 
 .portfolioGains.positive {
-  color: var(--lime-green);
+  color: var(--emerald-green);
 }
 
 .portfolioGains.negative {
@@ -279,33 +348,36 @@
 
 /* Performance Metrics */
 .performanceMetrics {
+  margin-bottom: var(--spacing-xl);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 12px;
-  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0;
 }
 
 .metricCard {
-  padding: 12px;
-  background: var(--bg-section);
-  border-radius: var(--radius-md);
+  padding: 1rem;
+  border-left: 1px solid var(--border-primary);
   text-align: center;
-  border: 1px solid var(--border-primary);
+  transition: all var(--transition);
 }
 
-.metricCard p:first-child {
-  margin: 0 0 4px 0;
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+
+.metricCard:last-child {
+  border-right: 1px solid var(--border-primary);
 }
 
 .metricCard p:last-child {
+  font-size: var(--font-size-sm);
+  margin: 0;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.metricCard p:first-child {
   margin: 0;
   font-weight: 700;
-  font-size: var(--font-size-base);
+  font-size: var(--font-size-2xl);
+  font-family: var(--font-number);
 }
 
 .metricCard.performance .metricValue.positive {
@@ -330,24 +402,59 @@
 
 /* Holdings Preview */
 .holdingsPreview {
-  padding: 12px;
-  background: var(--bg-section);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
 }
 
 .holdingsTitle {
-  margin: 0 0 8px 0;
+  margin: 0 0 0px 0;
   font-size: var(--font-size-sm);
-  font-weight: 700;
+  font-weight: 400;
   color: var(--text-secondary);
 }
 
 .holdingsContent {
-  font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  font-size: var(--font-size-xl);
+  color: var(--text-primary);
+  line-height: 1.2;
+  font-family: var(--font-number);
+}
+
+.opinionGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.opinionCard {
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+  padding: var(--spacing-md);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.opinionText {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
   line-height: 1.4;
 }
+
+.opinionPrice {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--emerald-green);
+}
+
 
 /* Bet Modal */
 .modalOverlay {
@@ -588,15 +695,14 @@
 
 .placeBetButton {
   width: 100%;
-  padding: 1rem;
-  border: none;
-  border-radius: var(--radius-lg);
+  padding: var(--spacing-sm) var(--spacing-lg);
   cursor: pointer;
-  font-size: var(--font-size-lg);
-  font-weight: 700;
+  font-size: var(--font-size-md);
+  font-weight: 400;
   transition: all var(--transition);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: none;
+  width: auto;
 }
 
 .placeBetButton:enabled {
@@ -605,13 +711,12 @@
 }
 
 .placeBetButton:enabled:hover {
-  background: var(--lime-bright);
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .placeBetButton:disabled {
-  background: var(--border-primary);
-  color: var(--text-tertiary);
+  background: lightgrey;
+  color: white;
   cursor: not-allowed;
 }
 
@@ -788,22 +893,19 @@
 .userCardActions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-primary);
+  margin-top: var(--spacing-xl);
+  justify-content: flex-end;
 }
 
-.viewDetailsButton, .placeBetButton {
-  flex: 1;
-  padding: 6px 12px;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  font-weight: 500;
+.viewDetailsButton{
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-size-md);
+  font-weight: 400;
   cursor: pointer;
   transition: all var(--transition);
   min-height: 32px;
-  border: 1px solid transparent;
+  border: 1px solid var(--text-secondary);
+  width: auto;
 }
 
 .viewDetailsButton {
@@ -813,19 +915,15 @@
 }
 
 .viewDetailsButton:hover {
-  background: var(--bg-elevated);
-  border-color: var(--lime-green);
   transform: translateY(-1px);
 }
 
 .placeBetButton {
-  background: var(--lime-green);
   color: var(--text-black);
-  border-color: var(--lime-green);
+  border-radius: none;
 }
 
 .placeBetButton:hover {
-  background: var(--lime-bright);
   transform: translateY(-1px);
 }
 /* Add these missing CSS classes to your page.module.css file */

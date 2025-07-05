@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
 
 interface UserProfile {
   username: string;
@@ -947,39 +948,51 @@ export default function UsersPage() {
       
       <main className="main-content">
         <div className={styles.pageHeader}>
-          <div className={styles.headerTitle}>
-            <h1>🏆 Portfolio Leaderboard & Betting</h1>
-            <p>Real-time performance tracking with {botCount} bots, {humanCount} humans</p>
+          <div className={styles.pageTitle}>
+            Portfolio Leaderboard & Betting
           </div>
-          
           <div className={styles.headerActions}>
-            <div className={styles.walletDisplay}>
-              <p>Wallet</p>
-              <p>${currentUser.balance.toLocaleString()}</p>
-            </div>
-
-            <button 
-              onClick={forceRefreshUsers}
-              className="nav-button"
-              style={{ backgroundColor: '#8b5cf6' }}
-            >
-              Refresh
-            </button>
-
-            <a href="/generate" className="nav-button generate">
-              Generate Opinions
-            </a>
-            <a href="/" className="nav-button traders">
-              My Profile
+            <a href="/users" className="nav-button traders">
+              <ScanSmiley size={24} /> View Traders
             </a>
             <a href="/feed" className="nav-button feed">
-              Feed
+              <RssSimple size={24} /> Live Feed
+            </a>
+            <a href="/generate" className="nav-button generate">
+              <Balloon size={24} /> Generate
+            </a>
+            {/* <a href="/" className="nav-button admin">
+              <p><PiggyBank size={32} weight="fill"/></p>
+              <p>${currentUser.balance.toLocaleString()}</p>
+            </a> */}
+            <a href="/" className="nav-button admin">
+              <PiggyBank size={24}/> My Wallet
             </a>
           </div>
         </div>
 
+        {/* Filter Controls */}
+        <div className={styles.filterControls}>
+          <div className={styles.filterLabel}>Real-time performance tracking with {botCount} bots, {humanCount} humans</div>
+          <div className={styles.refreshControls}>
+            <button 
+                onClick={forceRefreshUsers}
+                className={styles.refreshButton}
+              >
+                Refresh
+            </button>
+            <div className={styles.walletDisplay}>
+              <p>Current Wallet</p>
+              <p>${currentUser.balance.toLocaleString()}</p>
+            </div>
+          </div>     
+        </div>
+
+        
+
         <div className={styles.sortControls}>
-          <span className={styles.sortLabel}>Sort by:</span>
+          <div className={styles.sortOptions}>
+          <span className={styles.sortLabel}>Sort by</span>
           {(['recent_performance', 'value', 'performance', 'volatility'] as const).map(option => (
             <button
               key={option}
@@ -992,13 +1005,13 @@ export default function UsersPage() {
                'Volatility'}
             </button>
           ))}
+          </div>
           <span className={styles.lastRefresh}>
             Last updated: {new Date(lastRefresh).toLocaleTimeString()}
           </span>
         </div>
 
-        <section className="section">
-          <h2 className="section-title">📊 Portfolio Leaderboard ({sortedUsers.length}) - Real 7-Day Performance Tracking</h2>
+        <section className="section" style={{ borderTop: 'none' }}>
           
           {sortedUsers.length === 0 ? (
             <div style={{ 
@@ -1073,26 +1086,26 @@ export default function UsersPage() {
 
                   <div className={styles.performanceMetrics}>
                     <div className={`${styles.metricCard} ${styles.performance} ${styles.primary}`}>
-                      <p>🎯 7-Day Performance (Real)</p>
                       <p className={`${styles.metricValue} ${styles.highlight} ${getPerformanceClass(user.recentPerformance)}`}>
                         {user.recentPerformance >= 0 ? '+' : ''}{user.recentPerformance.toFixed(1)}%
                       </p>
+                      <p>7-Day Performance (Real)</p>
                     </div>
                     <div className={`${styles.metricCard} ${styles.volatility}`}>
-                      <p>Volatility</p>
                       <p className={`${styles.metricValue} ${getVolatilityClass(user.volatility)}`}>
                         {user.volatility > 2.0 ? 'High' : user.volatility > 1.3 ? 'Medium' : 'Low'}
                       </p>
+                      <p>Volatility</p>
                     </div>
                     <div className={styles.metricCard}>
-                      <p>Holdings</p>
                       <p className={styles.metricValue}>{user.opinionsCount}</p>
+                      <p>Holdings</p>
                     </div>
                   </div>
                   
                   <div className={styles.holdingsPreview}>
-                    <p className={styles.holdingsTitle}>Top Holdings:</p>
-                    <div className={styles.holdingsContent}>
+                    <p className={styles.holdingsTitle}>Top Holdings</p>
+                    {/* <div className={styles.holdingsContent}>
                       {user.topOpinions.length > 0 ? (
                         user.topOpinions.slice(0, 2).map((opinion, i) => (
                           <span key={i}>
@@ -1101,11 +1114,30 @@ export default function UsersPage() {
                           </span>
                         ))
                       ) : (
-                        <span style={{ color: '#666', fontStyle: 'italic' }}>No holdings yet</span>
+                        <span style={{ color: 'rgba(0,0,0,0.5)', fontStyle: 'italic' }}>No holdings yet</span>
+                      )}
+                    </div> */}
+                    <div className={styles.holdingsContent}>
+                      {user.topOpinions.length > 0 ? (
+                        <div className={styles.opinionGrid}>
+                          {user.topOpinions.slice(0, 8).map((opinion, i) => (
+                            <div key={i} className={styles.opinionCard}>
+                              <div className={styles.opinionText}>
+                                “{safeSlice(opinion.text, 40)}”
+                              </div>
+                              <div className={styles.opinionPrice}>
+                                ${opinion.currentPrice}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ color: 'rgba(0,0,0,0.5)', fontStyle: 'italic' }}>
+                          No holdings yet
+                        </span>
                       )}
                     </div>
                   </div>
-
                   {/* Action buttons */}
                   <div className={styles.userCardActions}>
                     <button
