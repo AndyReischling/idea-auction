@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
 
 function GenerateOpinions() {
   const [opinion, setOpinion] = useState('Click the button to generate an opinion!');
@@ -112,26 +113,40 @@ function GenerateOpinions() {
       
       <main className="main-content">
         <div className={styles.pageHeader}>
-          <div className={styles.headerContent}>
-            <h1 className={styles.headerTitle}>Opinion Generator</h1>
-            <p className={styles.headerSubtitle}>
-              Create and save opinions to trade in the marketplace
-            </p>
+          <div className={styles.pageTitle}>
+            Opinion Generator
           </div>
-          
-          {/* Navigation Buttons */}
+
           <div className={styles.headerActions}>
             <a href="/users" className="nav-button traders">
-              📊 View Traders
+              <ScanSmiley size={24} /> View Traders
             </a>
             <a href="/feed" className="nav-button feed">
-              📡 Live Feed
+              <RssSimple size={24} /> Live Feed
             </a>
-            <a href="/" className="nav-button traders">
-              ← Back to Profile
+            <a href="/generate" className="nav-button generate">
+              <Balloon size={24} /> Generate
+            </a>
+            <a href="/" className="nav-button admin">
+              <PiggyBank size={24}/> My Wallet
             </a>
           </div>
         </div>
+
+        {/* Filter Controls */}
+        <div className={styles.filterControls}>
+        <div className={styles.marqueeOuter}>
+          <div className={styles.marqueeInner}>
+            <span className={styles.marqueeText}>
+              Create and save opinions to trade in the marketplace&nbsp;&nbsp;&nbsp;
+            </span>
+            {/* <span className={styles.marqueeText}>
+              Create and save opinions to trade in the marketplace&nbsp;&nbsp;&nbsp;
+            </span> */}
+          </div>
+        </div>
+      </div>
+
 
         {/* Statistics Display */}
         <div className={styles.statsDisplay}>
@@ -149,63 +164,67 @@ function GenerateOpinions() {
           </div>
         </div>
 
-        {/* Random Generator Section */}
-        <div className={`${styles.generatorSection} ${styles.randomGenerator}`}>
-          <h2 className={styles.sectionTitle}>
-            🎲 Random Opinion Generator
-          </h2>
-          
-          <div className={styles.opinionDisplay}>
-            <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}>
-              {loading ? 'Generating witty opinion...' : opinion}
-            </p>
-          </div>
-          
-          <div className={styles.actionContainer}>
-            <button
-              onClick={generateOpinion}
-              disabled={loading}
-              className={styles.generateButton}
-            >
-              {loading && <div className={styles.loadingSpinner}></div>}
-              {loading ? 'Generating...' : 'Generate New Opinion'}
-            </button>
-          </div>
-        </div>
+        {/* Opinion Creation Section */}
+        <div className={styles.creationSection}>
 
-        {/* User Input Section */}
-        <div className={`${styles.generatorSection} ${styles.userInput}`}>
-          <h2 className={styles.sectionTitle}>
-            ✍️ Submit Your Opinion
-          </h2>
-          
-          <textarea
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            placeholder="What's your opinion on something? Share your thoughts here... Be creative, controversial, or just plain weird!"
-            className={styles.textarea}
-            maxLength={MAX_CHARS + 50} // Allow slight overflow for warning
-          />
-          
-          <div className={`${styles.characterCounter} ${getCharCountClass()}`}>
-            {charCount}/{MAX_CHARS} characters
+          {/* Random Generator Section */}
+          <div className={`${styles.generatorSection} ${styles.randomGenerator}`}>
+            <h2 className={styles.sectionTitle}>
+              🎲 Random Opinion Generator
+            </h2>
+            
+            <div className={styles.opinionDisplay}>
+              <p className={`${styles.opinionText} ${loading ? styles.loading : ''}`}>
+                {loading ? 'Generating witty opinion...' : opinion}
+              </p>
+            </div>
+            
+            <div className={styles.actionContainer}>
+              <button
+                onClick={generateOpinion}
+                disabled={loading}
+                className={styles.generateButton}
+              >
+                {loading && <div className={styles.loadingSpinner}></div>}
+                {loading ? 'Generating...' : 'Generate New Opinion'}
+              </button>
+            </div>
           </div>
-          
-          <div className={styles.actionContainer}>
-            <button
-              onClick={submitUserOpinion}
-              disabled={!userInput.trim() || charCount > MAX_CHARS}
-              className={styles.submitButton}
-            >
-              Submit Opinion
-            </button>
+
+          {/* User Input Section */}
+          <div className={`${styles.generatorSection} ${styles.userInput}`}>
+            <h2 className={styles.sectionTitle}>
+              ✍️ Submit Your Opinion
+            </h2>
+            
+            <textarea
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              placeholder="What's your opinion on something? Share your thoughts here... Be creative, controversial, or just plain weird!"
+              className={styles.textarea}
+              maxLength={MAX_CHARS + 50} // Allow slight overflow for warning
+            />
+            
+            {/* <div className={`${styles.characterCounter} ${getCharCountClass()}`}>
+              {charCount}/{MAX_CHARS} characters
+            </div>
+             */}
+            <div className={styles.actionContainer}>
+              <button
+                onClick={submitUserOpinion}
+                disabled={!userInput.trim() || charCount > MAX_CHARS}
+                className={styles.submitButton}
+              >
+                Submit Opinion
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Tips Section */}
         <div className={styles.tipsSection}>
           <p className={styles.tipsText}>
-            <strong>Tip:</strong> All opinions are automatically saved 
+            <strong>💡 Tip:</strong> All opinions are automatically saved 
             and appear in the sidebar. Click on any opinion in the sidebar to view it in detail 
             and start trading! The more unique and engaging your opinions, the more valuable they might become.
           </p>
