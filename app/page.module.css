@@ -123,8 +123,7 @@
 /* Betting-specific styles */
 .betStatus {
   font-size: var(--font-size-xs);
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
+  padding: 2px 6px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -174,5 +173,14 @@
 }
 
 .p-card-opinion{
+  font-family: var(--font-opinion);
+}
+
+/* Short Positions */
+.card-title{
+  font-size: var(--font-size-2xl);
+  font-weight: 400;
+  color: var(--text-primary);
+  margin: 0;
   font-family: var(--font-opinion);
 }

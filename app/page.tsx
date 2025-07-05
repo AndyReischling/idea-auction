@@ -439,7 +439,7 @@ export default function UserProfile() {
                         <p>Bought: ${opinion.purchasePrice}</p>
                         <div className={styles.currentPricing}>
                           <p>${opinion.currentPrice}</p>
-                          <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
+                          <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'} style={{ margin: '0px' }}>
                             {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
                           </p>
                         </div>
@@ -467,16 +467,16 @@ export default function UserProfile() {
               )}
             </div>
           ) : (
-            <div className="grid grid-2">
+            <div className="grid grid-2 s-grid" >
               {combinedBettingActivity.slice(0, 10).map((activity) => {
                 return (
-                  <div key={activity.id} className="card">
-                    <div className="card-header">
-                      <div className="card-content">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div key={activity.id} className="card s-card">
+                    <div className="card-header s-card-header">
+                      <div className="card-content s-card-content">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', width: '100%' }}>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span className={`${styles.betType} ${styles[activity.type]}`}>
-                              {activity.type === 'portfolio_bet' ? '📊 Portfolio' : '📉 Short'}
+                            <span className="s-card-tag">
+                              {activity.type === 'portfolio_bet' ? 'Portfolio' : 'Short'}
                             </span>
                             <span className={`${styles.betStatus} ${styles[activity.status]}`}>
                               {activity.status}
@@ -489,32 +489,18 @@ export default function UserProfile() {
                           )}
                         </div>
                         
-                        <p style={{ fontWeight: '600', marginBottom: '4px' }}>
-                          {activity.title}
+                        <p className="card-title s-card-title">
+                          {activity.opinionText ? safeSlice(activity.opinionText, 50) : activity.title}
                         </p>
                         <p className="card-subtitle">
                           {activity.subtitle}
                         </p>
                         
-                        {/* Show opinion text for shorts */}
-                        {activity.type === 'short_bet' && activity.opinionText && (
-                          <p className="card-subtitle" style={{ 
-                            fontStyle: 'italic', 
-                            marginTop: '8px',
-                            padding: '8px',
-                            backgroundColor: '#f8f9fa',
-                            borderRadius: '4px',
-                            fontSize: '12px'
-                          }}>
-                            "{safeSlice(activity.opinionText, 60)}"
-                          </p>
-                        )}
-                        
                         {/* Progress bar for active shorts */}
                         {activity.type === 'short_bet' && activity.status === 'active' && activity.progress !== undefined && (
-                          <div style={{ marginTop: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                              <span>Progress to target:</span>
+                          <div style={{ marginTop: '18px', width: "100%"}}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', width: "100%" }}>
+                              <span style={{ marginRight: '4px' }}>Progress to target:</span>
                               <span>{activity.progress.toFixed(1)}%</span>
                             </div>
                             <div style={{ 
@@ -534,27 +520,33 @@ export default function UserProfile() {
                           </div>
                         )}
                         
-                        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-sm)', color: 'var(--text-tertiary)', marginTop: '8px', width: "100%" }}>
                           {activity.additionalInfo && <span>{activity.additionalInfo}</span>}
                           {activity.multiplier && <span>Multiplier: {activity.multiplier}x</span>}
                         </div>
                       </div>
                       
-                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
+                      <div className="s-card-amount"> 
                         <p className="card-subtitle">Placed: {activity.placedDate}</p>
                         <p className={
                           activity.status === 'won' ? 'status-positive' : 
                           activity.status === 'lost' ? 'status-negative' : 
                           'status-neutral'
-                        }>
-                          {activity.status === 'won' ? `Won $${activity.potentialPayout}` :
-                           activity.status === 'lost' ? `Lost $${activity.amount}` :
-                           activity.status === 'active' ? `Potential: $${activity.potentialPayout}` :
+                        } style={{ margin: '0px' }}>
+                          {activity.status === 'won' ? <>
+                          <span style={{ fontWeight: 700, fontFamily: 'var(--font-number)' }}>${activity.potentialPayout}</span>
+                        </> :
+                           activity.status === 'lost' ? <>
+                           <span style={{ fontWeight: 70, fontFamily: 'var(--font-number)' }}>${activity.amount}</span>
+                         </> :
+                           activity.status === 'active' ? <>
+                           <span style={{ fontWeight: 700, fontFamily: 'var(--font-number)', marginRight: '8px' }}>${activity.potentialPayout}</span>
+                           {activity.status === 'active' && (
+                          <span className="card-subtitle" >Expires: {activity.expiryDate}</span>
+                          )}
+                         </> :
                            'Expired'}
                         </p>
-                        {activity.status === 'active' && (
-                          <p className="card-subtitle">Expires: {activity.expiryDate}</p>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -576,7 +568,7 @@ export default function UserProfile() {
           
           {recentTransactions.length === 0 ? (
             <div>
-              <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
+              <p style={{ color: 'var(--text-secondary)', padding: '60px 20px', textAlign: 'center', marginBottom: '60px' }}>No recent transactions.</p>
               {botsRunning && (
                 <p style={{ color: '#633FD0', fontSize: '14px', marginTop: '10px' }}>
                   🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#BFB6D7' }}>Live Feed</a> to see all activity!

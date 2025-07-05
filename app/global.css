@@ -215,7 +215,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .card:last-child {
-  border-bottom: 1px solid var(--border-primary);
+  /* border-bottom: 1px solid var(--border-primary); */
 }
 
 .card:hover {
@@ -228,16 +228,16 @@ a { color: inherit; text-decoration: none; }
   gap: 0px;
 }
 .card-title    { font-size: var(--font-size-lg); font-weight: 700; margin: 0; }
-.card-subtitle { font-size: var(--font-size-sm); color: var(--text-tertiary); margin: 4px 0 0; }
+.card-subtitle { font-size: var(--font-size-sm); color: var(--text-tertiary); margin: 0px 0 0; }
 
 /* My Portfolio Card*/
 .p-grid{
   border-top: 1px solid var(--border-primary);
-  border-bottom: 1px solid var(--border-primary);
-  border-right: 1px solid var(--border-primary);
+  border-left: 1px solid var(--border-primary); /* Changed from right to left */
 }
 .p-card{
-  border-left: 1px solid var(--border-primary);
+  border-right: 1px solid var(--border-primary);  /* Only right and bottom borders */
+  border-bottom: 1px solid var(--border-primary);
   background: white;
 }
 .p-card:hover{
@@ -246,6 +246,7 @@ a { color: inherit; text-decoration: none; }
 .p-card-opinion-text{
   font-family: var(--font-number);
   margin: 0;
+  margin-bottom: 8px;
 }
 .p-card-header{
   display: flex;
@@ -258,6 +259,50 @@ a { color: inherit; text-decoration: none; }
   height: 100%;
   background: var(--bg-card);
   padding: 20px;
+}
+.s-grid{
+  border-top: 1px solid var(--border-primary);
+  border-left: 1px solid var(--border-primary); /* Changed from right to left */
+}
+.s-card{
+  border-right: 1px solid var(--border-primary);  /* Only right and bottom borders */
+  border-bottom: 1px solid var(--border-primary);
+  padding: 20px;
+}
+.s-card-header{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  font-size: var(--font-size-2xl);
+  height: 100%;
+  background: #f9f9f9;
+  padding: 20px;
+}
+.s-card-tag{
+  font-size: var(--font-size-md);
+}
+.s-card-title{
+  font-size: var(--font-size-2xl);
+  font-weight: 400;
+  margin: 0;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-number);
+}
+.s-card-content{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0px;
+}
+.s-card-amount{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 /* 8️⃣  Sections & grids ---------------------------------------------------- */

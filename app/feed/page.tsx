@@ -832,27 +832,19 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       }}
     >
       <div 
-        className="modal-content"
-        style={{
-          width: '500px',
-          height: '500px',
-          maxWidth: '90vw',
-          maxHeight: '90vh',
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}
+        className={styles.modalContent}
       >
         {/* Header with close button - Fixed at top */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '20px',
-          borderBottom: '2px solid var(--border-primary)',
-          paddingBottom: '15px',
-          flexShrink: 0
+          borderBottom: '1px solid var(--border-primary)',
+          padding: '20px',
+          flexShrink: 0,
+          position: 'sticky',
+          top: '0',
+          background: 'var(--bg-card)',
         }}>
           <h3 style={{ 
             margin: 0, 
@@ -860,7 +852,7 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
             fontWeight: '700',
             color: 'var(--text-primary)'
           }}>
-            📊 Activity Details
+            Activity Details
           </h3>
           <button
             onClick={onClose}
@@ -881,15 +873,11 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
         <div style={{
           flex: 1,
           overflowY: 'auto',
-          paddingRight: '5px'
         }}>
           {/* Enhanced Activity Description with Clickable Username */}
           <div style={{
-            padding: '15px',
+            padding: '20px',
             backgroundColor: 'var(--bg-elevated)',
-            borderRadius: 'var(--radius-lg)',
-            border: '2px solid var(--border-primary)',
-            marginBottom: '20px'
           }}>
             <p style={{ 
               margin: '0 0 10px 0', 
@@ -951,11 +939,7 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
           {showBettingInterface && targetUserData && !targetUserData.isCurrentUser && (
             <div style={{
               padding: '20px',
-              backgroundColor: 'white',
-              borderRadius: 'var(--radius-lg)',
-              border: '2px solid var(--border-primary)',
-              marginBottom: '20px',
-              boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+              backgroundColor:'var(--bg-card)',
             }}>
               <h4 style={{ 
                 margin: '0 0 15px 0', 
@@ -1092,10 +1076,8 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
               {/* Bet Calculation Display */}
               <div style={{
                 padding: '12px',
-                backgroundColor: '#f9fafb',
-                borderRadius: '6px',
+                backgroundColor: 'var',
                 border: '1px solid #e5e7eb',
-                marginBottom: '15px'
               }}>
                 <div style={{ fontSize: '14px', color: '#374151', marginBottom: '8px' }}>
                   <strong>Bet Summary:</strong>
@@ -1115,13 +1097,12 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                 style={{
                   width: '100%',
                   padding: '12px',
-                  backgroundColor: (betForm.amount <= 0 || betForm.amount > currentUser.balance) ? '#9ca3af' : '#8b5cf6',
+                  backgroundColor: (betForm.amount <= 0 || betForm.amount > currentUser.balance) ? '#9ca3af' : '#9F93C4',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '8px',
                   cursor: (betForm.amount <= 0 || betForm.amount > currentUser.balance) ? 'not-allowed' : 'pointer',
                   fontSize: '16px',
-                  fontWeight: '700',
+                  fontWeight: '400',
                   transition: 'all 0.2s ease'
                 }}
               >
@@ -1153,18 +1134,17 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
             <div>
               {/* Price Display */}
               <div style={{
-                padding: '15px',
+                padding: '20px',
                 backgroundColor: 'var(--bg-card)',
-                borderRadius: 'var(--radius-lg)',
-                border: '2px solid var(--border-primary)',
-                marginBottom: '15px'
+                borderBottom: '1px solid var(--border-primary)',
+                borderTop: '1px solid var(--border-primary)',
               }}>
                 <h4 style={{ 
-                  margin: '0 0 5px 0', 
+                  margin: '0 0 0px 0', 
                   fontSize: '16px',
                   color: 'var(--text-primary)'
                 }}>
-                  💹 Current Price: ${currentPrice.toFixed(2)}
+                  Current Price: ${currentPrice.toFixed(2)}
                 </h4>
                 <p style={{ 
                   margin: 0, 
@@ -1176,12 +1156,12 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                 </p>
                 {alreadyOwned && (
                   <p style={{ 
-                    margin: '5px 0 0 0', 
+                    margin: '0 0 0px 0', 
                     fontSize: '12px', 
                     color: 'var(--lime-green)',
                     fontWeight: '600'
                   }}>
-                    ✅ You own {ownedQuantity} shares • Sell price: ${calculateSellPrice(currentPrice).toFixed(2)}
+                    You own {ownedQuantity} shares • Sell price: ${calculateSellPrice(currentPrice).toFixed(2)}
                   </p>
                 )}
               </div>
@@ -1189,17 +1169,13 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
               {/* Trading Interface */}
               <div style={{
                 display: 'flex',
-                gap: '10px',
-                marginBottom: '15px'
+                gap: '0px',
               }}>
                 {/* Buy Section */}
                 <div style={{
                   flex: 1,
-                  padding: '15px',
-                  backgroundColor: 'white',
-                  borderRadius: 'var(--radius-lg)',
-                  border: '2px solid var(--border-primary)',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                  padding: '20px',
+                  borderRight: '1px solid var(--border-primary)',
                 }}>
                   <h5 style={{ 
                     margin: '0 0 12px 0', 
@@ -1219,10 +1195,9 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                     if (rapidTradeCount > 0) {
                       return (
                         <div style={{
-                          padding: '8px',
+                          padding: '16px',
                           backgroundColor: isAtLimit ? '#fef2f2' : isNearLimit ? '#fef3c7' : '#f0f9ff',
-                          border: `1px solid ${isAtLimit ? '#fecaca' : isNearLimit ? '#fde68a' : '#bfdbfe'}`,
-                          borderRadius: '6px',
+                          // border: `1px solid ${isAtLimit ? '#fecaca' : isNearLimit ? '#fde68a' : '#bfdbfe'}`,
                           marginBottom: '10px',
                           fontSize: '12px',
                           color: isAtLimit ? '#dc2626' : isNearLimit ? '#92400e' : '#1d4ed8',
@@ -1258,10 +1233,8 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                       style={{
                         width: '30px',
                         height: '30px',
-                        border: '2px solid #d1d5db',
                         backgroundColor: quantity <= 1 ? '#f3f4f6' : '#ffffff',
                         cursor: quantity <= 1 ? 'not-allowed' : 'pointer',
-                        borderRadius: '6px',
                         fontSize: '14px',
                         fontWeight: '700',
                         color: '#374151'
@@ -1284,10 +1257,9 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                       style={{
                         width: '30px',
                         height: '30px',
-                        border: '2px solid #d1d5db',
+                        border: '1px solid #d1d5db',
                         backgroundColor: currentPrice * (quantity + 1) > currentUser.balance ? '#f3f4f6' : '#ffffff',
                         cursor: currentPrice * (quantity + 1) > currentUser.balance ? 'not-allowed' : 'pointer',
-                        borderRadius: '6px',
                         fontSize: '14px',
                         fontWeight: '700',
                         color: '#374151'
@@ -1309,27 +1281,27 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                     disabled={currentPrice * quantity > currentUser.balance || getRapidTradeCount(activity.opinionText || '', 10) >= 3}
                     style={{
                       width: '100%',
-                      padding: '12px',
-                      backgroundColor: (() => {
-                        const rapidCount = getRapidTradeCount(activity.opinionText || '', 10);
-                        if (rapidCount >= 3) return '#dc2626';
-                        if (currentPrice * quantity > currentUser.balance) return '#9ca3af';
-                        return 'var(--lime-green)';
-                      })(),
+                      padding: '16px',
+                      // backgroundColor: (() => {
+                      //   const rapidCount = getRapidTradeCount(activity.opinionText || '', 10);
+                      //   if (rapidCount >= 3) return '#dc2626';
+                      //   if (currentPrice * quantity > currentUser.balance) return '#9ca3af';
+                      //   return 'var(--lime-green)';
+                      // })(),
                       color: 'white',
                       border: 'none',
-                      borderRadius: '8px',
                       cursor: (currentPrice * quantity > currentUser.balance || getRapidTradeCount(activity.opinionText || '', 10) >= 3) ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '700',
-                      transition: 'all 0.2s ease'
+                      fontSize: '16px',
+                      fontWeight: '400',
+                      transition: 'all 0.2s ease', 
+                      backgroundColor: 'black',
                     }}
                   >
                     {(() => {
                       const rapidCount = getRapidTradeCount(activity.opinionText || '', 10);
                       if (rapidCount >= 3) return '🚫 TRADING LIMIT REACHED';
                       if (currentPrice * quantity > currentUser.balance) return '💰 INSUFFICIENT FUNDS';
-                      return `🛒 Buy ${quantity} Share${quantity !== 1 ? 's' : ''} ($${(currentPrice * quantity).toFixed(2)})`;
+                      return `Buy ${quantity} Share${quantity !== 1 ? 's' : ''} ($${(currentPrice * quantity).toFixed(2)})`;
                     })()}
                   </button>
                   
@@ -1339,14 +1311,13 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                       onClick={handleSell}
                       style={{
                         width: '100%',
-                        padding: '10px',
+                        padding: '16px',
                         backgroundColor: 'var(--coral-red)',
                         color: 'white',
                         border: 'none',
-                        borderRadius: '6px',
                         cursor: 'pointer',
-                        fontSize: '14px',
-                        fontWeight: '700',
+                        fontSize: '16px',
+                        fontWeight: '400',
                         marginTop: '8px'
                       }}
                     >
@@ -1359,10 +1330,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                 <div style={{
                   flex: 1,
                   padding: '15px',
-                  backgroundColor: 'white',
-                  borderRadius: 'var(--radius-lg)',
-                  border: '2px solid var(--border-primary)',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                 }}>
                   <h5 style={{ 
                     margin: '0 0 12px 0', 
@@ -1476,14 +1443,13 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
                     disabled={shortSettings.betAmount > currentUser.balance || hasActiveShort || ownedQuantity > 0 || shortSettings.betAmount <= 0}
                     style={{
                       width: '100%',
-                      padding: '10px',
+                      padding: '16px',
                       backgroundColor: (shortSettings.betAmount > currentUser.balance || hasActiveShort || ownedQuantity > 0 || shortSettings.betAmount <= 0) ? '#9ca3af' : 'var(--coral-red)',
-                      color: 'white',
+                      color: 'black',
                       border: 'none',
-                      borderRadius: '6px',
                       cursor: (shortSettings.betAmount > currentUser.balance || hasActiveShort || ownedQuantity > 0 || shortSettings.betAmount <= 0) ? 'not-allowed' : 'pointer',
-                      fontSize: '12px',
-                      fontWeight: '700'
+                      fontSize: '16px',
+                      fontWeight: '400'
                     }}
                   >
                     {hasActiveShort ? 'Active Short Exists' : 
@@ -1547,29 +1513,25 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
           {/* Portfolio Betting Button - Moved from User Profile Section */}
           {targetUserData && !targetUserData.isCurrentUser && (
             <div style={{
-              marginTop: '15px',
-              padding: '12px',
-              backgroundColor: 'var(--bg-elevated)',
-              borderRadius: 'var(--radius-lg)',
+              backgroundColor: 'var(--bg-card)',
               textAlign: 'center',
-              border: '2px solid var(--border-primary)'
+              borderTop: '1px solid var(--border-primary)'
             }}>
               <button
                 onClick={() => setShowBettingInterface(!showBettingInterface)}
                 style={{
                   width: '100%',
-                  padding: '12px',
-                  backgroundColor: showBettingInterface ? '#ef4444' : '#8b5cf6',
+                  padding: '16px',
+                  backgroundColor: showBettingInterface ? '#000' : '#9F93C4',
                   color: 'white',
                   border: 'none',
-                  borderRadius: '8px',
                   cursor: 'pointer',
                   fontSize: '16px',
-                  fontWeight: '700',
+                  fontWeight: '400',
                   transition: 'all 0.2s ease'
                 }}
               >
-                {showBettingInterface ? '❌ Cancel Bet' : '🎯 Bet on Portfolio'}
+                {showBettingInterface ? 'Cancel Bet' : 'Bet on Portfolio'}
               </button>
             </div>
           )}
@@ -2457,22 +2419,26 @@ export default function FeedPage() {
                       {/* Activity Content */}
                       <div className={styles.activityContent}>
                         <div className={styles.activityDescription}>
-                          {formatActivityDescription(activity)}
-                          {isUserActivity && (
-                            <div className={styles.userBadge}>
-                              YOU
+                          <div className={styles.activityDescriptionText}>
+                            {formatActivityDescription(activity)}
+                            <div className={styles.activityBadges}>
+                              {isUserActivity && (
+                                <div className={styles.userBadge}>
+                                  YOU
+                                </div>
+                              )}
+                              {isBotActivity && (
+                                <div className={styles.botBadge}>
+                                  BOT
+                                </div>
+                              )}
+                              {isShortActivity && (
+                                <div className={styles.shortBadge}>
+                                  SHORT
+                                </div>
+                              )}
                             </div>
-                          )}
-                          {isBotActivity && (
-                            <div className={styles.botBadge}>
-                              BOT
-                            </div>
-                          )}
-                          {isShortActivity && (
-                            <div className={styles.shortBadge}>
-                              SHORT
-                            </div>
-                          )}
+                          </div>
                           {/* Clickable username */}
                           <div
                             className="clickableUsername"
@@ -2586,7 +2552,7 @@ export default function FeedPage() {
                         setShowTransactionModal(false);
                       }}
                       style={{ 
-                        color: selectedTransaction.isBot ? '#10b981' : '#3b82f6', 
+                        color: selectedTransaction.isBot ? '#3b82f6' : '#3b82f6', 
                         cursor: 'pointer',
                         textDecoration: 'underline'
                       }}
