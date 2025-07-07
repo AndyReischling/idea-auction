@@ -1089,7 +1089,7 @@ export default function UserDetailPage() {
             <div className={styles.modalContent}>
               <div className={styles.modalHeader}>
                 <h2 className={styles.modalTitle}>
-                  🎯 Bet on {isBot ? '🤖 ' : ''}{userProfile.username} Portfolio
+                  Bet on {userProfile.username} Portfolio
                 </h2>
                 <button
                   onClick={() => setShowBetModal(false)}
@@ -1099,265 +1099,248 @@ export default function UserDetailPage() {
                 </button>
               </div>
 
-              <>
-                {isBot && (
-                  <div style={{ 
-                    padding: '12px', 
-                    backgroundColor: '#f0f9ff', 
-                    border: '1px solid #bae6fd', 
-                    borderRadius: '8px', 
-                    marginBottom: '16px',
-                    textAlign: 'center'
-                  }}>
-                    <p style={{ margin: 0, color: '#0369a1' }}>
-                      🤖 You are betting on an <strong>Autonomous Trading Bot</strong> with algorithmic strategies
-                    </p>
-                  </div>
-                )}
+              <div className={styles.portfolioSummary}>
+                <div className={styles.summaryItem}>
+                  <p>Current Value</p>
+                  <p>${portfolioValue.toLocaleString()}</p>
+                </div>
+                <div className={styles.summaryItem}>
+                  <p>Real 7-Day Performance</p>
+                  <p className={getPerformanceClass(calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined))}>
+                    {calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined) >= 0 ? '+' : ''}{calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined).toFixed(1)}%
+                  </p>
+                </div>
+                <div className={styles.summaryItem}>
+                  <p>Volatility</p>
+                  <p className={calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'high' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'medium' : 'low'}>
+                    {calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'High' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'Medium' : 'Low'}
+                  </p>
+                </div>
+              </div>
 
-                <div className={styles.portfolioSummary}>
-                  <div className={styles.summaryItem}>
-                    <p>Current Value</p>
-                    <p>${portfolioValue.toLocaleString()}</p>
-                  </div>
-                  <div className={styles.summaryItem}>
-                    <p>Real 7-Day Performance</p>
-                    <p className={getPerformanceClass(calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined))}>
-                      {calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined) >= 0 ? '+' : ''}{calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined).toFixed(1)}%
-                    </p>
-                  </div>
-                  <div className={styles.summaryItem}>
-                    <p>Volatility</p>
-                    <p className={calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'high' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'medium' : 'low'}>
-                      {calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'High' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'Medium' : 'Low'}
-                    </p>
+              <div className={styles.bettingForm}>
+                <h3 className={styles.formTitle}>Custom Portfolio Bet</h3>
+                
+                <div className={styles.formGroup}>
+                  <p className={styles.formLabel}>Direction:</p>
+                  <div className={styles.directionButtons}>
+                    <button
+                      onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
+                      className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
+                    >
+                      📈 INCREASE
+                    </button>
+                    <button
+                      onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
+                      className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
+                    >
+                      📉 DECREASE
+                    </button>
                   </div>
                 </div>
 
-                <div className={styles.bettingForm}>
-                  <h3 className={styles.formTitle}>📊 Custom Portfolio Bet</h3>
-                  
-                  <div className={styles.formGroup}>
-                    <p className={styles.formLabel}>Direction:</p>
-                    <div className={styles.directionButtons}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>
+                    Target Percentage: {betForm.targetPercentage}%
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={betForm.targetPercentage}
+                    onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
+                    className={styles.rangeInput}
+                  />
+                  <div className={styles.rangeLabels}>
+                    <span>1% (Easy)</span>
+                    <span>25% (Medium)</span>
+                    <span>50% (Hard)</span>
+                    <span>100% (Extreme)</span>
+                  </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>
+                    Timeframe: {betForm.timeFrame} days
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="30"
+                    step="1"
+                    value={betForm.timeFrame}
+                    onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
+                    className={styles.rangeInput}
+                  />
+                  <div className={styles.rangeLabels}>
+                    <span>1 day (Hard)</span>
+                    <span>15 days</span>
+                    <span>30 days (Easy)</span>
+                  </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Bet Amount:</label>
+                  <input
+                    type="number"
+                    value={betForm.amount}
+                    onChange={(e) => setBetForm({ ...betForm, amount: parseInt(e.target.value) || 0 })}
+                    placeholder="Enter amount..."
+                    min="1"
+                    max={currentUser.balance}
+                    className={styles.amountInput}
+                  />
+                  <div className={styles.quickAmounts}>
+                    {[50, 100, 250, 500].map(amount => (
                       <button
-                        onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
-                        className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
+                        key={amount}
+                        onClick={() => setBetForm({ ...betForm, amount })}
+                        disabled={amount > currentUser.balance}
+                        className={styles.quickAmountButton}
                       >
-                        📈 INCREASE
+                        ${amount}
                       </button>
-                      <button
-                        onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
-                        className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
-                      >
-                        📉 DECREASE
-                      </button>
-                    </div>
+                    ))}
                   </div>
+                </div>
 
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Target Percentage: {betForm.targetPercentage}%
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      step="1"
-                      value={betForm.targetPercentage}
-                      onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
-                      className={styles.rangeInput}
-                    />
-                    <div className={styles.rangeLabels}>
-                      <span>1% (Easy)</span>
-                      <span>25% (Medium)</span>
-                      <span>50% (Hard)</span>
-                      <span>100% (Extreme)</span>
+                {betForm.amount > 0 && (
+                  <div className={styles.betSummary}>
+                    <div className={styles.betSummaryHeader}>
+                      <p>Bet Summary:</p>
                     </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Timeframe: {betForm.timeFrame} days
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="30"
-                      step="1"
-                      value={betForm.timeFrame}
-                      onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
-                      className={styles.rangeInput}
-                    />
-                    <div className={styles.rangeLabels}>
-                      <span>1 day (Hard)</span>
-                      <span>15 days</span>
-                      <span>30 days (Easy)</span>
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Bet Amount:</label>
-                    <input
-                      type="number"
-                      value={betForm.amount}
-                      onChange={(e) => setBetForm({ ...betForm, amount: parseInt(e.target.value) || 0 })}
-                      placeholder="Enter amount..."
-                      min="1"
-                      max={currentUser.balance}
-                      className={styles.amountInput}
-                    />
-                    <div className={styles.quickAmounts}>
-                      {[50, 100, 250, 500].map(amount => (
-                        <button
-                          key={amount}
-                          onClick={() => setBetForm({ ...betForm, amount })}
-                          disabled={amount > currentUser.balance}
-                          className={styles.quickAmountButton}
-                        >
-                          ${amount}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {betForm.amount > 0 && (
-                    <div className={styles.betSummary}>
-                      <div className={styles.betSummaryHeader}>
-                        <p>📊 Bet Summary:</p>
-                      </div>
-                      <p>
-                        Betting ${betForm.amount} that {isBot ? '🤖 ' : ''}{userProfile.username} portfolio will{' '}
-                        <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
-                        within <strong>{betForm.timeFrame} days</strong>
-                      </p>
-                      <div className={styles.betCalculations}>
-                        <div className={styles.calculationRow}>
-                          <span>Multiplier:</span>
-                          <span><strong>
-                            {calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ).toFixed(2)}x
-                          </strong></span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>Volatility Rating:</span>
-                          <span><strong>{getVolatilityRating(betForm.targetPercentage)}</strong></span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>If You Win:</span>
-                          <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-                            +${Math.round(betForm.amount * calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ))}
-                          </span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>If You Lose:</span>
-                          <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
-                            -${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ))}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Loss Warning */}
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '10px',
-                        backgroundColor: '#fef2f2',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px'
-                      }}>
-                        <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>
-                          ⚠️ Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
+                    <p>
+                      Betting ${betForm.amount} that {userProfile.username} portfolio will{' '}
+                      <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
+                      within <strong>{betForm.timeFrame} days</strong>
+                    </p>
+                    <div className={styles.betCalculations}>
+                      <div className={styles.calculationRow}>
+                        <span>Multiplier:</span>
+                        <span><strong>
+                          {calculateBetMultiplier(
                             betForm.betType,
                             betForm.targetPercentage,
                             betForm.timeFrame,
                             calculatePortfolioVolatility(ownedOpinions),
                             calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                          ).toFixed(2)}x = ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                          ).toFixed(2)}x
+                        </strong></span>
+                      </div>
+                      <div className={styles.calculationRow}>
+                        <span>Volatility Rating:</span>
+                        <span><strong>{getVolatilityRating(betForm.targetPercentage)}</strong></span>
+                      </div>
+                      <div className={styles.calculationRow}>
+                        <span>If You Win:</span>
+                        <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                          +${Math.round(betForm.amount * calculateBetMultiplier(
                             betForm.betType,
                             betForm.targetPercentage,
                             betForm.timeFrame,
                             calculatePortfolioVolatility(ownedOpinions),
                             calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
                           ))}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '2px' }}>
-                          Higher percentages and shorter timeframes increase both potential rewards and losses
-                        </div>
+                        </span>
+                      </div>
+                      <div className={styles.calculationRow}>
+                        <span>If You Lose:</span>
+                        <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                          -${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                            betForm.betType,
+                            betForm.targetPercentage,
+                            betForm.timeFrame,
+                            calculatePortfolioVolatility(ownedOpinions),
+                            calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
+                          ))}
+                        </span>
                       </div>
                     </div>
-                  )}
-
-                  <button
-                    onClick={placeBet}
-                    disabled={betForm.amount <= 0 || betForm.amount > currentUser.balance}
-                    className={styles.placeBetButton}
-                  >
-                    {betForm.amount <= 0 ? 'Enter Bet Amount' :
-                     betForm.amount > currentUser.balance ? 'Insufficient Funds' :
-                     `Place Bet: ${betForm.amount} (Risk: ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
-                       betForm.betType,
-                       betForm.targetPercentage,
-                       betForm.timeFrame,
-                       calculatePortfolioVolatility(ownedOpinions),
-                       calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                     ))})`}
-                  </button>
-                </div>
-
-                <div className={styles.modalHoldings} style={{ margin: '32px 0' }}>
-                  <h3 style={{ fontWeight: 700, fontSize: '1.2rem', marginBottom: '16px' }}>Portfolio Holdings ({ownedOpinions.length} total)</h3>
-                  {ownedOpinions.length > 0 ? (
-                    <div className={styles.holdingsGrid}>
-                      {ownedOpinions.map((opinion, index) => (
-                        <div key={index} className={styles.holdingItem}>
-                          <div>
-                            <p className={styles.holdingText} style={{ fontStyle: 'italic', fontSize: '1rem', marginBottom: '8px' }}>
-                              "{safeSlice(opinion.text, 60)}"
-                            </p>
-                            <p style={{ color: '#888', fontSize: '0.95rem', margin: 0 }}>Qty: {opinion.quantity}</p>
-                          </div>
-                          <div className={styles.holdingStats}>
-                            <p style={{ fontWeight: 700, fontSize: '1.1rem', margin: 0 }}>${opinion.currentPrice}</p>
-                            <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative} style={{ fontWeight: 700, fontSize: '1rem', margin: 0 }}>
-                              {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ 
-                      padding: '20px', 
-                      textAlign: 'center', 
-                      color: '#666',
-                      backgroundColor: '#f8f9fa',
-                      borderRadius: '8px'
+                    
+                    {/* Loss Warning */}
+                    <div style={{
+                      marginTop: '12px',
+                      padding: '10px',
+                      backgroundColor: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '6px'
                     }}>
-                      <p>📭 No holdings to display</p>
-                      <p style={{ fontSize: '14px' }}>
-                        {isBot ? 'This bot has not made any trades yet' : 'This user has not purchased any opinions yet'}
-                      </p>
+                      <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>
+                        ⚠️ Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
+                          betForm.betType,
+                          betForm.targetPercentage,
+                          betForm.timeFrame,
+                          calculatePortfolioVolatility(ownedOpinions),
+                          calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
+                        ).toFixed(2)}x = ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                          betForm.betType,
+                          betForm.targetPercentage,
+                          betForm.timeFrame,
+                          calculatePortfolioVolatility(ownedOpinions),
+                          calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
+                        ))}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '2px' }}>
+                        Higher percentages and shorter timeframes increase both potential rewards and losses
+                      </div>
                     </div>
-                  )}
-                </div>
-              </>
+                  </div>
+                )}
+
+                <button
+                  onClick={placeBet}
+                  disabled={betForm.amount <= 0 || betForm.amount > currentUser.balance}
+                  className={styles.placeBetButton}
+                >
+                  {betForm.amount <= 0 ? 'Enter Bet Amount' :
+                   betForm.amount > currentUser.balance ? 'Insufficient Funds' :
+                   `Place Bet: ${betForm.amount} (Risk: ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
+                     betForm.betType,
+                     betForm.targetPercentage,
+                     betForm.timeFrame,
+                     calculatePortfolioVolatility(ownedOpinions),
+                     calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
+                   ))})`}
+                </button>
+              </div>
+
+              <div className={styles.modalHoldings} style={{ margin: '32px 0' }}>
+                <h3 style={{ fontWeight: 700, fontSize: '1.2rem', marginBottom: '16px' }}>Portfolio Holdings ({ownedOpinions.length} total)</h3>
+                {ownedOpinions.length > 0 ? (
+                  <div className={styles.holdingsGrid}>
+                    {ownedOpinions.map((opinion, index) => (
+                      <div key={index} className={styles.holdingItem}>
+                        <div>
+                          <p className={styles.holdingText} style={{ fontStyle: 'italic', fontSize: '1rem', marginBottom: '8px' }}>
+                            "{safeSlice(opinion.text, 60)}"
+                          </p>
+                          <p style={{ color: '#888', fontSize: '0.95rem', margin: 0 }}>Qty: {opinion.quantity}</p>
+                        </div>
+                        <div className={styles.holdingStats}>
+                          <p style={{ fontWeight: 700, fontSize: '1.1rem', margin: 0 }}>${opinion.currentPrice}</p>
+                          <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative} style={{ fontWeight: 700, fontSize: '1rem', margin: 0 }}>
+                            {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ 
+                    padding: '20px', 
+                    textAlign: 'center', 
+                    color: '#666',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px'
+                  }}>
+                    <p>📭 No holdings to display</p>
+                    <p style={{ fontSize: '14px' }}>
+                      {isBot ? 'This bot has not made any trades yet' : 'This user has not purchased any opinions yet'}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

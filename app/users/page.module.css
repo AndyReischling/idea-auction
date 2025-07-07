@@ -344,6 +344,37 @@
 .exposureText {
   text-transform: uppercase;
   font-weight: 700;
+  position: relative;
+  cursor: pointer;
+}
+
+.exposureText:hover .exposureTooltip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.exposureTooltip {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  left: -240px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 220px;
+  background: #fff;
+  border: 2px solid #ff7602;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  color: #18181b;
+  font-size: 0.95rem;
+  font-style: italic;
+  font-weight: 400;
+  padding: 12px 14px;
+  z-index: 10;
+  transition: opacity 0.2s;
+  text-align: left;
+  display: flex;
+  align-items: center;
 }
 
 .portfolioValue.positive {
@@ -501,14 +532,40 @@
 }
 
 .placeBetButton {
-  background: var(--lime-green);
+  width: 100%;
+  padding: 1rem;
+  border: 2px solid #ff7602;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  transition: all var(--transition);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #fff;
   color: var(--text-black);
-  border-color: var(--lime-green);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
-.placeBetButton:hover {
-  background: var(--lime-bright);
-  transform: translateY(-1px);
+.placeBetButton:enabled {
+  background: #fff;
+  color: var(--text-black);
+  border: 2px solid #ff7602;
+}
+
+.placeBetButton:enabled:hover {
+  background: #fff;
+  border-color: #ffa94d;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  transform: translateY(-2px);
+}
+
+.placeBetButton:disabled {
+  background: var(--border-primary);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+  border: 2px solid var(--border-primary);
+  box-shadow: none;
 }
 
 /* Bet Modal */
@@ -960,23 +1017,11 @@
   background: var(--bg-card);
 }
 
-.directionButton.increase {
-  border-color: var(--lime-green);
-  color: var(--text-primary);
-}
-
-.directionButton.increase.active {
-  background: var(--lime-green);
-  color: var(--text-black);
-}
-
-.directionButton.decrease {
-  border-color: var(--coral-red);
-  color: var(--text-primary);
-}
-
+.directionButton.increase,
+.directionButton.increase.active,
+.directionButton.decrease,
 .directionButton.decrease.active {
-  background: var(--coral-red);
+  background: #fff !important;
   color: var(--text-primary);
 }
 
@@ -1097,7 +1142,7 @@
 .placeBetButton {
   width: 100%;
   padding: 1rem;
-  border: none;
+  border: 2px solid #ff7602;
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--font-size-lg);
@@ -1105,15 +1150,21 @@
   transition: all var(--transition);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  background: #fff;
+  color: var(--text-black);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .placeBetButton:enabled {
-  background: var(--lime-green);
+  background: #fff;
   color: var(--text-black);
+  border: 2px solid #ff7602;
 }
 
 .placeBetButton:enabled:hover {
-  background: var(--lime-bright);
+  background: #fff;
+  border-color: #ffa94d;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   transform: translateY(-2px);
 }
 
@@ -1121,6 +1172,8 @@
   background: var(--border-primary);
   color: var(--text-tertiary);
   cursor: not-allowed;
+  border: 2px solid var(--border-primary);
+  box-shadow: none;
 }
 
 /* Holdings in Modal */
@@ -1575,4 +1628,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.portfolioStatsBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 28px;
+}
+
+.portfolioStatsLine {
+  margin: 32x 0 !important;
+}
+
+.portfolioStatsBlock p,
+.portfolioStatsBlock span {
+  margin: 0 !important;
+}
+
+.portfolioStatsAlignGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-left: 80px;
+  margin-top: -42px;
 }

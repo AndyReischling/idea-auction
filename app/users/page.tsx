@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
-import { ScanSmiley, Balloon, Wallet, Rss } from '@phosphor-icons/react';
+import { ScanSmiley, Balloon, Wallet, Rss, ArrowFatLineUp, ArrowFatLineDown } from '@phosphor-icons/react';
 
 interface UserProfile {
   username: string;
@@ -1115,45 +1115,52 @@ export default function UsersPage() {
                       </div>
                     </div>
                     
-                    <div className={styles.portfolioStats}>
-                      <div style={{
-                        fontSize: '18px',
-                        fontWeight: 600,
-                        color: '#18181b',
-                        letterSpacing: '0.5px',
-                        textTransform: 'uppercase',
-                        marginBottom: '6px',
-                        borderBottom: '1px solid #18181b',
-                        display: 'inline-block',
-                        paddingBottom: '2px',
-                        textDecoration: 'none',
-                      }}>
-                        Portfolio value
-                      </div>
-                      <p
-                        className={styles[getPortfolioValueClass(user.portfolioValue)]}
-                        style={{
-                          fontSize: '1.2rem',
-                          fontWeight: 900,
-                          color:
-                            user.portfolioValue > 0
-                              ? '#22c55e' // lime-green
-                              : user.portfolioValue < 0
-                              ? '#ef4444' // coral-red
-                              : '#18181b', // black
-                        }}
-                      >
-                        ${user.portfolioValue.toLocaleString()}
-                      </p>
-                      <p className={`${styles.portfolioGains} ${getPerformanceClass(user.totalGainsLosses)}`}>
-                        {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
-                        ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
-                      </p>
-                      {(user.shortExposure || user.betExposure) && (
-                        <p className={styles.exposureText} style={{ fontSize: '16px', color: '#f59e0b' }}>
-                          Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
+                    <div className={styles.portfolioStatsAlignGroup}>
+                      <div className={styles.portfolioStatsBlock}>
+                        <div style={{
+                          fontSize: '18px',
+                          fontWeight: 600,
+                          color: '#18181b',
+                          letterSpacing: '0.5px',
+                          textTransform: 'uppercase',
+                          borderBottom: '1px solid #18181b',
+                          display: 'inline-block',
+                          paddingBottom: '2px',
+                          textDecoration: 'none',
+                        }} className={styles.portfolioStatsLine}>
+                          Portfolio value
+                        </div>
+                        <p
+                          className={styles[getPortfolioValueClass(user.portfolioValue)] + ' ' + styles.portfolioStatsLine}
+                          style={{
+                            fontSize: '1.2rem',
+                            fontWeight: 900,
+                            color:
+                              user.portfolioValue > 0
+                                ? '#22c55e'
+                                : user.portfolioValue < 0
+                                ? '#ef4444'
+                                : '#18181b',
+                          }}
+                        >
+                          ${user.portfolioValue.toLocaleString()}
                         </p>
-                      )}
+                        <p className={`${styles.portfolioGains} ${getPerformanceClass(user.totalGainsLosses)} ${styles.portfolioStatsLine}`}>
+                          {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
+                          ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
+                        </p>
+                        {(user.shortExposure || user.betExposure) && (
+                          <span className={styles.exposureText + ' ' + styles.portfolioStatsLine} style={{ fontSize: '16px', color: '#f59e0b', display: 'inline-block', fontWeight: 600, textTransform: 'none' }}>
+                            Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
+                            <span className={styles.exposureTooltip}>
+                              <div style={{ fontWeight: 400, fontSize: '0.95rem', fontStyle: 'italic', lineHeight: 1.5 }}>
+                                Exposure is the total amount of money you have at risk in open bets and short positions.<br/>
+                                If all your active bets and shorts lost, this is the maximum you could lose.
+                              </div>
+                            </span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1500,7 +1507,7 @@ export default function UsersPage() {
             <div className={styles.modalContent}>
               <div className={styles.modalHeader}>
                 <h2 className={styles.modalTitle}>
-                  🎯 Bet on {selectedUser.isBot ? '🤖 ' : ''}{selectedUser.username} Portfolio
+                  Bet on {selectedUser.username} Portfolio
                   {selectedUser.isCurrentUser && <span className={styles.cantBetWarning}> (Cannot bet on yourself)</span>}
                 </h2>
                 <button
@@ -1521,21 +1528,6 @@ export default function UsersPage() {
                 </div>
               ) : (
                 <>
-                  {selectedUser.isBot && (
-                    <div style={{ 
-                      padding: '12px', 
-                      backgroundColor: '#f0f9ff', 
-                      border: '1px solid #bae6fd', 
-                      borderRadius: '8px', 
-                      marginBottom: '16px',
-                      textAlign: 'center'
-                    }}>
-                      <p style={{ margin: 0, color: '#0369a1' }}>
-                        🤖 You are betting on an <strong>Autonomous Trading Bot</strong> with algorithmic strategies
-                      </p>
-                    </div>
-                  )}
-
                   <div className={styles.portfolioSummary}>
                     <div className={styles.summaryItem}>
                       <p>Current Value</p>
@@ -1556,37 +1548,62 @@ export default function UsersPage() {
                   </div>
 
                   <div className={styles.bettingForm}>
-                    <h3 className={styles.formTitle}>📊 Custom Portfolio Bet</h3>
+                    <h3 className={styles.formTitle}>
+                      I am betting that {selectedUser.username}'s portfolio will:
+                    </h3>
                     
                     <div className={styles.formGroup}>
-                      <p className={styles.formLabel}>Direction:</p>
                       <div className={styles.directionButtons}>
                         <button
                           onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
                           className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
                         >
-                          📈 INCREASE
+                          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: '2px' }}>
+                            <ArrowFatLineUp size={28} weight="fill" style={{ marginRight: 8 }} />
+                            INCREASE
+                          </span>
                         </button>
                         <button
                           onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
                           className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
                         >
-                          📉 DECREASE
+                          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: '2px' }}>
+                            <ArrowFatLineDown size={28} weight="fill" style={{ marginRight: 8 }} />
+                            DECREASE
+                          </span>
                         </button>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '1.25rem', margin: '32px 0 12px 0', paddingLeft: 2 }}>
+                        By:
                       </div>
                     </div>
 
                     <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Target Percentage: {betForm.targetPercentage}%
+                      <label className={styles.formLabel} htmlFor="target-percentage-input" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        Target Percentage:
+                        <input
+                          id="target-percentage-input"
+                          type="number"
+                          min={1}
+                          max={100}
+                          step="any"
+                          value={betForm.targetPercentage}
+                          onChange={e => {
+                            let val = parseFloat(e.target.value) || 1;
+                            if (val < 1) val = 1;
+                            if (val > 100) val = 100;
+                            setBetForm({ ...betForm, targetPercentage: val });
+                          }}
+                          style={{ width: 70, fontWeight: 700, fontSize: '1.2rem', marginLeft: 4, appearance: 'textfield' }}
+                        />%
                       </label>
                       <input
                         type="range"
-                        min="1"
-                        max="100"
-                        step="1"
+                        min={1}
+                        max={100}
+                        step="any"
                         value={betForm.targetPercentage}
-                        onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
+                        onChange={e => setBetForm({ ...betForm, targetPercentage: parseFloat(e.target.value) })}
                         className={styles.rangeInput}
                       />
                       <div className={styles.rangeLabels}>
@@ -1598,16 +1615,31 @@ export default function UsersPage() {
                     </div>
 
                     <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Timeframe: {betForm.timeFrame} days
+                      <label className={styles.formLabel} htmlFor="timeframe-input" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        Timeframe:
+                        <input
+                          id="timeframe-input"
+                          type="number"
+                          min={1}
+                          max={30}
+                          step="any"
+                          value={betForm.timeFrame}
+                          onChange={e => {
+                            let val = parseFloat(e.target.value) || 1;
+                            if (val < 1) val = 1;
+                            if (val > 30) val = 30;
+                            setBetForm({ ...betForm, timeFrame: val });
+                          }}
+                          style={{ width: 70, fontWeight: 700, fontSize: '1.2rem', marginLeft: 4, appearance: 'textfield' }}
+                        /> days
                       </label>
                       <input
                         type="range"
-                        min="1"
-                        max="30"
-                        step="1"
+                        min={1}
+                        max={30}
+                        step="any"
                         value={betForm.timeFrame}
-                        onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
+                        onChange={e => setBetForm({ ...betForm, timeFrame: parseFloat(e.target.value) })}
                         className={styles.rangeInput}
                       />
                       <div className={styles.rangeLabels}>
@@ -1628,27 +1660,15 @@ export default function UsersPage() {
                         max={currentUser.balance}
                         className={styles.amountInput}
                       />
-                      <div className={styles.quickAmounts}>
-                        {[50, 100, 250, 500].map(amount => (
-                          <button
-                            key={amount}
-                            onClick={() => setBetForm({ ...betForm, amount })}
-                            disabled={amount > currentUser.balance}
-                            className={styles.quickAmountButton}
-                          >
-                            ${amount}
-                          </button>
-                        ))}
-                      </div>
                     </div>
 
                     {betForm.amount > 0 && (
                       <div className={styles.betSummary}>
                         <div className={styles.betSummaryHeader}>
-                          <p>📊 Bet Summary:</p>
+                          <p>Bet Summary:</p>
                         </div>
                         <p>
-                          Betting ${betForm.amount} that {selectedUser.isBot ? '🤖 ' : ''}{selectedUser.username} portfolio will{' '}
+                          Betting ${betForm.amount} that {selectedUser.username} portfolio will{' '}
                           <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
                           within <strong>{betForm.timeFrame} days</strong>
                         </p>
@@ -1704,7 +1724,7 @@ export default function UsersPage() {
                           borderRadius: '6px'
                         }}>
                           <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>
-                            ⚠️ Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
+                            Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
                               betForm.betType,
                               betForm.targetPercentage,
                               betForm.timeFrame,
