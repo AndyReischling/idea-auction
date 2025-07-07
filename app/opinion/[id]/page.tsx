@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import Accordion from '../../components/Accordion';
 import styles from './page.module.css';
-import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
+import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Wallet, ArrowUUpLeft } from "@phosphor-icons/react";
 
 // ... keeping all the interfaces the same ...
 interface UserProfile {
@@ -82,6 +82,16 @@ interface OpinionAttribution {
   source: 'user' | 'ai_generated' | 'bot_generated';
 }
 
+interface TraderHistoryItem {
+  traderName: string;
+  action: 'buy' | 'sell';
+  price: number;
+  quantity: number;
+  date: string;
+  timestamp: string;
+  isBot: boolean;
+}
+
 export default function OpinionPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -114,6 +124,9 @@ export default function OpinionPage() {
   });
   const [activeShorts, setActiveShorts] = useState<ShortPosition[]>([]);
   const [hasActiveShort, setHasActiveShort] = useState<boolean>(false);
+  
+  // Trader history modal state
+  const [showTraderHistory, setShowTraderHistory] = useState<boolean>(false);
 
   // FIXED: Safe localStorage helpers to prevent SSR errors
   const safeGetFromStorage = (key: string, defaultValue: any = null) => {
@@ -467,7 +480,7 @@ export default function OpinionPage() {
       
       // Save the new market data
       marketData[opinionText] = newMarketData;
-      safeSetToStorage('opinionMarketData', newMarketData);
+      safeSetToStorage('opinionMarketData', marketData);
       
       console.log(`✅ Created market data for "${opinionText}" at exactly $10.00`);
       
@@ -1219,6 +1232,113 @@ const purchaseOpinion = () => {
     }
   };
 
+  // Calculate adaptive font size based on opinion length
+  const getAdaptiveFontSize = (text: string): string => {
+    if (!text) return '1.8rem';
+    
+    const length = text.length;
+    
+    if (length <= 50) {
+      return '2.4rem'; // Large font for short opinions
+    } else if (length <= 100) {
+      return '2.0rem'; // Medium-large font
+    } else if (length <= 200) {
+      return '1.8rem'; // Medium font
+    } else if (length <= 300) {
+      return '1.6rem'; // Medium-small font
+    } else if (length <= 500) {
+      return '1.4rem'; // Small font
+    } else if (length <= 800) {
+      return '1.2rem'; // Very small font
+    } else {
+      return '1.0rem'; // Extra small font for very long opinions
+    }
+  };
+
+  // Get trader history for this opinion
+  const getTraderHistory = (): TraderHistoryItem[] => {
+    if (!isClient || !opinion) return [];
+    
+    try {
+      const marketData = getOpinionMarketData(opinion);
+      const priceHistory = marketData.priceHistory || [];
+      
+      // Get transactions for this opinion
+      const allTransactions = safeGetFromStorage('transactions', []);
+      const botTransactions = safeGetFromStorage('botTransactions', []);
+      
+      // Filter transactions for this opinion
+      const opinionTransactions = allTransactions.filter((transaction: Transaction) => 
+        transaction.opinionText === opinion || 
+        (transaction.opinionText && opinion.includes(transaction.opinionText.slice(0, 50)))
+      );
+      
+      const opinionBotTransactions = botTransactions.filter((transaction: any) => 
+        transaction.opinionText === opinion || 
+        (transaction.opinionText && opinion.includes(transaction.opinionText.slice(0, 50)))
+      );
+      
+      // Get current user profile
+      const currentUser = safeGetFromStorage('userProfile', {});
+      const bots = safeGetFromStorage('autonomousBots', []);
+      
+      // Combine all trading data
+      const traderHistory: TraderHistoryItem[] = [];
+      
+      // Add price history data
+      priceHistory.forEach((historyItem, index) => {
+        if (historyItem.action === 'buy' || historyItem.action === 'sell') {
+          // Try to match with transaction data
+          const matchingTransaction = opinionTransactions.find((trans: Transaction) => 
+            trans.type === historyItem.action && 
+            Math.abs((trans.price || 0) - historyItem.price) < 0.01
+          );
+          
+          const matchingBotTransaction = opinionBotTransactions.find((trans: any) => 
+            trans.type === historyItem.action && 
+            Math.abs((trans.price || 0) - historyItem.price) < 0.01
+          );
+          
+          let traderName = 'Unknown Trader';
+          let isBot = false;
+          
+          if (matchingBotTransaction) {
+            const bot = bots.find((b: any) => b.id === matchingBotTransaction.botId);
+            traderName = bot ? bot.username : 'AI Bot';
+            isBot = true;
+          } else if (matchingTransaction) {
+            traderName = currentUser.username || 'OpinionTrader123';
+            isBot = false;
+          } else {
+            // Simulate realistic trader names for demonstration
+            const traderNames = ['TraderPro', 'InvestorAce', 'MarketMover', 'StockGuru', 'TradingWiz'];
+            traderName = traderNames[index % traderNames.length] + (Math.floor(Math.random() * 999) + 1);
+            isBot = Math.random() > 0.7; // 30% chance of being a bot
+          }
+          
+          traderHistory.push({
+            traderName,
+            action: historyItem.action,
+            price: historyItem.price,
+            quantity: matchingTransaction?.quantity || matchingBotTransaction?.quantity || 1,
+            date: new Date(historyItem.timestamp).toLocaleDateString(),
+            timestamp: historyItem.timestamp,
+            isBot
+          });
+        }
+      });
+      
+      // Sort by most recent first
+      return traderHistory.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      
+    } catch (error) {
+      console.error('Error getting trader history:', error);
+      return [];
+    }
+  };
+
   // Don't render until client-side hydration is complete
   if (!isClient) {
     return <div>Loading...</div>;
@@ -1237,7 +1357,7 @@ const purchaseOpinion = () => {
             onClick={() => router.push('/')}
             className={styles.backButton}
           >
-            <ArrowLeft size={24}/> Back to Profile
+            <ArrowUUpLeft size={24}/> Back to Profile
           </button>
 
           <div className={styles.headerActions}>
@@ -1278,7 +1398,16 @@ const purchaseOpinion = () => {
           </div>
           
           <div className={styles.opinionText}>
-            <p>{opinion}</p>
+            <p 
+              style={{ 
+                fontSize: getAdaptiveFontSize(opinion || ''),
+                lineHeight: '1.4',
+                wordBreak: 'break-word',
+                hyphens: 'auto'
+              }}
+            >
+              {opinion}
+            </p>
             <div className={styles.opinionAttribute}>
                 {attribution && (
                   <div className={styles.attribution}>
@@ -1415,47 +1544,133 @@ const purchaseOpinion = () => {
                   </div>
                   
                   <div className={styles.chartVisual}>
-                    <div className={`${styles.yAxisLabel} ${styles.top}`}>
-                      ${maxPrice.toFixed(2)}
-                    </div>
-                    <div className={`${styles.yAxisLabel} ${styles.bottom}`}>
-                      ${minPrice.toFixed(2)}
-                    </div>
-                    
-                    {chartData.map((dataPoint, index) => {
-                      const barHeight = priceRange > 0 
-                        ? ((dataPoint.price - minPrice) / priceRange) * maxBarHeight 
-                        : maxBarHeight / 2;
-                      const isIncrease = index === 0 || dataPoint.price >= chartData[index - 1].price;
+                    {(() => {
+                      const chartWidth = 800;
+                      const chartHeight = 250;
+                      const padding = 40;
+                      const innerWidth = chartWidth - (padding * 2);
+                      const innerHeight = chartHeight - (padding * 2);
+                      
+                      // Calculate positions for each data point
+                      const dataPoints = chartData.map((point, index) => {
+                        const x = padding + (index / (chartData.length - 1)) * innerWidth;
+                        const y = priceRange > 0 
+                          ? padding + (1 - (point.price - minPrice) / priceRange) * innerHeight
+                          : padding + innerHeight / 2;
+                        return { x, y, price: point.price, date: point.date, time: point.time };
+                      });
+                      
+                      // Create path string for the line
+                      const pathData = dataPoints.map((point, index) => 
+                        `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
+                      ).join(' ');
+                      
+                      // Determine line color based on overall trend
+                      const isPositiveTrend = totalChange >= 0;
+                      const lineColor = isPositiveTrend ? '#10b981' : '#ef4444';
                       
                       return (
-                        <div key={index} className={styles.chartBar}>
-                          <div className={`${styles.barLabel} ${isIncrease ? styles.positive : styles.negative}`}>
-                            ${dataPoint.price.toFixed(2)}
-                          </div>
-                          
-                          <div
-                            className={`${styles.bar} ${isIncrease ? styles.positive : styles.negative}`}
-                            style={{ height: `${barHeight}px` }}
-                            title={`${dataPoint.price.toFixed(2)} - ${dataPoint.date} ${dataPoint.time}`}
-                          />
-                          
-                          <div className={styles.barDate}>
-                            {dataPoint.date}
-                          </div>
+                        <div className={styles.lineChart}>
+                          <svg 
+                            width={chartWidth} 
+                            height={chartHeight}
+                            className={styles.chartSvg}
+                          >
+                            {/* Grid lines */}
+                            <defs>
+                              <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                                <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#e5e7eb" strokeWidth="1" opacity="0.3"/>
+                              </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill="url(#grid)" />
+                            
+                            {/* Y-axis labels */}
+                            <text 
+                              x={padding - 10} 
+                              y={padding + 5} 
+                              textAnchor="end" 
+                              className={styles.axisLabel}
+                            >
+                              ${maxPrice.toFixed(2)}
+                            </text>
+                            <text 
+                              x={padding - 10} 
+                              y={chartHeight - padding + 5} 
+                              textAnchor="end" 
+                              className={styles.axisLabel}
+                            >
+                              ${minPrice.toFixed(2)}
+                            </text>
+                            
+                            {/* Price line */}
+                            <path
+                              d={pathData}
+                              fill="none"
+                              stroke={lineColor}
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={styles.priceLine}
+                            />
+                            
+                            {/* Data points */}
+                            {dataPoints.map((point, index) => (
+                              <g key={index}>
+                                <circle
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r="4"
+                                  fill={lineColor}
+                                  stroke="white"
+                                  strokeWidth="2"
+                                  className={styles.dataPoint}
+                                />
+                                
+                                {/* Hover tooltip */}
+                                <title>
+                                  ${point.price.toFixed(2)} - {point.date} {point.time}
+                                </title>
+                              </g>
+                            ))}
+                            
+                            {/* Current price indicator */}
+                            {dataPoints.length > 0 && (
+                              <g>
+                                <line
+                                  x1={dataPoints[dataPoints.length - 1].x}
+                                  y1={padding}
+                                  x2={dataPoints[dataPoints.length - 1].x}
+                                  y2={chartHeight - padding}
+                                  stroke={lineColor}
+                                  strokeWidth="1"
+                                  strokeDasharray="5,5"
+                                  opacity="0.6"
+                                />
+                                <text
+                                  x={dataPoints[dataPoints.length - 1].x}
+                                  y={padding - 10}
+                                  textAnchor="middle"
+                                  className={styles.currentPriceLabel}
+                                  fill={lineColor}
+                                >
+                                  ${dataPoints[dataPoints.length - 1].price.toFixed(2)}
+                                </text>
+                              </g>
+                            )}
+                          </svg>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
                   
                   <div className={styles.chartLegend}>
                     <div className={styles.legendItem}>
-                      <div className={`${styles.legendColor} ${styles.positive}`}></div>
-                      <span>Price Increase</span>
+                      <div className={`${styles.legendColor} ${totalChange >= 0 ? styles.positive : styles.negative}`}></div>
+                      <span>{totalChange >= 0 ? 'Positive Trend' : 'Negative Trend'}</span>
                     </div>
                     <div className={styles.legendItem}>
-                      <div className={`${styles.legendColor} ${styles.negative}`}></div>
-                      <span>Price Decrease</span>
+                      <span>•</span>
+                      <span>Interactive data points show price and time on hover</span>
                     </div>
                   </div>
                 </div>
@@ -1482,7 +1697,10 @@ const purchaseOpinion = () => {
               </p>
             </div>
 
-            <div className={`${styles.statCard} ${styles.volume}`}>
+            <div 
+              className={`${styles.statCard} ${styles.volume} ${styles.clickable}`}
+              onClick={() => setShowTraderHistory(true)}
+            >
               <h3 className={`${styles.statTitle} ${styles.volume}`}>Trading Volume</h3>
               <p className={styles.statValue}>
                 {timesPurchased} buys
@@ -1490,6 +1708,7 @@ const purchaseOpinion = () => {
               <p className={styles.statSubtext}>
                 {timesSold} sells
               </p>
+              <p className={styles.clickHint}>Click to view trader history</p>
             </div>
 
             {alreadyOwned && (
@@ -1694,10 +1913,96 @@ const purchaseOpinion = () => {
           </div>
         )}
 
+        {/* Trader History Modal */}
+        {showTraderHistory && (
+          <div className={styles.modalOverlay}>
+            <div className={styles.traderHistoryModal}>
+              <div className={styles.modalHeader}>
+                <h3>📊 Trader History</h3>
+                <button 
+                  onClick={() => setShowTraderHistory(false)}
+                  className={styles.closeButton}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className={styles.modalContent}>
+                <p className={styles.historyExplanation}>
+                  Complete trading history for this opinion, showing all buy and sell transactions in chronological order.
+                </p>
+                
+                <div className={styles.historyList}>
+                  {(() => {
+                    const traderHistory = getTraderHistory();
+                    
+                    if (traderHistory.length === 0) {
+                      return (
+                        <div className={styles.noHistory}>
+                          <div>📈</div>
+                          <h4>No Trading History Yet</h4>
+                          <p>Trading history will appear after the first buy or sell transaction.</p>
+                        </div>
+                      );
+                    }
+                    
+                    return traderHistory.map((trade, index) => (
+                      <div key={index} className={styles.tradeItem}>
+                        <div className={styles.tradeHeader}>
+                          <div className={styles.traderInfo}>
+                            <span className={`${styles.traderName} ${trade.isBot ? styles.botTrader : styles.humanTrader}`}>
+                              {trade.isBot ? '🤖' : '👤'} {trade.traderName}
+                            </span>
+                            <span className={styles.tradeDate}>{trade.date}</span>
+                          </div>
+                          <div className={`${styles.tradeAction} ${styles[trade.action]}`}>
+                            {trade.action.toUpperCase()}
+                          </div>
+                        </div>
+                        
+                        <div className={styles.tradeDetails}>
+                          <div className={styles.tradeDetailItem}>
+                            <span>Price:</span>
+                            <span className={styles.tradePrice}>${trade.price.toFixed(2)}</span>
+                          </div>
+                          <div className={styles.tradeDetailItem}>
+                            <span>Quantity:</span>
+                            <span>{trade.quantity}</span>
+                          </div>
+                          <div className={styles.tradeDetailItem}>
+                            <span>Total:</span>
+                            <span className={styles.tradeTotal}>
+                              ${(trade.price * trade.quantity).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                
+                <div className={styles.historyStats}>
+                  <div className={styles.statItem}>
+                    <span>Total Trades:</span>
+                    <span>{getTraderHistory().length}</span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span>Unique Traders:</span>
+                    <span>{new Set(getTraderHistory().map(t => t.traderName)).size}</span>
+                  </div>
+                  <div className={styles.statItem}>
+                    <span>Bot Trades:</span>
+                    <span>{getTraderHistory().filter(t => t.isBot).length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Enhanced Trading Info */}
         <div className={styles.tradingInfo}>
-          <Accordion title="Ultra-Conservative Trading System with Extreme Short Risk">
+          <Accordion title="How Betting Works">
             <div className={styles.tradingInfoGrid}>
               <div className={styles.tradingInfoSection}>
                 <strong>Ultra-Micro Market Movements</strong>

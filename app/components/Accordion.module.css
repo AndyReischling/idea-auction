@@ -5,7 +5,7 @@
 
 .header {
   display: flex;
-  justify-content: space-between;   /* pushes chevron to the far right */
+  justify-content: center;   /* centers the content */
   align-items: center;
   width: 100%;
   padding: var(--spacing-2xl) var(--spacing-xl) var(--spacing-2xl) 0;
@@ -14,15 +14,22 @@
   color: var(--text-primary);
   font: inherit;
   cursor: pointer;
+  position: relative;
 }
 
 .title {
-  font-size: var(--font-size-lg);
-  text-align: left;
+  font-size: var(--font-size-4xl);
+  color: var(--black);
+  font-family: var(--font-number);
+  font-weight: 800;
+  margin: 0;
+  text-align: center;
 }
 
 .chevron {
   flex-shrink: 0;                   /* never shrinks, stays aligned */
+  position: absolute;
+  right: 0;                         /* positions chevron to the right */
 }
 
 .body {
