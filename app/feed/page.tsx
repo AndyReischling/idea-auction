@@ -2513,9 +2513,9 @@ export default function FeedPage() {
                           );
                         } else {
                           return (
-                            <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
-                              {getActivityIcon(activity.type)}
-                            </div>
+                      <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
+                        {getActivityIcon(activity.type)}
+                      </div>
                           );
                         }
                       })()}

@@ -1025,13 +1025,13 @@ export default function UsersPage() {
                 minHeight: '40px'
               }}>
                 <span className={styles.sortLabel} style={{ justifySelf: 'start' }}>Sort by:</span>
-                <button
+            <button
                   onClick={() => setSortBy('recent_performance')}
                   className={`${styles.sortButton} ${sortBy === 'recent_performance' ? styles.active : ''}`}
                   style={{ justifySelf: 'center' }}
                 >
                   7-Day Performance
-                </button>
+            </button>
                 <button
                   onClick={() => setSortBy('value')}
                   className={`${styles.sortButton} ${sortBy === 'value' ? styles.active : ''}`}
@@ -1054,11 +1054,11 @@ export default function UsersPage() {
                   Volatility
                 </button>
                 <span className={styles.lastRefresh} style={{ justifySelf: 'end', textAlign: 'right' }}>
-                  Last updated: {new Date(lastRefresh).toLocaleTimeString()}
-                </span>
+            Last updated: {new Date(lastRefresh).toLocaleTimeString()}
+          </span>
               </div>
             </div>
-          </div>
+        </div>
           
           {sortedUsers.length === 0 ? (
             <div style={{ 
@@ -1143,15 +1143,15 @@ export default function UsersPage() {
                                 : '#18181b',
                           }}
                         >
-                          ${user.portfolioValue.toLocaleString()}
-                        </p>
+                        ${user.portfolioValue.toLocaleString()}
+                      </p>
                         <p className={`${styles.portfolioGains} ${getPerformanceClass(user.totalGainsLosses)} ${styles.portfolioStatsLine}`}>
-                          {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
-                          ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
-                        </p>
-                        {(user.shortExposure || user.betExposure) && (
+                        {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
+                        ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
+                      </p>
+                      {(user.shortExposure || user.betExposure) && (
                           <span className={styles.exposureText + ' ' + styles.portfolioStatsLine} style={{ fontSize: '16px', color: '#f59e0b', display: 'inline-block', fontWeight: 600, textTransform: 'none' }}>
-                            Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
+                          Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
                             <span className={styles.exposureTooltip}>
                               <div style={{ fontWeight: 400, fontSize: '0.95rem', fontStyle: 'italic', lineHeight: 1.5 }}>
                                 Exposure is the total amount of money you have at risk in open bets and short positions.<br/>
@@ -1159,7 +1159,7 @@ export default function UsersPage() {
                               </div>
                             </span>
                           </span>
-                        )}
+                      )}
                       </div>
                     </div>
                   </div>

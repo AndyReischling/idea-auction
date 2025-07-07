@@ -6,8 +6,6 @@ import Sidebar from '../../components/Sidebar';
 import Accordion from '../../components/Accordion';
 import styles from './page.module.css';
 import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown } from "@phosphor-icons/react";
-// Make sure to install recharts: npm install recharts
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 // ... keeping all the interfaces the same ...
 interface UserProfile {
@@ -116,7 +114,6 @@ export default function OpinionPage() {
   });
   const [activeShorts, setActiveShorts] = useState<ShortPosition[]>([]);
   const [hasActiveShort, setHasActiveShort] = useState<boolean>(false);
-  const [showBuySellModal, setShowBuySellModal] = useState(false);
 
   // FIXED: Safe localStorage helpers to prevent SSR errors
   const safeGetFromStorage = (key: string, defaultValue: any = null) => {
@@ -1348,12 +1345,16 @@ const purchaseOpinion = () => {
             </div>
           ))}
 
-          {/* Price Chart - now a line chart */}
+          {/* Price Chart - keeping the existing implementation */}
           <div className={styles.chartContainer}>
+            {/* <h3 className={styles.chartTitle}>📈 Price History Chart</h3> */}
+            
             {(() => {
               if (!opinion) return null;
+              
               const marketData = getOpinionMarketData(opinion);
               const priceHistory = marketData.priceHistory || [];
+              
               let chartData = [];
               if (priceHistory.length > 0) {
                 chartData = priceHistory.map(item => ({
@@ -1368,6 +1369,7 @@ const purchaseOpinion = () => {
                   { price: currentPrice, date: 'Now', time: '', action: 'current' }
                 ];
               }
+              
               if (chartData.length === 0) {
                 return (
                   <div className={styles.chartEmpty}>
@@ -1377,16 +1379,86 @@ const purchaseOpinion = () => {
                   </div>
                 );
               }
+              
+              const prices = chartData.map(d => d.price);
+              const minPrice = Math.min(...prices);
+              const maxPrice = Math.max(...prices);
+              const priceRange = maxPrice - minPrice;
+              const firstPrice = prices[0];
+              const lastPrice = prices[prices.length - 1];
+              const totalChange = lastPrice - firstPrice;
+              const totalChangePercent = firstPrice > 0 ? ((totalChange / firstPrice) * 100) : 0;
+              
+              const maxBarHeight = 150;
+              
               return (
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 16, right: 24, left: 0, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" minTickGap={16} />
-                    <YAxis domain={['auto', 'auto']} width={40} />
-                    <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`}/>
-                    <Line type="monotone" dataKey="price" stroke="#1976d2" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div>
+                  <div className={styles.chartSummary}>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Starting Price</div>
+                      <div className={styles.summaryValue}>${firstPrice.toFixed(2)}</div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Current Price</div>
+                      <div className={styles.summaryValue}>${lastPrice.toFixed(2)}</div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Total Change</div>
+                      <div className={`${styles.summaryValue} ${totalChange >= 0 ? styles.positive : styles.negative}`}>
+                        {totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)} ({totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
+                      </div>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <div className={styles.summaryLabel}>Data Points</div>
+                      <div className={styles.summaryValue}>{chartData.length}</div>
+                    </div>
+                  </div>
+                  
+                  <div className={styles.chartVisual}>
+                    <div className={`${styles.yAxisLabel} ${styles.top}`}>
+                      ${maxPrice.toFixed(2)}
+                    </div>
+                    <div className={`${styles.yAxisLabel} ${styles.bottom}`}>
+                      ${minPrice.toFixed(2)}
+                    </div>
+                    
+                    {chartData.map((dataPoint, index) => {
+                      const barHeight = priceRange > 0 
+                        ? ((dataPoint.price - minPrice) / priceRange) * maxBarHeight 
+                        : maxBarHeight / 2;
+                      const isIncrease = index === 0 || dataPoint.price >= chartData[index - 1].price;
+                      
+                      return (
+                        <div key={index} className={styles.chartBar}>
+                          <div className={`${styles.barLabel} ${isIncrease ? styles.positive : styles.negative}`}>
+                            ${dataPoint.price.toFixed(2)}
+                          </div>
+                          
+                          <div
+                            className={`${styles.bar} ${isIncrease ? styles.positive : styles.negative}`}
+                            style={{ height: `${barHeight}px` }}
+                            title={`${dataPoint.price.toFixed(2)} - ${dataPoint.date} ${dataPoint.time}`}
+                          />
+                          
+                          <div className={styles.barDate}>
+                            {dataPoint.date}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  <div className={styles.chartLegend}>
+                    <div className={styles.legendItem}>
+                      <div className={`${styles.legendColor} ${styles.positive}`}></div>
+                      <span>Price Increase</span>
+                    </div>
+                    <div className={styles.legendItem}>
+                      <div className={`${styles.legendColor} ${styles.negative}`}></div>
+                      <span>Price Decrease</span>
+                    </div>
+                  </div>
+                </div>
               );
             })()}
           </div>
@@ -1394,20 +1466,32 @@ const purchaseOpinion = () => {
           {/* Market Stats */}
           <div className={styles.marketStats}>
             <div className={`${styles.statCard} ${styles.price}`}>
+
               <h3 className={`${styles.statTitle} ${styles.price}`}>Current Price</h3>
               <p className={styles.statValue}>${currentPrice.toFixed(2)}</p>
               <p className={styles.statSubtext}>Base price: $10.00</p>
             </div>
+
             <div className={`${styles.statCard} ${styles.trend}`}>
               <h3 className={`${styles.statTitle} ${styles.trend}`}>Market Trend</h3>
-              <p className={`${styles.statValue} ${styles[trend.class]}`}>{trend.emoji} {trend.text}</p>
-              <p className={styles.statSubtext}>Net demand: {timesPurchased - timesSold}</p>
+              <p className={`${styles.statValue} ${styles[trend.class]}`}>
+                {trend.emoji} {trend.text}
+              </p>
+              <p className={styles.statSubtext}>
+                Net demand: {timesPurchased - timesSold}
+              </p>
             </div>
-            <div className={`${styles.statCard} ${styles.volume}`} onClick={() => setShowBuySellModal(true)} style={{ cursor: 'pointer' }}>
+
+            <div className={`${styles.statCard} ${styles.volume}`}>
               <h3 className={`${styles.statTitle} ${styles.volume}`}>Trading Volume</h3>
-              <p className={styles.statValue}>{timesPurchased} buys</p>
-              <p className={styles.statSubtext}>{timesSold} sells</p>
+              <p className={styles.statValue}>
+                {timesPurchased} buys
+              </p>
+              <p className={styles.statSubtext}>
+                {timesSold} sells
+              </p>
             </div>
+
             {alreadyOwned && (
               <div className={`${styles.statCard} ${styles.sell}`}>
 
@@ -1439,45 +1523,181 @@ const purchaseOpinion = () => {
             )}
           </div>
 
-          {/* Modal for buyers/sellers */}
-          {showBuySellModal && opinion && (
-            <div className={styles.modalOverlay} onClick={e => { if (e.target === e.currentTarget) setShowBuySellModal(false); }}>
-              <div className={styles.buySellModal}>
-                <div className={styles.modalHeader}>
-                  <h3>Recent Buyers & Sellers</h3>
-                  <button onClick={() => setShowBuySellModal(false)} className={styles.closeButton}>×</button>
-                </div>
-                <div className={styles.modalContent}>
-                  <div style={{ display: 'flex', gap: 32 }}>
-                    <div>
-                      <h4>Buys</h4>
-                      <ul>
-                        {getOpinionMarketData(opinion).priceHistory.filter(h => h.action === 'buy').slice(-10).reverse().map((h, i) => (
-                          <li key={i}>
-                            ${h.price.toFixed(2)} on {new Date(h.timestamp).toLocaleString()}
-                          </li>
-                        ))}
-                      </ul>
+          {/* Short Bet Modal */}
+          {showShortModal && (
+          <div className={styles.modalOverlay}>
+            <div className={styles.shortModal}>
+              <div className={styles.modalHeader}>
+                <h3>Short Bet Configuration</h3>
+                <button 
+                  onClick={() => setShowShortModal(false)}
+                  className={styles.closeButton}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className={styles.modalContent}>
+                <p className={styles.shortExplanation}>
+                  ⚠️ <strong>EXTREME RISK:</strong> Bet that this opinion's price will drop by your target percentage within the time limit. 
+                  <br/><strong>PENALTIES:</strong> 
+                  <br/>• If time expires → owe 100x current market price!
+                  <br/>• If you sell shares early → must buy {shortSettings.targetDropPercentage} units at current price!
+                  <br/>• Only way to avoid penalties: reach target price in time!
+                  <br/><strong>NEW:</strong> You can now bet on any price drop from 1% to 100% (complete crash to $0.00)!
+                </p>
+                
+                <div className={styles.shortSettings}>
+                  <div className={styles.settingGroup}>
+                    <label>Bet Amount ($)</label>
+                    <input
+                      type="number"
+                      min="10"
+                      max={userProfile.balance}
+                      value={shortSettings.betAmount}
+                      onChange={(e) => setShortSettings({
+                        ...shortSettings,
+                        betAmount: Math.max(10, Math.min(userProfile.balance, parseInt(e.target.value) || 10))
+                      })}
+                      className={styles.settingInput}
+                    />
+                    <span className={styles.settingHint}>Available: ${userProfile.balance.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className={styles.settingGroup}>
+                    <label>Target Price Drop (%)</label>
+                    <div className={styles.percentageInputContainer}>
+                      <input
+                        type="range"
+                        min="1"
+                        max="100"
+                        value={shortSettings.targetDropPercentage}
+                        onChange={(e) => setShortSettings({
+                          ...shortSettings,
+                          targetDropPercentage: parseInt(e.target.value)
+                        })}
+                        className={styles.settingSlider}
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={shortSettings.targetDropPercentage}
+                        onChange={(e) => {
+                          const value = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
+                          setShortSettings({
+                            ...shortSettings,
+                            targetDropPercentage: value
+                          });
+                        }}
+                        className={styles.percentageInput}
+                        placeholder="%"
+                      />
                     </div>
-                    <div>
-                      <h4>Sells</h4>
-                      <ul>
-                        {getOpinionMarketData(opinion).priceHistory.filter(h => h.action === 'sell').slice(-10).reverse().map((h, i) => (
-                          <li key={i}>
-                            ${h.price.toFixed(2)} on {new Date(h.timestamp).toLocaleString()}
-                          </li>
-                        ))}
-                      </ul>
+                    <div className={styles.sliderValue}>
+                      {shortSettings.targetDropPercentage}% 
+                      (${currentPrice.toFixed(2)} → ${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)})
+                    </div>
+                    <div className={styles.percentageHint}>
+                      1% = Easy target, low reward • 50% = Moderate target • 100% = Price goes to $0.00, extreme reward
+                    </div>
+                  </div>
+                  
+                  <div className={styles.settingGroup}>
+                    <label>Time Limit (hours)</label>
+                    <select
+                      value={shortSettings.timeLimit}
+                      onChange={(e) => setShortSettings({
+                        ...shortSettings,
+                        timeLimit: parseInt(e.target.value)
+                      })}
+                      className={styles.settingSelect}
+                    >
+                      <option value={1}>1 hour (High Risk)</option>
+                      <option value={6}>6 hours (Medium-High Risk)</option>
+                      <option value={12}>12 hours (Medium Risk)</option>
+                      <option value={24}>24 hours (Standard)</option>
+                      <option value={48}>48 hours (Low Risk)</option>
+                      <option value={72}>72 hours (Very Low Risk)</option>
+                    </select>
+                  </div>
+                </div>
+                
+                <div className={styles.betSummary}>
+                  <div className={styles.summaryHeader}>
+                    <h4>📊 Bet Summary</h4>
+                  </div>
+                  <div className={styles.summaryDetails}>
+                    <div className={styles.summaryRow}>
+                      <span>Current Price:</span>
+                      <span>${currentPrice.toFixed(2)}</span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Target Price:</span>
+                      <span>${(currentPrice * (1 - shortSettings.targetDropPercentage / 100)).toFixed(2)}</span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Bet Amount:</span>
+                      <span>-${shortSettings.betAmount.toFixed(2)}</span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Potential Winnings:</span>
+                      <span className={styles.winnings}>
+                        +${calculateShortWinnings(shortSettings.betAmount, shortSettings.targetDropPercentage, shortSettings.timeLimit).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Multiplier:</span>
+                      <span>{(calculateShortWinnings(shortSettings.betAmount, shortSettings.targetDropPercentage, shortSettings.timeLimit) / shortSettings.betAmount).toFixed(2)}x</span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Early Exit Penalty:</span>
+                      <span className={styles.penalty}>
+                        -${(shortSettings.targetDropPercentage * currentPrice).toFixed(2)} ({shortSettings.targetDropPercentage} units × ${currentPrice.toFixed(2)})
+                      </span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Expiration Penalty:</span>
+                      <span className={styles.penalty}>
+                        -${(currentPrice * 100).toFixed(2)} (100x current price)
+                      </span>
+                    </div>
+                    <div className={styles.summaryRow}>
+                      <span>Expires:</span>
+                      <span>
+                        {new Date(Date.now() + shortSettings.timeLimit * 60 * 60 * 1000).toLocaleString()}
+                      </span>
                     </div>
                   </div>
                 </div>
+                
+                <div className={styles.modalActions}>
+                  <button
+                    onClick={() => setShowShortModal(false)}
+                    className={`${styles.modalButton} ${styles.cancel}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={placeShortBet}
+                    disabled={userProfile.balance < shortSettings.betAmount}
+                    className={`${styles.modalButton} ${styles.confirm}`}
+                  >
+                    {userProfile.balance < shortSettings.betAmount 
+                      ? 'Insufficient Funds' 
+                      : `Place Short Bet (${shortSettings.betAmount.toFixed(2)})`
+                    }
+                  </button>
+                </div>
               </div>
             </div>
-          )}
+          </div>
+        )}
+
 
         {/* Enhanced Trading Info */}
         <div className={styles.tradingInfo}>
-          <Accordion title="How Betting Works">
+          <Accordion title="Ultra-Conservative Trading System with Extreme Short Risk">
             <div className={styles.tradingInfoGrid}>
               <div className={styles.tradingInfoSection}>
                 <strong>Ultra-Micro Market Movements</strong>

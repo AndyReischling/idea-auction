@@ -151,7 +151,7 @@
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.5);
-  }
+}
 }
 
 /* Target the SVG bulb's circle for yellow fill */

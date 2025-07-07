@@ -1638,7 +1638,7 @@
 }
 
 .portfolioStatsLine {
-  margin: 32x 0 !important;
+  margin: 18px 0 !important;
 }
 
 .portfolioStatsBlock p,
@@ -1651,5 +1651,5 @@
   flex-direction: column;
   align-items: flex-start;
   margin-left: 80px;
-  margin-top: -42px;
+  margin-top: -32px;
 }
