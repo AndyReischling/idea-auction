@@ -53,7 +53,7 @@ class GlobalActivityTracker {
     }
 
     this.initialized = true;
-    console.log('🔧 Global Activity Tracker initialized with user:', this.currentUser?.username);
+    // console.log('🔧 Global Activity Tracker initialized with user:', this.currentUser?.username);
   }
 
   private safeGetFromStorage(key: string, defaultValue: any = null) {
@@ -82,7 +82,7 @@ class GlobalActivityTracker {
 
   public setCurrentUser(user: any) {
     this.currentUser = user;
-    console.log('🔧 Global Activity Tracker user updated:', user?.username);
+    // console.log('🔧 Global Activity Tracker user updated:', user?.username);
   }
 
   // CORE METHOD: Add to global feed (works with existing feed system)
@@ -118,7 +118,7 @@ class GlobalActivityTracker {
       }));
     }
 
-    console.log(`🔥 Added to globalActivityFeed: ${activity.username} ${activity.type} ${activity.opinionText?.slice(0, 30)}...`);
+    // console.log(`🔥 Added to globalActivityFeed: ${activity.username} ${activity.type} ${activity.opinionText?.slice(0, 30)}...`);
   }
 
   private getRelativeTime(timestamp: string): string {
@@ -150,7 +150,7 @@ class GlobalActivityTracker {
       isBot: false
     });
 
-    console.log(`🔥 trackTrade: ${this.currentUser.username} ${action} ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)} = $${totalCost.toFixed(2)}`);
+    // console.log(`🔥 trackTrade: ${this.currentUser.username} ${action} ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)} = $${totalCost.toFixed(2)}`);
   }
 
   // WRAPPER: interceptBuyTransaction function  
@@ -172,7 +172,7 @@ class GlobalActivityTracker {
       isBot: false
     });
 
-    console.log(`🔥 interceptBuyTransaction: ${this.currentUser.username} bought ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)}`);
+    // console.log(`🔥 interceptBuyTransaction: ${this.currentUser.username} bought ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)}`);
   }
 
   // WRAPPER: interceptSellTransaction function
@@ -293,17 +293,18 @@ if (typeof window !== 'undefined') {
   (window as any).getGlobalActivities = globalActivityTracker.getActivities.bind(globalActivityTracker);
   (window as any).forceRefreshFeed = globalActivityTracker.forceRefreshFeed.bind(globalActivityTracker);
   
-  console.log('🌐 Global Activity Tracker loaded - provides functions expected by opinion page!');
-  console.log('📱 Available functions that your code expects:');
-  console.log('  ✅ addToGlobalFeed(activity)');
-  console.log('  ✅ trackTrade(action, opinion, quantity, price, totalCost)');
-  console.log('  ✅ interceptBuyTransaction(opinion, quantity, price)');
-  console.log('  ✅ interceptSellTransaction(opinion, quantity, price)');
-  console.log('📱 Additional functions:');
-  console.log('  - trackShortActivity(type, opinionText, amount)');
-  console.log('  - trackOpinionGeneration(opinionText, earnings)');
-  console.log('  - getActivityStats() - View activity statistics');
-  console.log('  - getGlobalActivities() - View all activities');
+  // Console logs temporarily disabled for auth debugging
+  // console.log('🌐 Global Activity Tracker loaded - provides functions expected by opinion page!');
+  // console.log('📱 Available functions that your code expects:');
+  // console.log('  ✅ addToGlobalFeed(activity)');
+  // console.log('  ✅ trackTrade(action, opinion, quantity, price, totalCost)');
+  // console.log('  ✅ interceptBuyTransaction(opinion, quantity, price)');
+  // console.log('  ✅ interceptSellTransaction(opinion, quantity, price)');
+  // console.log('📱 Additional functions:');
+  // console.log('  - trackShortActivity(type, opinionText, amount)');
+  // console.log('  - trackOpinionGeneration(opinionText, earnings)');
+  // console.log('  - getActivityStats() - View activity statistics');
+  // console.log('  - getGlobalActivities() - View all activities');
 }
 
 export default globalActivityTracker;

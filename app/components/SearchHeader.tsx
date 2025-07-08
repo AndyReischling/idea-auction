@@ -1,6 +1,7 @@
 'use client';
 
 import SemanticSearch from './SemanticSearch';
+import AuthButton from './AuthButton';
 
 export default function SearchHeader() {
   return (
@@ -17,14 +18,22 @@ export default function SearchHeader() {
         gap: '16px',
         alignItems: 'center',
       }}>
-        <h1 style={{
-          color: 'white',
-          margin: 0,
-          fontSize: '24px',
-          fontWeight: '700',
+        <div style={{
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}>
-          🔍 Explore the Platform
-        </h1>
+          <h1 style={{
+            color: 'white',
+            margin: 0,
+            fontSize: '24px',
+            fontWeight: '700',
+          }}>
+            🔍 Explore the Platform
+          </h1>
+          <AuthButton />
+        </div>
         <SemanticSearch />
       </div>
     </div>

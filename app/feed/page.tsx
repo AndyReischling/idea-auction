@@ -15,6 +15,7 @@ import { Plus } from '@phosphor-icons/react';
 import { HandPeace } from '@phosphor-icons/react';
 import { DiceSix } from '@phosphor-icons/react';
 import { ChartLineDown } from '@phosphor-icons/react';
+import AuthButton from '../components/AuthButton';
 
 interface ActivityFeedItem {
   id: string;
@@ -2375,6 +2376,7 @@ export default function FeedPage() {
             <a href="/" className="nav-button traders">
               <Wallet size={24} /> My Portfolio
             </a>
+            <AuthButton />
           </div>
         </div>
 

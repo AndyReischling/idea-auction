@@ -9,6 +9,7 @@ import { RssSimple } from '@phosphor-icons/react/dist/icons/RssSimple';
 import { Wallet } from '@phosphor-icons/react/dist/icons/Wallet';
 import { NotePencil } from '@phosphor-icons/react/dist/icons/NotePencil';
 import { PlayCircle } from '@phosphor-icons/react/dist/icons/PlayCircle';
+import AuthButton from '../components/AuthButton';
 
 function GenerateOpinions() {
   const [opinion, setOpinion] = useState('Click the button to generate an opinion!');
@@ -135,6 +136,7 @@ function GenerateOpinions() {
             <a href="/" className="nav-button traders">
              <Wallet size={24} /> My Portfolio
             </a>
+            <AuthButton />
           </div>
         </div>
 

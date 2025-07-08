@@ -131,7 +131,7 @@ class AutonomousBotSystem {
 
   // AUTO-INITIALIZE: Create test data and start bots automatically
   private autoInitialize(): void {
-    console.log('🤖 Auto-initializing bot system with UI-friendly settings...');
+    // console.log('🤖 Auto-initializing bot system with UI-friendly settings...');
     
     // Check if opinions exist, if not create them
     this.ensureOpinionsExist();
@@ -140,9 +140,9 @@ class AutonomousBotSystem {
     this.optimizeForPerformance();
     
     // Start the bot system with reduced load
-    this.startBots();
+    // this.startBots(); // TEMPORARILY DISABLED FOR AUTH DEBUGGING
     
-    console.log('✅ Bot system auto-initialized with UI-optimized settings!');
+    // console.log('✅ Bot system auto-initialized with UI-optimized settings!');
   }
 
   // UPDATED: Use unified price calculation

@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import styles from './page.module.css';
 import './global.css'; 
 import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, Wallet, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Robot } from "@phosphor-icons/react";
+import AuthButton from './components/AuthButton';
 
 
 interface UserProfile {
@@ -333,7 +334,7 @@ export default function UserProfile() {
             <a href="/generate" className="nav-button generate">
             <Balloon size={24} /> Generate
             </a>
-
+            <AuthButton />
           </div>
         </div>
 
