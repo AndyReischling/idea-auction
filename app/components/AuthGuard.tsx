@@ -56,10 +56,10 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
             You are already logged in as {userProfile.username}.
           </p>
           <button
-            onClick={() => window.location.href = '/'}
+            onClick={() => window.location.href = '/profile'}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Go to Dashboard
+            Go to Profile
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
@@ -102,6 +103,7 @@ interface PortfolioSnapshot {
 }
 
 export default function UsersPage() {
+  const router = useRouter();
   const [isClient, setIsClient] = useState(false);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
@@ -1004,9 +1006,12 @@ export default function UsersPage() {
             <a href="/feed" className="nav-button feed">
               <Rss size={24} /> Live Feed
             </a>
-            <a href="/" className="nav-button traders">
+            <button 
+              onClick={() => router.push('/profile')}
+              className="nav-button traders"
+            >
               <Wallet size={24} /> My Portfolio
-            </a>
+            </button>
           </div>
         </div>
 

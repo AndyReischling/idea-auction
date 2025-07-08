@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useAuth } from '../../lib/auth-context';
+import AuthModal from '../../components/AuthModal';
 import Sidebar from '../../components/Sidebar';
 import Accordion from '../../components/Accordion';
 import styles from './page.module.css';
@@ -95,6 +97,7 @@ interface TraderHistoryItem {
 export default function OpinionPage() {
   const { id } = useParams();
   const router = useRouter();
+  const { user, userProfile: authUserProfile } = useAuth();
   const [opinion, setOpinion] = useState<string | null>(null);
   const [opinions, setOpinions] = useState<{ id: string; text: string }[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile>({
@@ -127,6 +130,9 @@ export default function OpinionPage() {
   
   // Trader history modal state
   const [showTraderHistory, setShowTraderHistory] = useState<boolean>(false);
+  
+  // Auth modal state
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
 
   // FIXED: Safe localStorage helpers to prevent SSR errors
   const safeGetFromStorage = (key: string, defaultValue: any = null) => {
@@ -153,6 +159,19 @@ export default function OpinionPage() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Update user profile when authenticated user profile changes
+  useEffect(() => {
+    if (authUserProfile) {
+      setUserProfile({
+        username: authUserProfile.username,
+        balance: authUserProfile.balance,
+        joinDate: new Date(authUserProfile.joinDate?.toDate?.() || authUserProfile.joinDate).toLocaleDateString(),
+        totalEarnings: authUserProfile.totalEarnings,
+        totalLosses: authUserProfile.totalLosses
+      });
+    }
+  }, [authUserProfile]);
 
   // Get attribution for an opinion
   const getOpinionAttribution = (opinionText: string, opinionIndex: number): OpinionAttribution => {
@@ -691,6 +710,11 @@ export default function OpinionPage() {
 
   // Place short bet
   const placeShortBet = () => {
+    // Check authentication first
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
     if (!opinion || userProfile.balance < shortSettings.betAmount || !isClient) {
       setMessage('Insufficient funds for this bet!');
       setTimeout(() => setMessage(''), 5000);
@@ -895,6 +919,11 @@ export default function OpinionPage() {
 
   // FIXED: Purchase opinion with proper feed integration and SHORT POSITION BLOCKING
 const purchaseOpinion = () => {
+    // Check authentication first
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
   if (!opinion || !isClient) return;
 
   if (userProfile.balance < currentPrice) {
@@ -1053,6 +1082,11 @@ const purchaseOpinion = () => {
 
   // FIXED: Sell opinion with proper decimal handling and metadata tracking
   const sellOpinion = () => {
+    // Check authentication first
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
     if (!opinion || !alreadyOwned || ownedQuantity === 0 || !isClient) return;
 
     // Check if user has active short position - if so, they must buy units equal to target drop percentage
@@ -1354,7 +1388,7 @@ const purchaseOpinion = () => {
         {/* Header with Navigation */}
         <div className={styles.pageHeader}>
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/profile')}
             className={styles.backButton}
           >
             <ArrowUUpLeft size={24}/> Back to Profile
@@ -2113,7 +2147,13 @@ const purchaseOpinion = () => {
             
             {/* Short Bet Button */}
             <button
-              onClick={() => setShowShortModal(true)}
+              onClick={() => {
+                if (!user) {
+                  setShowAuthModal(true);
+                  return;
+                }
+                setShowShortModal(true);
+              }}
               disabled={hasActiveShort || ownedQuantity > 0}
               className={`${styles.actionButton} ${styles.short}`}
             >
@@ -2125,6 +2165,12 @@ const purchaseOpinion = () => {
         </div>
         
       </main>
+
+      {/* Authentication Modal */}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+      />
     </div>
   );
 }

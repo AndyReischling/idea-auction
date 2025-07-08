@@ -692,9 +692,12 @@ export default function UserDetailPage() {
             <a href="/users" className="nav-button traders">
               <ScanSmiley size={24} /> View Traders
             </a>
-            <a href="/" className="nav-button traders">
+            <button 
+              onClick={() => router.push('/profile')}
+              className="nav-button traders"
+            >
               <Wallet size={24} /> My Portfolio
-            </a>
+            </button>
           </div>
         </div>
 

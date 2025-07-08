@@ -10,6 +10,7 @@ import { Wallet } from '@phosphor-icons/react/dist/icons/Wallet';
 import { NotePencil } from '@phosphor-icons/react/dist/icons/NotePencil';
 import { PlayCircle } from '@phosphor-icons/react/dist/icons/PlayCircle';
 import AuthButton from '../components/AuthButton';
+import { useRouter } from 'next/navigation';
 
 function GenerateOpinions() {
   const [opinion, setOpinion] = useState('Click the button to generate an opinion!');
@@ -20,6 +21,7 @@ function GenerateOpinions() {
   const [lastGenerated, setLastGenerated] = useState<string>('');
 
   const MAX_CHARS = 500;
+  const router = useRouter();
 
   useEffect(() => {
     try {
@@ -133,9 +135,12 @@ function GenerateOpinions() {
             <a href="/feed" className="nav-button feed">
               <RssSimple size={24} /> Live Feed
             </a>
-            <a href="/" className="nav-button traders">
+            <button 
+              onClick={() => router.push('/profile')}
+              className="nav-button traders"
+            >
              <Wallet size={24} /> My Portfolio
-            </a>
+            </button>
             <AuthButton />
           </div>
         </div>

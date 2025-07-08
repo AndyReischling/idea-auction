@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import '../global.css';
 
 // Define BotProfile interface locally
 interface BotProfile {
@@ -33,6 +35,7 @@ interface BotActivity {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
   const [bots, setBots] = useState<BotProfile[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [recentActivity, setRecentActivity] = useState<BotActivity[]>([]);
@@ -541,20 +544,21 @@ export default function AdminPage() {
 
       {/* Navigation */}
       <div style={{ marginTop: '40px', textAlign: 'center' }}>
-        <a 
-          href="/" 
+        <button 
+          onClick={() => router.push('/')}
           style={{ 
             padding: '12px 24px',
             backgroundColor: '#3b82f6',
             color: 'white',
-            textDecoration: 'none',
+            border: 'none',
             borderRadius: '8px',
             fontWeight: '600',
-            marginRight: '12px'
+            marginRight: '12px',
+            cursor: 'pointer'
           }}
         >
           ← Back to Home
-        </a>
+        </button>
         <a 
           href="/feed" 
           style={{ 

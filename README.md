@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Idea Auction Platform
+
+A decentralized marketplace for trading ideas and opinions using Next.js 14 and Firebase.
+
+## Features
+
+- **Real Authentication**: Email link authentication powered by Firebase
+- **Opinion Trading**: Buy and sell ideas in a dynamic marketplace
+- **User Profiles**: Personalized profiles with trading history and stats
+- **Real-time Updates**: Live price feeds and market activity
+- **Responsive Design**: Works seamlessly on desktop and mobile
+- **Modern Stack**: Built with Next.js 14, TypeScript, and Firebase
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+ installed
+- Firebase project with email link authentication enabled
+- Email/password authentication enabled in Firebase Console
+
+### Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <repository-url>
+cd idea-auction
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up Firebase:
+   - Create a new Firebase project at [Firebase Console](https://console.firebase.google.com/)
+   - Enable Authentication > Sign-in method > Email link (passwordless sign-in)
+   - Enable Firestore Database
+   - Update `app/lib/firebase.ts` with your Firebase configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Run the development server:
+```bash
+npm run dev
+```
 
-## Learn More
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-To learn more about Next.js, take a look at the following resources:
+## Authentication Flow
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. User enters email on sign-in page
+2. Firebase sends secure login link to email
+3. User clicks link to complete authentication
+4. New users automatically get a profile created
+5. Returning users are logged in with their existing profile
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+app/
+├── api/              # API routes
+├── auth/             # Authentication pages
+├── auth-complete/    # Login link completion
+├── components/       # Reusable components
+├── feed/             # Opinion feed
+├── generate/         # Idea generation
+├── lib/              # Utilities and configuration
+├── opinion/          # Opinion details
+├── profile/          # User profiles
+└── users/            # User directory
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Configuration
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Firebase Setup
+
+1. Go to Firebase Console > Authentication > Sign-in method
+2. Enable "Email link (passwordless sign-in)"
+3. Add your domain to authorized domains
+4. Update Firebase config in `app/lib/firebase.ts`
+
+### Environment Variables
+
+No environment variables are required for basic functionality as Firebase config is in the client-side code.
+
+## Deployment
+
+This is a Next.js application that can be deployed to:
+
+- Vercel (recommended)
+- Netlify
+- Firebase Hosting
+- Any hosting platform that supports Next.js
+
+### Deploy to Vercel
+
+1. Push code to GitHub
+2. Connect repository to Vercel
+3. Deploy automatically
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.

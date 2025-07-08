@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../lib/auth-context';
+import { useRouter } from 'next/navigation';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,72 +10,70 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const { login, register, resetPassword, checkUsernameAvailability } = useAuth();
+  const { signIn, signUp, checkUsernameAvailability } = useAuth();
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     setLoading(true);
+    setLoadingStep('');
 
     try {
-      if (mode === 'login') {
-        await login(email, password);
+      if (mode === 'signin') {
+        setLoadingStep('Signing in...');
+        await signIn(email, password);
+        setLoadingStep('Complete! Redirecting...');
+        setSuccess('Sign in successful!');
         onClose();
-      } else if (mode === 'register') {
+        router.push('/profile');
+      } else {
+        // Sign up mode
         if (!username.trim()) {
-          setError('Username is required');
-          return;
+          throw new Error('Username is required');
         }
         
-        if (username.length < 3) {
-          setError('Username must be at least 3 characters long');
-          return;
+        setLoadingStep('Checking username...');
+        const isAvailable = await checkUsernameAvailability(username);
+        if (!isAvailable) {
+          throw new Error('Username is already taken. Please choose another one.');
         }
         
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters long');
-          return;
-        }
-        
-        await register(email, password, username);
-        setSuccess('Account created! Please check your email to verify your account.');
-        
-        // Switch to login mode after successful registration
-        setTimeout(() => {
-          setMode('login');
-          setSuccess('');
-        }, 3000);
-      } else if (mode === 'forgot') {
-        await resetPassword(email);
-        setSuccess('Password reset email sent! Check your inbox.');
+        setLoadingStep('Creating account...');
+        await signUp(email, password, username);
+        setLoadingStep('Complete! Redirecting...');
+        setSuccess('Account created successfully!');
+        onClose();
+        router.push('/profile');
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      let errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      
+      // Provide specific guidance for common auth errors
+      if (errorMessage.includes('auth/invalid-credential')) {
+        if (mode === 'signin') {
+          errorMessage = 'Invalid email or password. Please check your credentials or create a new account.';
+        }
+      } else if (errorMessage.includes('auth/user-not-found')) {
+        errorMessage = 'No account found with this email. Would you like to create a new account?';
+      } else if (errorMessage.includes('auth/wrong-password')) {
+        errorMessage = 'Incorrect password. Please try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleUsernameChange = async (value: string) => {
-    setUsername(value);
-    
-    // Real-time username availability check
-    if (value.length >= 3) {
-      const isAvailable = await checkUsernameAvailability(value);
-      if (!isAvailable) {
-        setError('Username is already taken');
-      } else {
-        setError('');
-      }
+      setLoadingStep('');
     }
   };
 
@@ -86,60 +85,43 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setSuccess('');
   };
 
-  const switchMode = (newMode: 'login' | 'register' | 'forgot') => {
-    setMode(newMode);
+  const switchMode = () => {
+    setMode(mode === 'signin' ? 'signup' : 'signin');
     resetForm();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">
-            {mode === 'login' ? 'Login' : mode === 'register' ? 'Create Account' : 'Reset Password'}
+    <div className="auth-modal-overlay">
+      <div className="auth-modal-content">
+        <div className="auth-modal-header">
+          <h2 className="auth-modal-title">
+            {mode === 'signin' ? 'Sign In' : 'Create Account'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
+            className="auth-modal-close"
           >
             ×
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="auth-message auth-message-error">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+          <div className="auth-message auth-message-success">
             {success}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-                Username
-              </label>
-              <input
-                type="text"
-                id="username"
-                value={username}
-                onChange={(e) => handleUsernameChange(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter your username"
-              />
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+        <form onSubmit={handleSubmit} className="auth-form">
+          <div className="auth-form-group">
+            <label htmlFor="email" className="auth-form-label">
               Email
             </label>
             <input
@@ -148,24 +130,42 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="auth-form-input"
               placeholder="Enter your email"
             />
           </div>
 
-          {mode !== 'forgot' && (
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
+          <div className="auth-form-group">
+            <label htmlFor="password" className="auth-form-label">
+              Password
+            </label>
+            <input
+              type="password"
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="auth-form-input"
+              placeholder="Enter your password"
+              minLength={6}
+            />
+          </div>
+
+          {mode === 'signup' && (
+            <div className="auth-form-group">
+              <label htmlFor="username" className="auth-form-label">
+                Username
               </label>
               <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                type="text"
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter your password"
+                className="auth-form-input"
+                placeholder="Choose a username"
+                minLength={3}
+                maxLength={20}
               />
             </div>
           )}
@@ -173,62 +173,33 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed"
+            className="auth-form-submit"
           >
-            {loading ? 'Loading...' : 
-             mode === 'login' ? 'Login' : 
-             mode === 'register' ? 'Create Account' : 
-             'Send Reset Email'}
+            {loading ? (
+              <div className="flex items-center justify-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>{loadingStep || (mode === 'signin' ? 'Signing in...' : 'Creating account...')}</span>
+              </div>
+            ) : (
+              mode === 'signin' ? 'Sign In' : 'Create Account'
+            )}
           </button>
         </form>
 
-        <div className="mt-6 text-center space-y-2">
-          {mode === 'login' && (
-            <>
-              <p className="text-sm text-gray-600">
-                Don't have an account?{' '}
-                <button
-                  onClick={() => switchMode('register')}
-                  className="text-blue-600 hover:text-blue-800"
-                >
-                  Sign up
-                </button>
-              </p>
-              <p className="text-sm text-gray-600">
-                Forgot your password?{' '}
-                <button
-                  onClick={() => switchMode('forgot')}
-                  className="text-blue-600 hover:text-blue-800"
-                >
-                  Reset password
-                </button>
-              </p>
-            </>
-          )}
-
-          {mode === 'register' && (
-            <p className="text-sm text-gray-600">
-              Already have an account?{' '}
-              <button
-                onClick={() => switchMode('login')}
-                className="text-blue-600 hover:text-blue-800"
-              >
-                Login
-              </button>
-            </p>
-          )}
-
-          {mode === 'forgot' && (
-            <p className="text-sm text-gray-600">
-              Remember your password?{' '}
-              <button
-                onClick={() => switchMode('login')}
-                className="text-blue-600 hover:text-blue-800"
-              >
-                Login
-              </button>
-            </p>
-          )}
+        <div className="auth-modal-footer">
+          <p className="auth-footer-text">
+            {mode === 'signin' ? 
+              "Don't have an account? " : 
+              "Already have an account? "
+            }
+            <button
+              type="button"
+              onClick={switchMode}
+              className="auth-footer-link"
+            >
+              {mode === 'signin' ? 'Create one' : 'Sign in'}
+            </button>
+          </p>
         </div>
       </div>
     </div>

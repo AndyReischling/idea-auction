@@ -1,642 +1,591 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from './lib/auth-context';
+import AuthModal from './components/AuthModal';
 import Sidebar from './components/Sidebar';
-import styles from './page.module.css';
-import './global.css'; 
-import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, Wallet, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Robot } from "@phosphor-icons/react";
 import AuthButton from './components/AuthButton';
+import { TrendUp, TrendDown, Minus, Sparkle, Clock, Fire, Eye, ChartLineUp, ChartLineDown, User, SignIn } from '@phosphor-icons/react';
 
-
-interface UserProfile {
-  username: string;
-  balance: number;
-  joinDate: string;
-  totalEarnings: number;
-  totalLosses: number;
-}
-
-interface OpinionAsset {
+interface OpinionWithPrice {
   id: string;
   text: string;
-  purchasePrice: number;
   currentPrice: number;
-  purchaseDate: string;
-  quantity: number;
+  priceChange: number;
+  priceChangePercent: number;
+  trend: 'up' | 'down' | 'neutral';
+  volatility: 'high' | 'medium' | 'low';
+  createdAt: number;
+  originalIndex: number;
+  timesPurchased: number;
+  timesSold: number;
+  volume: number;
+  author: string;
+  isBot: boolean;
 }
 
-interface Transaction {
-  id: string;
-  type: 'buy' | 'sell' | 'earn' | 'short_win' | 'short_loss' | 'short_place';
-  opinionId?: string;
-  opinionText?: string;
-  shortId?: string;
-  amount: number;
-  date: string;
-}
-
-interface AdvancedBet {
-  id: string;
-  bettor: string;
-  targetUser: string;
-  betType: 'increase' | 'decrease';
-  targetPercentage: number;
-  amount: number;
-  timeFrame: number;
-  initialPortfolioValue: number;
-  currentPortfolioValue: number;
-  placedDate: string;
-  expiryDate: string;
-  status: 'active' | 'won' | 'lost' | 'expired';
-  multiplier: number;
-  potentialPayout: number;
-  volatilityRating: 'Low' | 'Medium' | 'High';
-}
-
-interface ShortPosition {
-  id: string;
+interface OpinionMarketData {
   opinionText: string;
-  opinionId: string;
-  betAmount: number;
-  targetDropPercentage: number;
-  startingPrice: number;
-  targetPrice: number;
-  potentialWinnings: number;
-  expirationDate: string;
-  createdDate: string;
-  status: 'active' | 'won' | 'lost' | 'expired';
+  timesPurchased: number;
+  timesSold: number;
+  currentPrice: number;
+  basePrice: number;
+  volatility?: number;
+  lastUpdated: string;
+  priceHistory?: { price: number; timestamp: string; action: 'buy' | 'sell' | 'create' }[];
 }
 
-// Combined betting activity type
-interface BettingActivity {
-  id: string;
-  type: 'portfolio_bet' | 'short_bet';
-  title: string;
-  subtitle: string;
-  amount: number;
-  potentialPayout: number;
-  status: 'active' | 'won' | 'lost' | 'expired';
-  placedDate: string;
-  expiryDate: string;
-  daysRemaining?: number;
-  additionalInfo?: string;
-  multiplier?: number;
-  volatilityRating?: string;
-  targetUser?: string;
-  opinionText?: string;
-  progress?: number; // For shorts, percentage towards target
-}
+export default function HomePage() {
+  const [opinions, setOpinions] = useState<OpinionWithPrice[]>([]);
+  const [featuredOpinions, setFeaturedOpinions] = useState<OpinionWithPrice[]>([]);
+  const [trendingOpinions, setTrendingOpinions] = useState<OpinionWithPrice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
+  const [priceFlash, setPriceFlash] = useState<{[key: string]: string}>({});
+  
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
 
-export default function UserProfile() {
-  const [userProfile, setUserProfile] = useState<UserProfile>({
-    username: 'OpinionTrader123',
-    balance: 10000,
-    joinDate: new Date().toLocaleDateString(),
-    totalEarnings: 0,
-    totalLosses: 0
-  });
+  // Log auth state for debugging
+  useEffect(() => {
+    console.log('HomePage: Auth state - user:', !!user, 'userProfile:', !!userProfile);
+  }, [user, userProfile]);
 
-  const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [allOpinions, setAllOpinions] = useState<string[]>([]);
-  const [myBets, setMyBets] = useState<AdvancedBet[]>([]);
-  const [myShorts, setMyShorts] = useState<ShortPosition[]>([]);
-  const [combinedBettingActivity, setCombinedBettingActivity] = useState<BettingActivity[]>([]);
-  const [botsRunning, setBotsRunning] = useState<boolean>(false);
-
-  // Get current price for an opinion
-  const getCurrentPrice = (opinionText: string): number => {
+  // Safe localStorage helpers
+  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
+    if (typeof window === 'undefined') return defaultValue;
     try {
-      const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
-      if (marketData[opinionText]) {
-        return marketData[opinionText].currentPrice;
-      }
-      return 10; // Default base price
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
     } catch (error) {
-      return 10;
+      console.error(`Error reading localStorage key ${key}:`, error);
+      return defaultValue;
     }
   };
 
-  // Calculate days remaining
-  const getDaysRemaining = (expiryDate: string): number => {
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-    const diffTime = expiry.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
+  const safeSetToStorage = (key: string, value: any) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(`Error writing to localStorage key ${key}:`, error);
+    }
   };
 
-  // Calculate hours remaining for shorts
-  const getHoursRemaining = (expiryDate: string): number => {
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-    const diffTime = expiry.getTime() - now.getTime();
-    const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
-    return Math.max(0, diffHours);
-  };
-
-  // Combine betting activities
-  const combineBettingActivities = () => {
-    const activities: BettingActivity[] = [];
-
-    // Add portfolio bets
-    myBets.forEach(bet => {
-      activities.push({
-        id: `bet_${bet.id}`,
-        type: 'portfolio_bet',
-        title: `Portfolio Bet: ${bet.targetUser}`,
-        subtitle: `Betting $${bet.amount} on ${bet.betType} by ${bet.targetPercentage}%`,
-        amount: bet.amount,
-        potentialPayout: bet.potentialPayout,
-        status: bet.status,
-        placedDate: bet.placedDate,
-        expiryDate: bet.expiryDate,
-        daysRemaining: bet.status === 'active' ? getDaysRemaining(bet.expiryDate) : undefined,
-        additionalInfo: `${bet.timeFrame} days | ${bet.volatilityRating} volatility`,
-        multiplier: bet.multiplier,
-        volatilityRating: bet.volatilityRating,
-        targetUser: bet.targetUser
-      });
-    });
-
-    // Add short positions
-    myShorts.forEach(short => {
-      const currentPrice = getCurrentPrice(short.opinionText);
-      const progress = ((short.startingPrice - currentPrice) / (short.startingPrice - short.targetPrice)) * 100;
-      const hoursRemaining = short.status === 'active' ? getHoursRemaining(short.expirationDate) : 0;
-      
-      activities.push({
-        id: `short_${short.id}`,
-        type: 'short_bet',
-        title: `Short Bet: Opinion #${short.opinionId}`,
-        subtitle: `Betting $${short.betAmount} on ${short.targetDropPercentage}% price drop`,
-        amount: short.betAmount,
-        potentialPayout: short.potentialWinnings,
-        status: short.status,
-        placedDate: new Date(short.createdDate).toLocaleDateString(),
-        expiryDate: new Date(short.expirationDate).toLocaleDateString(),
-        daysRemaining: short.status === 'active' ? Math.ceil(hoursRemaining / 24) : undefined,
-        additionalInfo: `$${short.startingPrice} → $${short.targetPrice} | ${hoursRemaining}h remaining`,
-        opinionText: short.opinionText,
-        progress: Math.max(0, Math.min(100, progress))
-      });
-    });
-
-    // Sort by date (most recent first)
-    activities.sort((a, b) => new Date(b.placedDate).getTime() - new Date(a.placedDate).getTime());
+  // Calculate price based on market activity
+  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
+    const netDemand = timesPurchased - timesSold;
+    let priceMultiplier;
     
-    setCombinedBettingActivity(activities);
+    if (netDemand >= 0) {
+      priceMultiplier = Math.pow(1.001, netDemand);
+    } else {
+      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
+    }
+    
+    const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
+    return Math.round(calculatedPrice * 100) / 100;
   };
 
-  // Load data from localStorage
-  useEffect(() => {
-    try {
-      // Load existing opinions for sidebar - FILTER OUT NULL VALUES
-      const stored = localStorage.getItem('opinions');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
-          setAllOpinions(validOpinions);
-        }
-      }
-
-      // Load user profile
-      const storedProfile = localStorage.getItem('userProfile');
-      if (storedProfile) {
-        setUserProfile(JSON.parse(storedProfile));
-      }
-
-      // Load owned opinions
-      const storedAssets = localStorage.getItem('ownedOpinions');
-      if (storedAssets) {
-        setOwnedOpinions(JSON.parse(storedAssets));
-      }
-
-      // Load transactions
-      const storedTransactions = localStorage.getItem('transactions');
-      if (storedTransactions) {
-        setRecentTransactions(JSON.parse(storedTransactions));
-      }
-
-      // Load my bets
-      const storedBets = localStorage.getItem('advancedBets');
-      if (storedBets) {
-        const allBets = JSON.parse(storedBets);
-        // Filter to only show current user's bets
-        const userBets = allBets.filter((bet: AdvancedBet) => bet.bettor === userProfile.username);
-        setMyBets(userBets);
-      }
-
-      // Load short positions
-      const storedShorts = localStorage.getItem('shortPositions');
-      if (storedShorts) {
-        const allShorts = JSON.parse(storedShorts) as ShortPosition[];
-        setMyShorts(allShorts);
-      }
-    } catch (error) {
-      console.error('Error loading user data:', error);
+  // Get market data for an opinion
+  const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
+    const marketData = safeGetFromStorage('opinionMarketData', {});
+    
+    if (marketData[opinionText]) {
+      const data = marketData[opinionText];
+      return {
+        opinionText,
+        timesPurchased: data.timesPurchased || 0,
+        timesSold: data.timesSold || 0,
+        currentPrice: data.currentPrice || 10,
+        basePrice: data.basePrice || 10,
+        volatility: data.volatility || 1.0,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
+        priceHistory: data.priceHistory || []
+      };
     }
-  }, [userProfile.username]);
-
-  // Update combined activities when bets or shorts change
-  useEffect(() => {
-    combineBettingActivities();
-  }, [myBets, myShorts]);
-
-  // Monitor bot status (simplified version)
-  useEffect(() => {
-    const checkBotStatus = () => {
-      const botsEnabled = localStorage.getItem('botsAutoStart') === 'true';
-      setBotsRunning(botsEnabled);
+    
+    return {
+      opinionText,
+      timesPurchased: 0,
+      timesSold: 0,
+      currentPrice: 10,
+      basePrice: 10,
+      volatility: 1.0,
+      lastUpdated: new Date().toISOString(),
+      priceHistory: []
     };
+  };
 
-    checkBotStatus();
-    const interval = setInterval(checkBotStatus, 5000);
+  // Calculate price trend
+  const calculatePriceTrend = (marketData: OpinionMarketData): { trend: 'up' | 'down' | 'neutral', priceChange: number, priceChangePercent: number } => {
+    const { priceHistory = [] } = marketData;
+    
+    if (priceHistory.length < 2) {
+      return { trend: 'neutral', priceChange: 0, priceChangePercent: 0 };
+    }
+    
+    const recentPrices = priceHistory.slice(-5);
+    const previousPrice = recentPrices[0]?.price || 10;
+    const currentPrice = marketData.currentPrice;
+    
+    const priceChange = currentPrice - previousPrice;
+    const priceChangePercent = ((priceChange / previousPrice) * 100);
+    
+    const trend = priceChange > 0.1 ? 'up' : priceChange < -0.1 ? 'down' : 'neutral';
+    
+    return {
+      trend,
+      priceChange: Math.round(priceChange * 100) / 100,
+      priceChangePercent: Math.round(priceChangePercent * 100) / 100
+    };
+  };
+
+  // Get opinion attribution
+  const getOpinionAttribution = (opinionText: string): { author: string, isBot: boolean } => {
+    const attributions = safeGetFromStorage('opinionAttributions', {});
+    
+    if (attributions[opinionText]) {
+      return {
+        author: attributions[opinionText].author,
+        isBot: attributions[opinionText].isBot
+      };
+    }
+    
+    const botTransactions = safeGetFromStorage('botTransactions', []);
+    const botGenerated = botTransactions.find((t: any) => 
+      t.type === 'earn' && t.opinionText === opinionText
+    );
+    
+    if (botGenerated) {
+      const bots = safeGetFromStorage('autonomousBots', []);
+      const bot = bots.find((b: any) => b.id === botGenerated.botId);
+      return {
+        author: bot ? bot.username : 'AI Bot',
+        isBot: true
+      };
+    }
+    
+    return {
+      author: 'Community',
+      isBot: false
+    };
+  };
+
+  // Load and process opinions
+  const loadOpinions = () => {
+    const storedOpinions: string[] = safeGetFromStorage('opinions', []);
+    const processedOpinions: OpinionWithPrice[] = [];
+    
+    storedOpinions.forEach((text: string, index: number) => {
+      if (!text || typeof text !== 'string') return;
+      
+      const marketData = getOpinionMarketData(text);
+      const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
+      const attribution = getOpinionAttribution(text);
+      
+      // Check for price changes to trigger flash effect
+      const oldPrice = opinions.find(op => op.text === text)?.currentPrice || marketData.currentPrice;
+      if (oldPrice !== marketData.currentPrice) {
+        setPriceFlash(prev => ({
+          ...prev,
+          [text]: trend === 'up' ? 'price-up' : trend === 'down' ? 'price-down' : 'neutral'
+        }));
+        
+        // Clear flash after animation
+        setTimeout(() => {
+          setPriceFlash(prev => {
+            const newFlash = { ...prev };
+            delete newFlash[text];
+            return newFlash;
+          });
+        }, 1000);
+      }
+      
+      processedOpinions.push({
+        id: index.toString(),
+        text,
+        currentPrice: marketData.currentPrice,
+        priceChange,
+        priceChangePercent,
+        trend,
+        volatility: marketData.volatility! > 1.5 ? 'high' : marketData.volatility! < 0.8 ? 'low' : 'medium',
+        createdAt: Date.now() - (index * 60000), // Mock creation time
+        originalIndex: index,
+        timesPurchased: marketData.timesPurchased,
+        timesSold: marketData.timesSold,
+        volume: marketData.timesPurchased + marketData.timesSold,
+        author: attribution.author,
+        isBot: attribution.isBot
+      });
+    });
+    
+    // Sort by creation time (newest first)
+    processedOpinions.sort((a, b) => b.createdAt - a.createdAt);
+    
+    setOpinions(processedOpinions);
+    
+    // Set featured opinions (high volume or significant price changes)
+    const featured = processedOpinions
+      .filter(op => op.volume > 5 || Math.abs(op.priceChangePercent) > 10)
+      .slice(0, 3);
+    setFeaturedOpinions(featured);
+    
+    // Set trending opinions (most active)
+    const trending = processedOpinions
+      .filter(op => op.volume > 0)
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, 6);
+    setTrendingOpinions(trending);
+    
+    setLastUpdateTime(new Date().toLocaleTimeString());
+  };
+
+  // Handle opinion click
+  const handleOpinionClick = (opinion: OpinionWithPrice) => {
+    router.push(`/opinion/${opinion.originalIndex}`);
+  };
+
+  // Format price change
+  const formatPriceChange = (change: number, percent: number) => {
+    const sign = change >= 0 ? '+' : '';
+    return `${sign}$${change.toFixed(2)} (${sign}${percent.toFixed(1)}%)`;
+  };
+
+  // Get trend icon
+  const getTrendIcon = (trend: 'up' | 'down' | 'neutral') => {
+    switch (trend) {
+      case 'up': return <ChartLineUp size={16} className="status-positive" />;
+      case 'down': return <ChartLineDown size={16} className="status-negative" />;
+      default: return <Minus size={16} className="status-neutral" />;
+    }
+  };
+
+  // Get volatility indicator
+  const getVolatilityBadge = (volatility: 'high' | 'medium' | 'low') => {
+    const badges = {
+      high: { emoji: '🔥', label: 'High Vol', class: 'status-negative' },
+      medium: { emoji: '⚡', label: 'Med Vol', class: 'status-neutral' },
+      low: { emoji: '💧', label: 'Low Vol', class: 'status-positive' }
+    };
+    
+    const badge = badges[volatility];
+    return (
+      <span className={`${badge.class}`} style={{ fontSize: '12px', fontWeight: '500' }}>
+        {badge.emoji} {badge.label}
+      </span>
+    );
+  };
+
+  // Auto-refresh opinions
+  useEffect(() => {
+    loadOpinions();
+    setLoading(false);
+    
+    const interval = setInterval(() => {
+      loadOpinions();
+    }, 3000); // Update every 3 seconds for dynamic feel
+    
     return () => clearInterval(interval);
   }, []);
 
-  // Save user profile to localStorage
-  const saveUserProfile = (profile: UserProfile) => {
-    setUserProfile(profile);
-    localStorage.setItem('userProfile', JSON.stringify(profile));
-  };
+  // Listen for localStorage changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      loadOpinions();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
-  // Simplified bot control handlers
-  const handleStartBots = () => {
-    localStorage.setItem('botsAutoStart', 'true');
-    setBotsRunning(true);
-    console.log('🤖 Bots enabled globally');
-  };
-
-  const handleStopBots = () => {
-    localStorage.setItem('botsAutoStart', 'false');
-    setBotsRunning(false);
-    console.log('🛑 Bots disabled globally');
-  };
-
-  // Calculate portfolio value
-  const portfolioValue = ownedOpinions.reduce((total, opinion) => 
-    total + (opinion.currentPrice * opinion.quantity), 0
-  );
-
-  // Calculate total gains/losses
-  const totalGainsLosses = ownedOpinions.reduce((total, opinion) => 
-    total + ((opinion.currentPrice - opinion.purchasePrice) * opinion.quantity), 0
-  );
-
-  // Calculate total active bets (both portfolio and shorts)
-  const totalActiveBets = combinedBettingActivity.filter(activity => activity.status === 'active').length;
-
-  // SAFE SLICE FUNCTION - prevents null errors
-  const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
-    if (!text || typeof text !== 'string') return 'Unknown text';
-    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-  };
+  if (loading) {
+    return (
+      <div className="page-container">
+        <div className="loading">
+          <div className="spinner"></div>
+          Loading market data...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
-      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
+      <Sidebar opinions={opinions.map(op => ({ id: op.id, text: op.text }))} />
       
       <main className="main-content">
-        {/* Header with Navigation Buttons */}
+        {/* Header */}
         <div className="header-section">
-          {/* User Header */}
           <div className="user-header">
             <div className="user-avatar">
-              {userProfile.username[0].toUpperCase()}
+              <Sparkle size={32} />
             </div>
             <div className="user-info">
               <div className="user-name">
-                <div>{userProfile.username}</div>
-                <div style={{ 
-                  fontSize: '12px', 
-                  color: botsRunning ? '#10b981' : '#ef4444',
-                  fontWeight: '400',
-                  marginTop: '4px'
-                }}>
-                  🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
+                <div>Opinion Market</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  <Clock size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  Last updated: {lastUpdateTime}
                 </div>
               </div>
-              <p>Member since {userProfile.joinDate} Opinion Trader & Collector</p>
-              {/* Bot status indicator */} 
+              <p>Live opinion trading marketplace • {opinions.length} active opinions</p>
             </div>
           </div>
 
-          {/* Navigation Buttons */}
           <div className="navigation-buttons">
-            <a href="/users" className="nav-button traders">
-              <ScanSmiley size={24} /> View Traders
+            <a href="/feed" className="nav-button">
+              <Fire size={20} /> Live Feed
             </a>
-            <a href="/feed" className="nav-button feed">
-            <RssSimple size={24} /> Live Feed
+            <a href="/users" className="nav-button">
+              <User size={20} /> Traders
             </a>
-            <a href="/generate" className="nav-button generate">
-            <Balloon size={24} /> Generate
+            <a href="/generate" className="nav-button">
+              <Sparkle size={20} /> Generate
             </a>
-            <AuthButton />
+            {user ? (
+              <AuthButton />
+            ) : (
+              <button 
+                onClick={() => setShowAuthModal(true)}
+                className="nav-button"
+              >
+                <SignIn size={20} /> Login
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Global Bot Controls */}
+        {/* Market Status */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: '10px',
-          marginBottom: '20px',
-          padding: '12px',
-          backgroundColor: botsRunning ? '#C1DECA' : '#DDB4B4',
+          background: 'var(--bg-section)',
+          padding: '16px',
+          borderRadius: '8px',
+          marginBottom: '24px',
+          border: '1px solid var(--border-secondary)'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            fontSize: '14px',
-            color: botsRunning ? '#4B6453' : '#8E3A3A',
-            marginLeft: '10px'
-          }}>
-            {botsRunning ? 
-              'AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
-              'AI traders are paused globally'
-            }
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', color: 'var(--text-primary)' }}>
+              Market Status
+            </h3>
+            <div className="status-positive" style={{ fontSize: '12px', fontWeight: '500' }}>
+              ● Live Trading
+            </div>
           </div>
-          <button
-            onClick={botsRunning ? handleStopBots : handleStartBots}
-            style={{
-              padding: '0px 16px',
-              fontSize: '14px',
-              fontWeight: '400',
-              cursor: 'pointer',
-              background: 'none',
-              // backgroundColor: botsRunning ? '#DDB4B4' : '#C1DECA',
-              color: 'black',
-              transition: 'all 0.2s ease',
-              border: 'none',
-            }}
-          >
-            {botsRunning ? 'Stop Global Bots' : 'Start Global Bots'}
-          </button>
-        </div>
-
-        {/* Wallet Overview */}
-        <div className={styles.walletOverview}>
-          <div className={`${styles.walletCard} ${styles.balance}`}>
-            <h3>Wallet Balance</h3>
-            <p>${userProfile.balance.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.portfolio}`}>
-            <h3>Portfolio Value</h3>
-            <p>${portfolioValue.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`}>
-            <h3>P&L</h3>
-            <p>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.bets}`}>
-            <h3>Active Bets</h3>
-            <p>{totalActiveBets}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Total Opinions</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>{opinions.length}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Trending</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--green)' }}>{trendingOpinions.length}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Featured</div>
+              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>{featuredOpinions.length}</div>
+            </div>
           </div>
         </div>
 
-        {/* Opinion Portfolio */}
-        <section className="section">
-          <h2 className="section-title">My Opinion Portfolio</h2>
-          
-          {ownedOpinions.length === 0 ? (
-            <div className="empty-state">
-              <p>You don't own any opinions yet!</p>
-              <p>Start by buying some opinions from the marketplace.</p>
-              {botsRunning && (
-                <p style={{ color: '#8b5cf6', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are creating market activity across the platform right now!
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-2 p-grid">
-              {ownedOpinions.map((opinion) => {
-                const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
-                const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
-                
-                // Find the opinion index in allOpinions array for proper routing
-                const opinionIndex = allOpinions.findIndex(op => op === opinion.text);
-                const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
-                
-                return (
-                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card p-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <div className="p-card-header">
-                      <div className="card-content">
-                        <p className="p-card-opinion-text">{safeSlice(opinion.text, 80)}</p>
-                        <p className="card-subtitle">Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}</p>
-                      </div>
-                      <div className={styles.opinionPricing}>
-                        <p>Bought: ${opinion.purchasePrice}</p>
-                        <div className={styles.currentPricing}>
-                          <p>${opinion.currentPrice}</p>
-                          <p className={gainLoss >= 0 ? 'status-positive' : 'status-negative'}>
-                            {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)} ({gainLossPercent.toFixed(1)}%)
-                          </p>
+        {/* Featured Opinions */}
+        {featuredOpinions.length > 0 && (
+          <section style={{ marginBottom: '32px' }}>
+            <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Fire size={24} /> Featured Opinions
+            </h2>
+            <div className="grid grid-3">
+              {featuredOpinions.map((opinion) => (
+                <div
+                  key={opinion.id}
+                  onClick={() => handleOpinionClick(opinion)}
+                  className={`card ${priceFlash[opinion.text] || ''}`}
+                  style={{ 
+                    cursor: 'pointer',
+                    transform: 'translateY(0)',
+                    transition: 'all 0.3s ease',
+                    border: '2px solid var(--green)',
+                    background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-section) 100%)'
+                  }}
+                >
+                  <div className="card-header">
+                    <div className="card-content">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          {getTrendIcon(opinion.trend)}
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
+                          </span>
                         </div>
-                      </div>
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Enhanced My Betting Activity */}
-        <section className="section">
-          <h2 className="section-title">My Portfolio Bets & Short Positions</h2>
-          
-          {combinedBettingActivity.length === 0 ? (
-            <div className="empty-state">
-              <p>You haven't placed any bets or short positions yet!</p>
-              <p>Visit the <a href="/users">Traders page</a> to bet on portfolios or short specific opinions.</p>
-              {botsRunning && (
-                <p style={{ color: '#633FD0', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are actively placing bets and shorts - check the Live Feed to see their activity!
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-2">
-              {combinedBettingActivity.slice(0, 10).map((activity) => {
-                return (
-                  <div key={activity.id} className="card">
-                    <div className="card-header">
-                      <div className="card-content">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <span className={`${styles.betType} ${styles[activity.type]}`}>
-                              {activity.type === 'portfolio_bet' ? 'Portfolio' : 'Short'}
-                            </span>
-                            <span className={`${styles.betStatus} ${styles[activity.status]}`}>
-                              {activity.status}
-                            </span>
-                          </div>
-                          {activity.status === 'active' && activity.daysRemaining !== null && (
-                            <span className="card-subtitle">
-                              {activity.daysRemaining} days left
-                            </span>
-                          )}
-                        </div>
-                        
-                        <p style={{ fontWeight: '600', marginBottom: '4px' }}>
-                          {activity.title}
-                        </p>
-                        <p className="card-subtitle">
-                          {activity.subtitle}
-                        </p>
-                        
-                        {/* Show opinion text for shorts */}
-                        {activity.type === 'short_bet' && activity.opinionText && (
-                          <p className="card-subtitle" style={{ 
-                            fontStyle: 'italic', 
-                            marginTop: '8px',
-                            padding: '8px',
-                            backgroundColor: '#f8f9fa',
-                            borderRadius: '4px',
-                            fontSize: '12px'
-                          }}>
-                            "{safeSlice(activity.opinionText, 60)}"
-                          </p>
-                        )}
-                        
-                        {/* Progress bar for active shorts */}
-                        {activity.type === 'short_bet' && activity.status === 'active' && activity.progress !== undefined && (
-                          <div style={{ marginTop: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                              <span>Progress to target:</span>
-                              <span>{activity.progress.toFixed(1)}%</span>
-                            </div>
-                            <div style={{ 
-                              width: '100%', 
-                              height: '6px', 
-                              backgroundColor: '#e5e7eb', 
-                              borderRadius: '3px',
-                              overflow: 'hidden'
-                            }}>
-                              <div style={{
-                                width: `${Math.min(100, activity.progress)}%`,
-                                height: '100%',
-                                backgroundColor: activity.progress >= 100 ? '#10b981' : activity.progress >= 50 ? '#f59e0b' : '#ef4444',
-                                transition: 'width 0.3s ease'
-                              }} />
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--font-size-xs)', color: 'var(--text-tertiary)', marginTop: '8px' }}>
-                          {activity.additionalInfo && <span>{activity.additionalInfo}</span>}
-                          {activity.multiplier && <span>Multiplier: {activity.multiplier}x</span>}
-                        </div>
+                        {getVolatilityBadge(opinion.volatility)}
                       </div>
                       
-                      <div style={{ textAlign: 'right', minWidth: '120px' }}>
-                        <p className="card-subtitle">Placed: {activity.placedDate}</p>
-                        <p className={
-                          activity.status === 'won' ? 'status-positive' : 
-                          activity.status === 'lost' ? 'status-negative' : 
-                          'status-neutral'
-                        }>
-                          {activity.status === 'won' ? `Won $${activity.potentialPayout}` :
-                           activity.status === 'lost' ? `Lost $${activity.amount}` :
-                           activity.status === 'active' ? `Potential: $${activity.potentialPayout}` :
-                           'Expired'}
-                        </p>
-                        {activity.status === 'active' && (
-                          <p className="card-subtitle">Expires: {activity.expiryDate}</p>
-                        )}
+                      <p className="card-title" style={{ 
+                        fontSize: '14px', 
+                        fontWeight: '500',
+                        marginBottom: '12px',
+                        lineHeight: '1.4'
+                      }}>
+                        {opinion.text.length > 80 ? `${opinion.text.slice(0, 80)}...` : opinion.text}
+                      </p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                            ${opinion.currentPrice.toFixed(2)}
+                          </div>
+                          <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                            {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
-          )}
-          
-          {combinedBettingActivity.length > 10 && (
-            <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <a href="/users" className="btn btn-secondary">View all {combinedBettingActivity.length} bets →</a>
-            </div>
-          )}
-        </section>
+          </section>
+        )}
 
-        {/* Recent Activity */}
-        <section className="section">
-          <h2 className="section-title">Recent Activity</h2>
+        {/* Trending Opinions */}
+        {trendingOpinions.length > 0 && (
+          <section style={{ marginBottom: '32px' }}>
+            <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendUp size={24} /> Trending Now
+            </h2>
+            <div className="grid grid-2">
+              {trendingOpinions.map((opinion) => (
+                <div
+                  key={opinion.id}
+                  onClick={() => handleOpinionClick(opinion)}
+                  className={`card ${priceFlash[opinion.text] || ''}`}
+                  style={{ 
+                    cursor: 'pointer',
+                    transform: 'translateY(0)',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <div className="card-header">
+                    <div className="card-content">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          {getTrendIcon(opinion.trend)}
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
+                          </span>
+                        </div>
+                        {getVolatilityBadge(opinion.volatility)}
+                      </div>
+                      
+                      <p className="card-title" style={{ 
+                        fontSize: '14px', 
+                        fontWeight: '500',
+                        marginBottom: '12px',
+                        lineHeight: '1.4'
+                      }}>
+                        {opinion.text.length > 100 ? `${opinion.text.slice(0, 100)}...` : opinion.text}
+                      </p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                            ${opinion.currentPrice.toFixed(2)}
+                          </div>
+                          <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                            {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* All Opinions */}
+        <section>
+          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Eye size={24} /> All Opinions
+          </h2>
           
-          {recentTransactions.length === 0 ? (
-            <div>
-              <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
-              {botsRunning && (
-                <p style={{ color: '#633FD0', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 Bots are creating transactions globally - visit the <a href="/feed" style={{ color: '#BFB6D7' }}>Live Feed</a> to see all activity!
-                </p>
-              )}
+          {opinions.length === 0 ? (
+            <div className="empty-state">
+              <p>No opinions available yet!</p>
+              <p>Visit the <a href="/generate" style={{ color: 'var(--green)' }}>Generate page</a> to create the first opinion.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0px', marginBottom: '84px' }}>
-              {recentTransactions.map((transaction, index) => {
-                let activityText = '';
-                let emoji = '';
-                
-                switch (transaction.type) {
-                  case 'buy':
-                    emoji = '🛒';
-                    activityText = 'Bought Opinion';
-                    break;
-                  case 'sell':
-                    emoji = '💰';
-                    activityText = 'Sold Opinion';
-                    break;
-                  case 'earn':
-                    emoji = '✨';
-                    activityText = 'Generated Opinion';
-                    break;
-                  case 'short_place':
-                    emoji = '📉';
-                    activityText = 'Placed Short Bet';
-                    break;
-                  case 'short_win':
-                    emoji = '🎉';
-                    activityText = 'Won Short Bet';
-                    break;
-                  case 'short_loss':
-                    emoji = '💸';
-                    activityText = 'Lost Short Bet';
-                    break;
-                  default:
-                    emoji = '📝';
-                    activityText = 'Transaction';
-                }
-                
-return (
-  <div key={`transaction-${index}-${transaction.id}`} className="card">
-    <div className="card-header">
-      <div className="card-content" style={{ display: 'flex', flexDirection: 'column', gap: '0px', marginBottom: '0px 0px 0x' }}>
-        <p style={{ margin: '0px', fontWeight: '400',fontSize: '14px' }}>
-          {emoji} {activityText}
-        </p>
-        <p className="card-subtitle">
-          {transaction.opinionText || 'Opinion activity'} • {transaction.date}
-        </p>
-      </div>
-      <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
-        {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
-      </span>
-    </div>
-  </div>
-);
-              })}
+            <div className="grid grid-2">
+              {opinions.map((opinion) => (
+                <div
+                  key={opinion.id}
+                  onClick={() => handleOpinionClick(opinion)}
+                  className={`card ${priceFlash[opinion.text] || ''}`}
+                  style={{ 
+                    cursor: 'pointer',
+                    transform: 'translateY(0)',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  <div className="card-header">
+                    <div className="card-content">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          {getTrendIcon(opinion.trend)}
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
+                          </span>
+                        </div>
+                        {getVolatilityBadge(opinion.volatility)}
+                      </div>
+                      
+                      <p className="card-title" style={{ 
+                        fontSize: '14px', 
+                        fontWeight: '500',
+                        marginBottom: '12px',
+                        lineHeight: '1.4'
+                      }}>
+                        {opinion.text.length > 120 ? `${opinion.text.slice(0, 120)}...` : opinion.text}
+                      </p>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                            ${opinion.currentPrice.toFixed(2)}
+                          </div>
+                          {opinion.priceChange !== 0 && (
+                            <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                              {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
       </main>
+
+      {/* Authentication Modal */}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+      />
     </div>
   );
 }

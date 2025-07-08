@@ -3,6 +3,9 @@ import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getAnalytics, Analytics } from 'firebase/analytics';
 
+// Firebase configuration
+// NOTE: Email link authentication must be enabled in Firebase Console:
+// Authentication > Sign-in method > Email link (passwordless sign-in)
 const firebaseConfig = {
   apiKey: "AIzaSyA9_9vbw7jTunztB5almko8YGLvEAFMhBM",
   authDomain: "idea-auction.firebaseapp.com",

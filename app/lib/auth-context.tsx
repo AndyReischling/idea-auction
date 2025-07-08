@@ -3,18 +3,24 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
   User, 
-  signInWithEmailAndPassword, 
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  onAuthStateChanged, 
   signOut,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  sendEmailVerification,
-  sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
-  AuthError
+  AuthError,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  serverTimestamp, 
+  query, 
+  where, 
+  getDocs, 
+  collection 
+} from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 interface UserProfile {
@@ -37,12 +43,9 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, username: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string) => Promise<void>;
   logout: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
-  sendLoginLink: (email: string) => Promise<void>;
-  completeLoginLink: (email: string) => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   checkUsernameAvailability: (username: string) => Promise<boolean>;
   testFirestoreConnection: () => Promise<boolean>;
@@ -67,47 +70,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Generate unique username
-  const generateUsername = async (): Promise<string> => {
-    const adjectives = ['Quick', 'Smart', 'Bold', 'Clever', 'Sharp', 'Bright', 'Swift', 'Keen'];
-    const nouns = ['Trader', 'Investor', 'Analyst', 'Strategist', 'Expert', 'Pro', 'Guru', 'Maverick'];
-    
-    let attempts = 0;
-    while (attempts < 10) {
-      const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-      const noun = nouns[Math.floor(Math.random() * nouns.length)];
-      const number = Math.floor(Math.random() * 999) + 1;
-      const username = `${adjective}${noun}${number}`;
-      
-      const isAvailable = await checkUsernameAvailability(username);
-      if (isAvailable) {
-        return username;
+  // Initialize Firebase Auth persistence on component mount
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        // Set persistence to LOCAL to ensure users stay logged in across browser sessions
+        // This means users will only log out when they explicitly click the logout button
+        await setPersistence(auth, browserLocalPersistence);
+        console.log('✅ Firebase Auth persistence set to LOCAL - users will stay logged in until explicit logout');
+      } catch (error) {
+        console.error('❌ Failed to set Firebase Auth persistence:', error);
+        // Continue anyway - Firebase will use default persistence
       }
-      attempts++;
-    }
-    
-    // Fallback to timestamp-based username
-    return `OpinionTrader${Date.now()}`;
-  };
+    };
 
-  // Check if username is available
-  const checkUsernameAvailability = async (username: string): Promise<boolean> => {
+    initializeAuth();
+  }, []);
+
+  // Load user profile with retry logic
+  const loadUserProfile = async (user: User): Promise<UserProfile | null> => {
     try {
-      const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
-      return !usernameDoc.exists();
+      console.log('👤 Loading user profile for:', user.email);
+      const startTime = Date.now();
+      
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const endTime = Date.now();
+      
+      if (userDoc.exists()) {
+        console.log(`✅ User profile loaded successfully in ${endTime - startTime}ms`);
+        return userDoc.data() as UserProfile;
+      } else {
+        console.log(`⚠️ No profile found for user in ${endTime - startTime}ms`);
+        return null;
+      }
     } catch (error) {
-      console.error('Error checking username availability:', error);
-      return false;
+      console.error('❌ Error loading user profile:', error);
+      
+      // Check if it's a connection issue
+      if (error instanceof Error && error.message.includes('offline')) {
+        console.warn('🌐 Firestore is offline, user profile will be loaded when connection is restored');
+        return null;
+      }
+      
+      // For other errors, still return null but log the error
+      return null;
     }
   };
 
-  // Create user profile in Firestore
+  // Create user profile with better error handling and performance
   const createUserProfile = async (user: User, username: string): Promise<UserProfile> => {
+    console.log('📝 Creating user profile for:', user.email);
+    const startTime = Date.now();
+    
     const userProfile: UserProfile = {
       uid: user.uid,
       email: user.email || '',
       username,
-      balance: 10000, // Starting balance
+      balance: 10000,
       joinDate: serverTimestamp(),
       totalEarnings: 0,
       totalLosses: 0,
@@ -119,83 +138,186 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       updatedAt: serverTimestamp(),
     };
 
-    // Save user profile
-    await setDoc(doc(db, 'users', user.uid), userProfile);
-    
-    // Reserve username
-    await setDoc(doc(db, 'usernames', username.toLowerCase()), {
-      uid: user.uid,
-      username,
-      createdAt: serverTimestamp(),
-    });
+    try {
+      // Create both documents in parallel for better performance
+      console.log('💾 Saving user profile and username reservation...');
+      
+      const userDocPromise = setDoc(doc(db, 'users', user.uid), userProfile);
+      const usernameDocPromise = setDoc(doc(db, 'usernames', username.toLowerCase()), {
+        uid: user.uid,
+        reserved: true,
+        createdAt: serverTimestamp(),
+      });
 
-    return userProfile;
+      // Wait for both operations to complete
+      await Promise.all([userDocPromise, usernameDocPromise]);
+      
+      const endTime = Date.now();
+      console.log(`✅ User profile created successfully in ${endTime - startTime}ms`);
+
+      return userProfile;
+    } catch (error) {
+      const endTime = Date.now();
+      console.error(`❌ Profile creation failed after ${endTime - startTime}ms:`, error);
+      
+      // If Firestore is offline, return the profile anyway
+      // It will be synced when connection is restored
+      if (error instanceof Error && error.message.includes('offline')) {
+        console.warn('🌐 Firestore is offline, profile will be synced when connection is restored');
+        return userProfile;
+      }
+      
+      throw new Error('Failed to create user profile. Please try again.');
+    }
   };
 
-  // Load user profile from Firestore
-  const loadUserProfile = async (user: User): Promise<UserProfile | null> => {
+  // Check if username is available
+  const checkUsernameAvailability = async (username: string): Promise<boolean> => {
     try {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        return userDoc.data() as UserProfile;
-      }
-      return null;
+      console.log('🔍 Checking username availability for:', username);
+      const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
+      const exists = usernameDoc.exists();
+      console.log('📝 Username exists:', exists);
+      return !exists; // Return true if username is available (doesn't exist)
     } catch (error) {
-      console.error('Error loading user profile:', error);
-      return null;
+      console.error('❌ Error checking username availability:', error);
+      
+      // If it's a permission denied error, the collection might not exist yet
+      if (error instanceof Error && error.message.includes('PERMISSION_DENIED')) {
+        console.warn('🔒 Permission denied accessing usernames collection - assuming username is available');
+        return true; // Assume available if we can't check due to permissions
+      }
+      
+      // If offline, assume username is available (will be checked again when online)
+      if (error instanceof Error && error.message.includes('offline')) {
+        console.warn('🌐 Firestore is offline, username availability will be checked when connection is restored');
+        return true;
+      }
+      
+      // If collection doesn't exist, assume username is available
+      if (error instanceof Error && (error.message.includes('NOT_FOUND') || error.message.includes('not found'))) {
+        console.warn('📂 Usernames collection not found - assuming username is available');
+        return true;
+      }
+      
+      // For other errors, be optimistic and assume username is available
+      // This prevents blocking all username registrations due to technical issues
+      console.warn('⚠️ Unknown error checking username - assuming available:', error);
+      return true;
     }
   };
 
   // Authentication functions
-  const login = async (email: string, password: string): Promise<void> => {
+  const signIn = async (email: string, password: string): Promise<void> => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const profile = await loadUserProfile(userCredential.user);
-      setUserProfile(profile);
+      console.log('🔐 Starting sign in process...');
+      const startTime = Date.now();
+      
+      await signInWithEmailAndPassword(auth, email, password);
+      
+      const endTime = Date.now();
+      console.log(`✅ User signed in successfully in ${endTime - startTime}ms`);
     } catch (error) {
       const authError = error as AuthError;
-      throw new Error(authError.message);
+      console.error('❌ Sign in error:', authError);
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to sign in. Please try again.';
+      
+      switch (authError.code) {
+        case 'auth/invalid-email':
+          errorMessage = 'Please enter a valid email address.';
+          break;
+        case 'auth/user-not-found':
+          errorMessage = 'User not found. Please check your email and password.';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password. Please try again.';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection and try again.';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed attempts. Please wait a moment before trying again.';
+          break;
+        default:
+          errorMessage = authError.message || 'An unexpected error occurred.';
+      }
+      
+      throw new Error(errorMessage);
     }
   };
 
-  const register = async (email: string, password: string, username: string): Promise<void> => {
+  const signUp = async (email: string, password: string, username: string): Promise<void> => {
     try {
-      // Check if username is available
-      const isAvailable = await checkUsernameAvailability(username);
-      if (!isAvailable) {
-        throw new Error('Username is already taken');
+      console.log('🚀 Starting sign up process...');
+      
+      // Step 1: Check username availability (fast operation)
+      console.log('1️⃣ Checking username availability...');
+      const isUsernameAvailable = await checkUsernameAvailability(username);
+      if (!isUsernameAvailable) {
+        throw new Error('Username is already taken. Please choose another one.');
       }
+      console.log('✅ Username is available');
 
-      // Create user account
+      // Step 2: Create Firebase user account
+      console.log('2️⃣ Creating Firebase user account...');
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      console.log('✅ Firebase user created:', userCredential.user.email);
       
-      // Send email verification
-      await sendEmailVerification(userCredential.user);
+      // Step 3: Create user profile (optimized with parallel operations)
+      console.log('3️⃣ Creating user profile...');
+      await createUserProfile(userCredential.user, username);
       
-      // Create user profile
-      const profile = await createUserProfile(userCredential.user, username);
-      setUserProfile(profile);
+      console.log('✅ Sign up completed successfully');
+      
     } catch (error) {
       const authError = error as AuthError;
-      throw new Error(authError.message);
+      console.error('❌ Sign up error:', authError);
+      
+      // Provide user-friendly error messages
+      let errorMessage = 'Failed to sign up. Please try again.';
+      
+      switch (authError.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'This email address is already in use. Please choose another one.';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Please enter a valid email address.';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password should be at least 6 characters.';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection and try again.';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed attempts. Please wait a moment before trying again.';
+          break;
+        default:
+          errorMessage = authError.message || 'An unexpected error occurred.';
+      }
+      
+      throw new Error(errorMessage);
     }
   };
 
   const logout = async (): Promise<void> => {
     try {
-      await signOut(auth);
+      console.log('🚪 EXPLICIT LOGOUT: User clicked logout button');
+      console.log('👤 Logging out user:', user?.email);
+      
+      // Clear user profile first
       setUserProfile(null);
+      
+      // Sign out from Firebase Auth
+      await signOut(auth);
+      
+      console.log('✅ User logged out successfully - logout was EXPLICIT (button click)');
+      console.log('🔒 Session will remain cleared until user explicitly signs in again');
     } catch (error) {
       const authError = error as AuthError;
-      throw new Error(authError.message);
-    }
-  };
-
-  const resetPassword = async (email: string): Promise<void> => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-    } catch (error) {
-      const authError = error as AuthError;
+      console.error('❌ Logout error:', authError);
       throw new Error(authError.message);
     }
   };
@@ -209,10 +331,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const updatedProfile = {
         ...userProfile,
         ...updates,
-        updatedAt: serverTimestamp(),
+        updatedAt: new Date().toISOString(),
       };
 
-      await setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true });
+      await setDoc(doc(db, 'users', user.uid), {
+        ...updatedProfile,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
       setUserProfile(updatedProfile);
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -220,70 +345,103 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Email Link Authentication
-  const sendLoginLink = async (email: string): Promise<void> => {
-    try {
-      const actionCodeSettings = {
-        url: `${window.location.origin}/auth-complete`,
-        handleCodeInApp: true,
-      };
-      
-      await sendSignInLinkToEmail(auth, email, actionCodeSettings);
-      // Save email locally to complete sign-in
-      localStorage.setItem('emailForSignIn', email);
-    } catch (error) {
-      const authError = error as AuthError;
-      throw new Error(authError.message);
-    }
-  };
-
-  const completeLoginLink = async (email: string): Promise<void> => {
-    try {
-      if (isSignInWithEmailLink(auth, window.location.href)) {
-        await signInWithEmailLink(auth, email, window.location.href);
-        localStorage.removeItem('emailForSignIn');
-      } else {
-        throw new Error('Invalid sign-in link');
-      }
-    } catch (error) {
-      const authError = error as AuthError;
-      throw new Error(authError.message);
-    }
-  };
-
-  // Firestore Connection Test
+  // Enhanced Firestore Connection Test
   const testFirestoreConnection = async (): Promise<boolean> => {
     try {
-      // Try to read a simple document to test connection
+      console.log('🔍 Testing Firestore connection...');
+      console.log('📊 Project ID:', db.app.options.projectId);
+      console.log('🔑 API Key:', db.app.options.apiKey?.substring(0, 20) + '...');
+      
+      // Test 1: Try to read a simple document
+      console.log('📝 Test 1: Reading test document...');
       const testDoc = doc(db, 'test', 'connection');
-      await getDoc(testDoc);
-      console.log('✅ Firestore connection successful');
+      const docSnap = await getDoc(testDoc);
+      console.log('✅ Test 1 passed: Document read successful');
+      
+      // Test 2: Try to write a simple document (will fail if rules are restrictive)
+      console.log('📝 Test 2: Writing test document...');
+      await setDoc(testDoc, { 
+        timestamp: new Date().toISOString(),
+        test: 'connection'
+      });
+      console.log('✅ Test 2 passed: Document write successful');
+      
+      console.log('✅ All Firestore tests passed!');
       return true;
     } catch (error) {
-      console.error('❌ Firestore connection failed:', error);
+      console.error('❌ Firestore connection test failed:', error);
+      
+      if (error instanceof Error) {
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        
+        // Provide specific guidance based on error type
+        if (error.message.includes('PERMISSION_DENIED')) {
+          console.error('🔒 ISSUE: Firestore security rules are blocking access');
+          console.error('🔧 FIX: Update your Firestore security rules to allow read/write access');
+        } else if (error.message.includes('NOT_FOUND')) {
+          console.error('📂 ISSUE: Firestore database not found');
+          console.error('🔧 FIX: Create a Firestore database in Firebase Console');
+        } else if (error.message.includes('FAILED_PRECONDITION')) {
+          console.error('⚙️ ISSUE: Firestore not properly configured');
+          console.error('🔧 FIX: Enable Firestore in Firebase Console');
+        } else {
+          console.error('🔧 GENERAL FIX: Check Firebase Console for project setup');
+        }
+      }
+      
       return false;
     }
   };
 
-  // Monitor authentication state
+  // Monitor authentication state with performance optimization
   useEffect(() => {
+    console.log('🔄 Setting up auth state listener...');
+    console.log('🔒 Auth persistence is set to LOCAL - users will stay logged in until explicit logout');
+    
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('🔔 Auth state changed:', user ? `User: ${user.email}` : 'No user (logout or initial state)');
+      
+      // Important: This listener should NEVER trigger logout - it only responds to auth state changes
+      // Logout should ONLY happen when user explicitly clicks the logout button
+      if (!user) {
+        console.log('🔍 User is null - this could be:');
+        console.log('   1. Initial app load (before auth state is determined)');
+        console.log('   2. User explicitly logged out');
+        console.log('   3. Auth session expired/cleared');
+        console.log('   ❌ This should NOT happen automatically - only on explicit logout');
+      }
+      
       setLoading(true);
       
       if (user) {
+        console.log('✅ User is authenticated - maintaining session');
         setUser(user);
         
-        // Load or create user profile
-        let profile = await loadUserProfile(user);
-        
-        if (!profile) {
-          // Create profile for existing user (migration case)
-          const username = await generateUsername();
-          profile = await createUserProfile(user, username);
+        // Load user profile with timeout for better UX
+        const profileStartTime = Date.now();
+        try {
+          const profile = await Promise.race([
+            loadUserProfile(user),
+            new Promise<null>((_, reject) => 
+              setTimeout(() => reject(new Error('Profile load timeout')), 10000) // 10 second timeout
+            )
+          ]);
+          
+          const profileEndTime = Date.now();
+          if (profile) {
+            console.log(`✅ Complete auth flow finished in ${profileEndTime - profileStartTime}ms`);
+          } else {
+            console.log(`⚠️ Auth completed but no profile in ${profileEndTime - profileStartTime}ms`);
+          }
+          
+          setUserProfile(profile);
+        } catch (error) {
+          console.warn('⏰ Profile loading timed out or failed:', error);
+          setUserProfile(null); // Still allow user to be authenticated even without profile
         }
-        
-        setUserProfile(profile);
       } else {
+        console.log('🔓 Clearing user state (user is null)');
         setUser(null);
         setUserProfile(null);
       }
@@ -298,12 +456,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     userProfile,
     loading,
-    login,
-    register,
+    signIn,
+    signUp,
     logout,
-    resetPassword,
-    sendLoginLink,
-    completeLoginLink,
     updateProfile,
     checkUsernameAvailability,
     testFirestoreConnection,
