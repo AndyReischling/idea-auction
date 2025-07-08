@@ -1509,32 +1509,32 @@ const purchaseOpinion = () => {
                 );
               }
               
-              const prices = chartData.map(d => d.price);
-              const minPrice = Math.min(...prices);
-              const maxPrice = Math.max(...prices);
+              const prices = chartData.map(d => d.price).filter(p => !isNaN(p) && typeof p === 'number');
+              const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+              const maxPrice = prices.length > 0 ? Math.max(...prices) : 10;
               const priceRange = maxPrice - minPrice;
-              const firstPrice = prices[0];
-              const lastPrice = prices[prices.length - 1];
+              const firstPrice = prices.length > 0 ? prices[0] : 10;
+              const lastPrice = prices.length > 0 ? prices[prices.length - 1] : 10;
               const totalChange = lastPrice - firstPrice;
               const totalChangePercent = firstPrice > 0 ? ((totalChange / firstPrice) * 100) : 0;
               
-              const maxBarHeight = 150;
-              
-              return (
-                <div>
-                  <div className={styles.chartSummary}>
+                                    const maxBarHeight = 150;
+                      
+                      return (
+                        <div>
+                          <div className={styles.chartSummary}>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Starting Price</div>
-                      <div className={styles.summaryValue}>${firstPrice.toFixed(2)}</div>
+                      <div className={styles.summaryValue}>${!isNaN(firstPrice) ? firstPrice.toFixed(2) : '10.00'}</div>
                     </div>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Current Price</div>
-                      <div className={styles.summaryValue}>${lastPrice.toFixed(2)}</div>
+                      <div className={styles.summaryValue}>${!isNaN(lastPrice) ? lastPrice.toFixed(2) : '10.00'}</div>
                     </div>
                     <div className={styles.summaryItem}>
                       <div className={styles.summaryLabel}>Total Change</div>
                       <div className={`${styles.summaryValue} ${totalChange >= 0 ? styles.positive : styles.negative}`}>
-                        {totalChange >= 0 ? '+' : ''}${totalChange.toFixed(2)} ({totalChangePercent >= 0 ? '+' : ''}{totalChangePercent.toFixed(1)}%)
+                        {totalChange >= 0 ? '+' : ''}${!isNaN(totalChange) ? totalChange.toFixed(2) : '0.00'} ({totalChangePercent >= 0 ? '+' : ''}{!isNaN(totalChangePercent) ? totalChangePercent.toFixed(1) : '0.0'}%)
                       </div>
                     </div>
                     <div className={styles.summaryItem}>
@@ -1553,21 +1553,43 @@ const purchaseOpinion = () => {
                       
                       // Calculate positions for each data point
                       const dataPoints = chartData.map((point, index) => {
-                        const x = padding + (index / (chartData.length - 1)) * innerWidth;
-                        const y = priceRange > 0 
+                        const x = padding + (index / Math.max(chartData.length - 1, 1)) * innerWidth;
+                        const y = priceRange > 0 && !isNaN(point.price) && !isNaN(minPrice) && !isNaN(priceRange)
                           ? padding + (1 - (point.price - minPrice) / priceRange) * innerHeight
                           : padding + innerHeight / 2;
-                        return { x, y, price: point.price, date: point.date, time: point.time };
-                      });
+                        return { 
+                          x: isNaN(x) ? padding : x, 
+                          y: isNaN(y) ? padding + innerHeight / 2 : y, 
+                          price: isNaN(point.price) ? 0 : point.price, 
+                          date: point.date || 'Unknown', 
+                          time: point.time || '' 
+                        };
+                      }).filter(point => 
+                        typeof point.x === 'number' && 
+                        typeof point.y === 'number' && 
+                        !isNaN(point.x) && 
+                        !isNaN(point.y)
+                      );
                       
                       // Create path string for the line
-                      const pathData = dataPoints.map((point, index) => 
+                      const pathData = dataPoints.length > 0 ? dataPoints.map((point, index) => 
                         `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
-                      ).join(' ');
+                      ).join(' ') : '';
                       
                       // Determine line color based on overall trend
                       const isPositiveTrend = totalChange >= 0;
                       const lineColor = isPositiveTrend ? '#10b981' : '#ef4444';
+                      
+                      // If no valid data points after filtering, show empty chart
+                      if (dataPoints.length === 0) {
+                        return (
+                          <div className={styles.chartEmpty}>
+                            <div>📊</div>
+                            <h4>Chart Data Invalid</h4>
+                            <p>Refreshing chart data...</p>
+                          </div>
+                        );
+                      }
                       
                       return (
                         <div className={styles.lineChart}>
@@ -1591,7 +1613,7 @@ const purchaseOpinion = () => {
                               textAnchor="end" 
                               className={styles.axisLabel}
                             >
-                              ${maxPrice.toFixed(2)}
+                              ${!isNaN(maxPrice) ? maxPrice.toFixed(2) : '0.00'}
                             </text>
                             <text 
                               x={padding - 10} 
@@ -1599,28 +1621,38 @@ const purchaseOpinion = () => {
                               textAnchor="end" 
                               className={styles.axisLabel}
                             >
-                              ${minPrice.toFixed(2)}
+                              ${!isNaN(minPrice) ? minPrice.toFixed(2) : '0.00'}
                             </text>
                             
                             {/* Price line */}
-                            <path
-                              d={pathData}
-                              fill="none"
-                              stroke={lineColor}
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className={styles.priceLine}
-                            />
+                            {pathData && (
+                              <path
+                                d={pathData}
+                                fill="none"
+                                stroke={lineColor || '#10b981'}
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className={styles.priceLine}
+                              />
+                            )}
                             
                             {/* Data points */}
-                            {dataPoints.map((point, index) => (
+                            {dataPoints.filter(point => 
+                              point && 
+                              typeof point.x === 'number' && 
+                              typeof point.y === 'number' && 
+                              !isNaN(point.x) && 
+                              !isNaN(point.y) &&
+                              typeof point.price === 'number' &&
+                              !isNaN(point.price)
+                            ).map((point, index) => (
                               <g key={index}>
                                 <circle
                                   cx={point.x}
                                   cy={point.y}
                                   r="4"
-                                  fill={lineColor}
+                                  fill={lineColor || '#10b981'}
                                   stroke="white"
                                   strokeWidth="2"
                                   className={styles.dataPoint}
@@ -1634,14 +1666,18 @@ const purchaseOpinion = () => {
                             ))}
                             
                             {/* Current price indicator */}
-                            {dataPoints.length > 0 && (
+                            {dataPoints.length > 0 && dataPoints[dataPoints.length - 1] && 
+                             typeof dataPoints[dataPoints.length - 1].x === 'number' && 
+                             !isNaN(dataPoints[dataPoints.length - 1].x) && 
+                             typeof dataPoints[dataPoints.length - 1].price === 'number' && 
+                             !isNaN(dataPoints[dataPoints.length - 1].price) && (
                               <g>
                                 <line
                                   x1={dataPoints[dataPoints.length - 1].x}
                                   y1={padding}
                                   x2={dataPoints[dataPoints.length - 1].x}
                                   y2={chartHeight - padding}
-                                  stroke={lineColor}
+                                  stroke={lineColor || '#10b981'}
                                   strokeWidth="1"
                                   strokeDasharray="5,5"
                                   opacity="0.6"
@@ -1651,7 +1687,7 @@ const purchaseOpinion = () => {
                                   y={padding - 10}
                                   textAnchor="middle"
                                   className={styles.currentPriceLabel}
-                                  fill={lineColor}
+                                  fill={lineColor || '#10b981'}
                                 >
                                   ${dataPoints[dataPoints.length - 1].price.toFixed(2)}
                                 </text>
