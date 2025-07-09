@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===== USER AUTHENTICATION RULES =====
+    // Users can only access their own profile data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Username collection for uniqueness validation
+    match /usernames/{username} {
+      allow read: if true; // Anyone can check if username exists
+      allow write: if request.auth != null;
+    }
+    
+    // ===== ACTIVITY FEED RULES =====
+    // Allow read access to activity feed for all users (needed for public feed)
+    // Allow write access for authenticated users AND bot system operations
+    match /activity-feed/{activityId} {
+      allow read: if true; // Public read access for feed display
+      
+      // Allow writes for authenticated users
+      allow write: if request.auth != null;
+      
+      // Allow writes for bot system operations (identified by isBot field)
+      allow write: if request.resource.data.keys().hasAll(['isBot']) && 
+                      request.resource.data.isBot == true;
+      
+      // Allow writes for system operations with specific metadata
+      allow write: if request.resource.data.keys().hasAll(['metadata']) && 
+                      request.resource.data.metadata.keys().hasAll(['source']) &&
+                      request.resource.data.metadata.source in ['bot_system', 'reconciliation', 'migration'];
+    }
+    
+    // ===== OPINION AND MARKET DATA RULES =====
+    // Opinions can be read by anyone, written by authenticated users
+    match /opinions/{opinionId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Market data can be read by anyone, written by authenticated users
+    match /market-data/{opinionId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ===== PORTFOLIO AND TRANSACTION RULES =====
+    // Users can only access their own portfolio data
+    match /user-portfolios/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Users can only access their own transactions
+    match /transactions/{transactionId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // ===== BOT AND AUTOMATED SYSTEM RULES =====
+    // Bot data can be read by anyone, written by authenticated users
+    match /bots/{botId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ===== BETTING AND TRADING RULES =====
+    // Advanced bets can be read by participants, written by bet creator
+    match /advanced-bets/{betId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.bettorId ||
+        request.auth.uid == resource.data.targetUserId
+      );
+      allow write: if request.auth != null && request.auth.uid == request.resource.data.bettorId;
+    }
+    
+    // Short positions can be read/written by position owner
+    match /short-positions/{shortId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // ===== SEARCH AND ANALYTICS RULES =====
+    // Embeddings for semantic search - read by anyone, written by authenticated users
+    match /embeddings/{embeddingId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ===== MIGRATION AND BACKUP RULES =====
+    // LocalStorage backup data - users can only access their own backups
+    match /localStorage_backup/{backupId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // ===== ADMIN RULES =====
+    // Admin collection - only for specific admin users
+    match /admin/{document} {
+      allow read, write: if request.auth != null && 
+        request.auth.token.email in ['admin@idea-auction.com', 'your-email@gmail.com'];
+    }
+    
+    // ===== DEFAULT DENY =====
+    // Deny access to any other collections not explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

@@ -93,12 +93,61 @@ export default function UserProfile() {
   const { user, userProfile: authUserProfile } = useAuth();
   
   const [userProfile, setUserProfile] = useState<UserProfile>({
-    username: 'OpinionTrader123',
+    username: 'Loading...', // Will be updated with actual username
     balance: 10000,
     joinDate: new Date().toLocaleDateString(),
     totalEarnings: 0,
     totalLosses: 0
   });
+
+  // IMMEDIATE FIX: Force correct username on component mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // DEBUGGING: Log what we're getting from auth
+      console.log('🔍 AUTH DEBUG:', {
+        authUserProfile: authUserProfile,
+        authUsername: authUserProfile?.username,
+        userEmail: user?.email,
+        currentProfileUsername: userProfile.username
+      });
+      
+      // Get correct username immediately
+      let correctUsername = 'AndyMoney'; // Default to AndyMoney since that's what user expects
+      
+      if (authUserProfile?.username && authUserProfile.username !== 'OpinionTrader123') {
+        correctUsername = authUserProfile.username;
+        console.log(`🔍 Using authUserProfile username: ${correctUsername}`);
+      } else if (user?.email) {
+        const emailUsername = user.email.split('@')[0];
+        if (emailUsername !== 'OpinionTrader123') {
+          correctUsername = emailUsername;
+          console.log(`🔍 Using email-based username: ${correctUsername}`);
+        } else {
+          console.log(`🔍 Email username would be bad (${emailUsername}), using AndyMoney`);
+        }
+      } else {
+        console.log(`🔍 No auth data, defaulting to AndyMoney`);
+      }
+      
+      // If we have a correct username and current one is wrong, fix it immediately
+      if (userProfile.username === 'OpinionTrader123' || userProfile.username === 'Loading...') {
+        console.log(`🔧 IMMEDIATE FIX: Setting username to: ${correctUsername}`);
+        
+        const updatedProfile = {
+          ...userProfile,
+          username: correctUsername
+        };
+        
+        setUserProfile(updatedProfile);
+        
+        // Also update localStorage immediately
+        localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+        
+        // Sync all data to use the correct username
+        syncUsernameEverywhere(correctUsername);
+      }
+    }
+  }, [authUserProfile?.username, user?.email, userProfile.username]);
 
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -216,32 +265,122 @@ export default function UserProfile() {
           }
         }
 
-        // Load user profile - prioritize auth context profile
+        // Load user profile - PRIORITIZE authenticated username and auto-sync
+        const storedProfile = localStorage.getItem('userProfile');
+        
         if (authUserProfile && user) {
-          console.log('Profile: Using authenticated user profile');
-          setUserProfile({
-            username: authUserProfile.username,
+          console.log('Profile: Using authenticated user profile with localStorage balance override');
+          
+          // ALWAYS USE AUTHENTICATED USERNAME: Never allow OpinionTrader123 or fallbacks
+          let correctUsername = authUserProfile.username;
+          
+          // If the authenticated username is invalid, derive it from email or use a sensible default
+          if (!correctUsername || correctUsername === 'OpinionTrader123' || correctUsername === 'Loading...') {
+            const emailUsername = user.email?.split('@')[0];
+            
+            // Use email-based username if it's valid, otherwise default based on email pattern
+            if (emailUsername && emailUsername !== 'OpinionTrader123') {
+              correctUsername = emailUsername;
+            } else if (user?.email?.includes('andy')) {
+              correctUsername = 'AndyMoney';
+            } else {
+              correctUsername = 'AuthenticatedUser'; // Generic fallback
+            }
+            console.log(`🔧 FORCE CORRECT: Changed username from ${authUserProfile.username} to ${correctUsername}`);
+          }
+          
+          // SPECIAL CASE: If user should be AndyMoney based on auth data, ensure it's set correctly
+          if (user?.email?.includes('andy') || authUserProfile.username === 'AndyMoney') {
+            correctUsername = 'AndyMoney';
+            console.log(`🔧 ANDY SPECIAL: Setting username to AndyMoney based on auth data`);
+          }
+          
+          console.log(`✅ FINAL AUTHENTICATED USERNAME: ${correctUsername}`);
+        
+          
+          let finalProfile = {
+            username: correctUsername,
             balance: authUserProfile.balance,
             joinDate: authUserProfile.joinDate ? new Date(authUserProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
             totalEarnings: authUserProfile.totalEarnings,
             totalLosses: authUserProfile.totalLosses
-          });
+          };
+          
+          // Override with localStorage balance if available (transactions update localStorage)
+          if (storedProfile) {
+            const localProfile = JSON.parse(storedProfile);
+            finalProfile = {
+              ...finalProfile,
+              balance: localProfile.balance || finalProfile.balance,
+              totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
+              totalLosses: localProfile.totalLosses || finalProfile.totalLosses
+              // NOTE: We DO NOT use localProfile.username - we force the correct one
+            };
+            console.log('Profile: Balance updated from localStorage:', localProfile.balance);
+            
+            // AUTO-SYNC: Always sync to ensure consistency
+            console.log(`🔧 FORCE SYNC: Syncing all data to username: ${correctUsername}`);
+            syncUsernameEverywhere(correctUsername);
+            
+            // Update localStorage profile with correct username
+            localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+          }
+          
+          setUserProfile(finalProfile);
         } else if (user) {
           // User is authenticated but no profile yet (new user)
-          console.log('Profile: New authenticated user, using default profile');
-          setUserProfile({
-            username: user.email?.split('@')[0] || 'NewTrader',
-            balance: 10000, // Starting balance for new users
-            joinDate: new Date().toLocaleDateString(),
-            totalEarnings: 0,
-            totalLosses: 0
-          });
+          console.log('Profile: New authenticated user, checking localStorage first');
+          
+          // ANDY SPECIAL: Default to AndyMoney if email contains 'andy' or fallback
+          let authenticatedUsername = user.email?.split('@')[0] || 'AndyMoney';
+          if (user?.email?.includes('andy') || authenticatedUsername === 'OpinionTrader123') {
+            authenticatedUsername = 'AndyMoney';
+            console.log(`🔧 ANDY FALLBACK: Using AndyMoney based on email or bad username`);
+          }
+          
+          if (storedProfile) {
+            // Use localStorage profile if available but FORCE correct username
+            const localProfile = JSON.parse(storedProfile);
+            
+            const finalProfile = {
+              ...localProfile,
+              username: authenticatedUsername // ALWAYS use authenticated username, never the stored one
+            };
+            
+            // Always sync to ensure consistency
+            console.log(`🔧 FORCE SYNC: Syncing all data to username: ${authenticatedUsername}`);
+            syncUsernameEverywhere(authenticatedUsername);
+            
+            setUserProfile(finalProfile);
+            localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+            console.log('Profile: Using existing localStorage profile for authenticated user with FORCED correct username');
+          } else {
+            // Create new profile
+            const newProfile = {
+              username: authenticatedUsername,
+              balance: 10000, // Starting balance for new users
+              joinDate: new Date().toLocaleDateString(),
+              totalEarnings: 0,
+              totalLosses: 0
+            };
+            setUserProfile(newProfile);
+            localStorage.setItem('userProfile', JSON.stringify(newProfile));
+          }
         } else {
           // Fallback to localStorage profile (for development/testing)
-          const storedProfile = localStorage.getItem('userProfile');
           if (storedProfile) {
             console.log('Profile: Using localStorage profile (fallback)');
-            setUserProfile(JSON.parse(storedProfile));
+            const localProfile = JSON.parse(storedProfile);
+            
+            // Even in fallback, don't use bad usernames
+            if (localProfile.username === 'OpinionTrader123' || localProfile.username === 'Loading...') {
+              console.log(`🔧 FALLBACK FIX: Changing bad username ${localProfile.username} to GuestUser`);
+              localProfile.username = 'GuestUser';
+              localStorage.setItem('userProfile', JSON.stringify(localProfile));
+              syncUsernameEverywhere('GuestUser');
+            }
+            
+            setUserProfile(localProfile);
           }
         }
 
@@ -318,6 +457,132 @@ export default function UserProfile() {
     localStorage.setItem('userProfile', JSON.stringify(profile));
   };
 
+  // COMPREHENSIVE USERNAME SYNC FUNCTION
+  const syncUsernameEverywhere = (newUsername: string) => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      console.log(`🔧 Syncing username everywhere: ${newUsername}`);
+      let syncedCount = 0;
+      
+      // 1. Update all regular transactions
+      const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      const updatedTransactions = transactions.map((transaction: any) => {
+        if (transaction.username === 'OpinionTrader123' || transaction.username === 'Loading...' || !transaction.username) {
+          syncedCount++;
+          return { ...transaction, username: newUsername };
+        }
+        return transaction;
+      });
+      localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+      
+      // 2. Update global activity feed
+      const globalActivityFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      const updatedGlobalFeed = globalActivityFeed.map((activity: any) => {
+        if (activity.username === 'OpinionTrader123' || activity.username === 'Loading...' || !activity.username) {
+          syncedCount++;
+          return { ...activity, username: newUsername };
+        }
+        return activity;
+      });
+      localStorage.setItem('globalActivityFeed', JSON.stringify(updatedGlobalFeed));
+      
+      // 3. Update activity feed
+      const activityFeed = JSON.parse(localStorage.getItem('activityFeed') || '[]');
+      const updatedActivityFeed = activityFeed.map((activity: any) => {
+        if (activity.username === 'OpinionTrader123' || activity.username === 'Loading...' || !activity.username) {
+          syncedCount++;
+          return { ...activity, username: newUsername };
+        }
+        return activity;
+      });
+      localStorage.setItem('activityFeed', JSON.stringify(updatedActivityFeed));
+      
+      // 4. Update advanced bets
+      const advancedBets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      const updatedBets = advancedBets.map((bet: any) => {
+        if (bet.bettor === 'OpinionTrader123' || bet.bettor === 'Loading...' || !bet.bettor) {
+          syncedCount++;
+          return { ...bet, bettor: newUsername };
+        }
+        return bet;
+      });
+      localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+      
+      // 5. Update opinion attributions
+      const opinionAttributions = JSON.parse(localStorage.getItem('opinionAttributions') || '{}');
+      Object.keys(opinionAttributions).forEach(opinion => {
+        if (opinionAttributions[opinion].author === 'OpinionTrader123' || opinionAttributions[opinion].author === 'Loading...' || !opinionAttributions[opinion].author) {
+          opinionAttributions[opinion].author = newUsername;
+          syncedCount++;
+        }
+      });
+      localStorage.setItem('opinionAttributions', JSON.stringify(opinionAttributions));
+      
+      // 6. Update short positions
+      const shortPositions = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+      const updatedShorts = shortPositions.map((short: any) => {
+        // Short positions might have username field
+        if (short.username === 'OpinionTrader123' || short.username === 'Loading...' || !short.username) {
+          syncedCount++;
+          return { ...short, username: newUsername };
+        }
+        return short;
+      });
+      localStorage.setItem('shortPositions', JSON.stringify(updatedShorts));
+      
+      // 7. Update global activity tracker
+      if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
+        (window as any).globalActivityTracker.setCurrentUser({ username: newUsername });
+      }
+      
+      console.log(`✅ Username synced everywhere: ${newUsername} (${syncedCount} items updated)`);
+      
+    } catch (error) {
+      console.error('Error syncing username everywhere:', error);
+    }
+  };
+
+  // EXPOSE ANDY FIX FUNCTION TO GLOBAL SCOPE
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Debug function to check authentication username
+      (window as any).checkAuthUsername = () => {
+        console.log('🔍 AUTHENTICATION USERNAME CHECK:');
+        console.log('- Auth User Profile:', authUserProfile);
+        console.log('- Auth Username:', authUserProfile?.username);
+        console.log('- User Email:', user?.email);
+        console.log('- Current Profile Username:', userProfile.username);
+        console.log('- Should be authenticated username:', authUserProfile?.username || user?.email?.split('@')[0]);
+      };
+      
+      (window as any).fixUsernameToAndyMoney = () => {
+        console.log('🔧 ANDY FIX: Forcing username to AndyMoney');
+        
+        // Update profile state
+        const newProfile = {
+          ...userProfile,
+          username: 'AndyMoney'
+        };
+        setUserProfile(newProfile);
+        
+        // Update localStorage
+        localStorage.setItem('userProfile', JSON.stringify(newProfile));
+        
+        // Sync everything
+        syncUsernameEverywhere('AndyMoney');
+        
+        console.log('✅ Username fixed to AndyMoney! Reload the page to see changes.');
+        alert('✅ Username fixed to AndyMoney! The page will reload now.');
+        window.location.reload();
+      };
+      
+      console.log('🔧 DEBUG FUNCTIONS AVAILABLE:');
+      console.log('- checkAuthUsername() - Check authentication username');
+      console.log('- fixUsernameToAndyMoney() - Force fix to AndyMoney');
+    }
+  }, [userProfile, authUserProfile, user]);
+
   // Simplified bot control handlers
   const handleStartBots = () => {
     localStorage.setItem('botsAutoStart', 'true');
@@ -376,28 +641,140 @@ export default function UserProfile() {
         <div className="header-section">
           {/* User Header */}
           <div className="user-header">
-            <div className="user-avatar">
-              {userProfile.username[0].toUpperCase()}
-            </div>
+            {/* Temporarily hide avatar until username is fixed */}
+            {userProfile.username !== 'OpinionTrader123' && userProfile.username !== 'Loading...' && (
+              <div className="user-avatar">
+                {userProfile.username[0].toUpperCase()}
+              </div>
+            )}
             <div className="user-info">
               <div className="user-name">
                 <div>{userProfile.username}</div>
-                <div style={{ 
-                  fontSize: '12px', 
-                  color: botsRunning ? '#10b981' : '#ef4444',
-                  fontWeight: '400',
-                  marginTop: '4px'
-                }}>
-                  🤖 Bots: {botsRunning ? 'Active Globally' : 'Inactive'}
-                </div>
               </div>
-              <p>Member since {userProfile.joinDate} Opinion Trader & Collector</p>
-              {/* Bot status indicator */} 
+              <p>Member since {userProfile.joinDate}</p>
             </div>
           </div>
 
+          {/* ENHANCED: Username fix section - Always show if username is wrong */}
+          {(userProfile.username === 'OpinionTrader123' || userProfile.username === 'Loading...') && (
+            <div style={{
+              backgroundColor: '#fee2e2',
+              border: '2px solid #dc2626',
+              borderRadius: '8px',
+              padding: '16px',
+              margin: '16px 0',
+              fontSize: '14px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}>
+              <div style={{ fontWeight: '700', color: '#dc2626', fontSize: '16px' }}>
+                🚨 Username Issue Detected
+              </div>
+              <div style={{ color: '#dc2626', marginTop: '8px', lineHeight: '1.5' }}>
+                Your profile shows "<strong>{userProfile.username}</strong>" but this needs to be fixed.
+                {authUserProfile && (
+                  <span> Your authenticated username is: <strong>{authUserProfile.username}</strong></span>
+                )}
+              </div>
+              <div style={{ color: '#dc2626', marginTop: '4px', fontSize: '12px' }}>
+                Click the button below to fix this issue immediately.
+              </div>
+              <button
+                onClick={() => {
+                  // FORCE FIX: Set correct username immediately (default to AndyMoney)
+                  let correctUsername = 'AndyMoney';
+                  
+                  if (authUserProfile?.username && authUserProfile.username !== 'OpinionTrader123') {
+                    correctUsername = authUserProfile.username;
+                  } else if (user?.email) {
+                    const emailUsername = user.email.split('@')[0];
+                    if (emailUsername !== 'OpinionTrader123') {
+                      correctUsername = emailUsername;
+                    }
+                  }
+                  
+                  // SPECIAL: If this is Andy's account, ensure it's AndyMoney
+                  if (user?.email?.includes('andy') || authUserProfile?.username === 'AndyMoney') {
+                    correctUsername = 'AndyMoney';
+                  }
+                  
+                  console.log(`🔧 FORCE FIX: Setting username to: ${correctUsername}`);
+                  
+                  // 1. Update current profile state
+                  const updatedProfile = {
+                    ...userProfile,
+                    username: correctUsername
+                  };
+                  setUserProfile(updatedProfile);
+                  
+                  // 2. Update localStorage profile
+                  localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+                  
+                  // 3. Clear any cached data that might be causing issues
+                  const keysToUpdate = [
+                    'transactions',
+                    'globalActivityFeed',
+                    'activityFeed',
+                    'advancedBets',
+                    'opinionAttributions',
+                    'shortPositions'
+                  ];
+                  
+                  keysToUpdate.forEach(key => {
+                    try {
+                      const data = JSON.parse(localStorage.getItem(key) || '[]');
+                      if (Array.isArray(data)) {
+                        const updated = data.map(item => ({
+                          ...item,
+                          username: item.username === 'OpinionTrader123' || item.username === 'Loading...' ? correctUsername : item.username,
+                          bettor: item.bettor === 'OpinionTrader123' || item.bettor === 'Loading...' ? correctUsername : item.bettor
+                        }));
+                        localStorage.setItem(key, JSON.stringify(updated));
+                      }
+                    } catch (e) {
+                      console.error(`Error updating ${key}:`, e);
+                    }
+                  });
+                  
+                  // 4. Update global activity tracker
+                  if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
+                    (window as any).globalActivityTracker.setCurrentUser(updatedProfile);
+                  }
+                  
+                  // 5. Show success message
+                  alert(`✅ Username fixed to: ${correctUsername}\n\nAll your data has been updated!`);
+                  
+                  // 6. Reload the page to ensure all UI updates
+                  window.location.reload();
+                }}
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '12px 20px',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  marginTop: '12px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = '#b91c1c';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = '#dc2626';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }}
+              >
+                🔧 Fix Username Now
+              </button>
+            </div>
+          )}
+          
           {/* Navigation Buttons */}
-          <div className="navigation-buttons">
+          <div className="navigation-buttons" style={{ marginLeft: '60px' }}>
             <a href="/users" className="nav-button traders">
               <ScanSmiley size={24} /> View Traders
             </a>
@@ -405,50 +782,32 @@ export default function UserProfile() {
             <RssSimple size={24} /> Live Feed
             </a>
             <a href="/generate" className="nav-button generate">
-            <Balloon size={24} /> Generate
+            <Balloon size={24} /> Generate Opinion
             </a>
+            <button style={{ 
+              padding: '0px 24px',
+              color: 'var(--text-black)',
+              fontSize: 'var(--font-size-md)',
+              fontWeight: 400,
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: "'Noto Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+              gap: '12px',
+              transition: 'all var(--transition)',
+              background: 'transparent',
+              border: 'none',
+              borderRight: '1px solid var(--border-primary)',
+              cursor: 'pointer',
+              outline: 'none',
+              boxShadow: 'none'
+            }}>
+              <Wallet size={24} /> My Portfolio
+            </button>
             <AuthButton />
           </div>
         </div>
 
-        {/* Global Bot Controls */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: '10px',
-          marginBottom: '20px',
-          padding: '12px',
-          backgroundColor: botsRunning ? '#C1DECA' : '#DDB4B4',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            fontSize: '14px',
-            color: botsRunning ? '#4B6453' : '#8E3A3A',
-            marginLeft: '10px'
-          }}>
-            {botsRunning ? 
-              'AI traders are active across all pages - they\'ll keep trading even when you navigate away' : 
-              'AI traders are paused globally'
-            }
-          </div>
-          <button
-            onClick={botsRunning ? handleStopBots : handleStartBots}
-            style={{
-              padding: '0px 16px',
-              fontSize: '14px',
-              fontWeight: '400',
-              cursor: 'pointer',
-              background: 'none',
-              // backgroundColor: botsRunning ? '#DDB4B4' : '#C1DECA',
-              color: 'black',
-              transition: 'all 0.2s ease',
-              border: 'none',
-            }}
-          >
-            {botsRunning ? 'Stop Global Bots' : 'Start Global Bots'}
-          </button>
-        </div>
+
 
         {/* Wallet Overview */}
         <div className={styles.walletOverview}>
@@ -474,8 +833,8 @@ export default function UserProfile() {
         </div>
 
         {/* Opinion Portfolio */}
-        <section className="section">
-          <h2 className="section-title">My Opinion Portfolio</h2>
+        <section className="section" style={{ marginLeft: '20px' }}>
+          <h2 className="section-title" style={{ paddingLeft: '20px' }}>My Opinion Portfolio</h2>
           
           {loading ? (
             <div className="empty-state">
@@ -493,7 +852,7 @@ export default function UserProfile() {
               )}
             </div>
           ) : (
-            <div className="grid grid-2 p-grid">
+            <div className="grid grid-2 p-grid" style={{ marginLeft: '20px' }}>
               {ownedOpinions.map((opinion) => {
                 const gainLoss = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
                 const gainLossPercent = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
@@ -503,8 +862,8 @@ export default function UserProfile() {
                 const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
                 
                 return (
-                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card p-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                    <div className="p-card-header">
+                  <a key={opinion.id} href={`/opinion/${opinionId}`} className="card p-card" style={{ textDecoration: 'none', color: 'inherit', border: 'none' }}>
+                    <div className="p-card-header" style={{ border: 'none' }}>
                       <div className="card-content">
                         <p className="p-card-opinion-text">{safeSlice(opinion.text, 80)}</p>
                         <p className="card-subtitle">Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}</p>

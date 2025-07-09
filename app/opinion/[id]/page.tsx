@@ -101,7 +101,7 @@ export default function OpinionPage() {
   const [opinion, setOpinion] = useState<string | null>(null);
   const [opinions, setOpinions] = useState<{ id: string; text: string }[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile>({
-    username: 'OpinionTrader123',
+    username: 'Loading...', // Will be updated with actual username
     balance: 10000,
     joinDate: new Date().toLocaleDateString(),
     totalEarnings: 0,
@@ -133,6 +133,109 @@ export default function OpinionPage() {
   
   // Auth modal state
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  
+  // Load user profile from auth context or localStorage
+  useEffect(() => {
+    const loadUserProfile = () => {
+      const storedProfile = localStorage.getItem('userProfile');
+      
+      if (authUserProfile && user) {
+        console.log('Opinion page: Using authenticated user profile');
+        let finalProfile = {
+          username: authUserProfile.username,
+          balance: authUserProfile.balance,
+          joinDate: authUserProfile.joinDate ? new Date(authUserProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
+          totalEarnings: authUserProfile.totalEarnings,
+          totalLosses: authUserProfile.totalLosses
+        };
+        
+        // Override with localStorage balance if available (transactions update localStorage)
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          finalProfile = {
+            ...finalProfile,
+            balance: localProfile.balance || finalProfile.balance,
+            totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
+            totalLosses: localProfile.totalLosses || finalProfile.totalLosses
+          };
+        }
+        
+        setUserProfile(finalProfile);
+      } else if (user) {
+        console.log('Opinion page: New authenticated user, checking localStorage first');
+        
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          setUserProfile(localProfile);
+        } else {
+          setUserProfile({
+            username: user.email?.split('@')[0] || 'NewTrader',
+            balance: 10000,
+            joinDate: new Date().toLocaleDateString(),
+            totalEarnings: 0,
+            totalLosses: 0
+          });
+        }
+      } else {
+        // Fallback to localStorage profile (for development/testing)
+        if (storedProfile) {
+          setUserProfile(JSON.parse(storedProfile));
+        }
+      }
+    };
+
+    loadUserProfile();
+  }, [authUserProfile?.username, user?.uid]);
+
+  // COMPREHENSIVE USERNAME SYNC FUNCTION
+  const syncUsernameEverywhere = (newUsername: string) => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      console.log(`🔧 Syncing username everywhere: ${newUsername}`);
+      
+      // 1. Update all regular transactions
+      const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      const updatedTransactions = transactions.map((transaction: any) => {
+        if (transaction.username === 'OpinionTrader123' || transaction.username === 'Loading...' || !transaction.username) {
+          return { ...transaction, username: newUsername };
+        }
+        return transaction;
+      });
+      localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+      
+      // 2. Update global activity feed
+      const globalActivityFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      const updatedGlobalFeed = globalActivityFeed.map((activity: any) => {
+        if (activity.username === 'OpinionTrader123' || activity.username === 'Loading...' || !activity.username) {
+          return { ...activity, username: newUsername };
+        }
+        return activity;
+      });
+      localStorage.setItem('globalActivityFeed', JSON.stringify(updatedGlobalFeed));
+      
+      // 3. Update opinion attributions
+      const opinionAttributions = JSON.parse(localStorage.getItem('opinionAttributions') || '{}');
+      Object.keys(opinionAttributions).forEach(opinion => {
+        if (opinionAttributions[opinion].author === 'OpinionTrader123' || opinionAttributions[opinion].author === 'Loading...' || !opinionAttributions[opinion].author) {
+          opinionAttributions[opinion].author = newUsername;
+        }
+      });
+      localStorage.setItem('opinionAttributions', JSON.stringify(opinionAttributions));
+      
+      console.log(`✅ Username synced everywhere: ${newUsername}`);
+      
+    } catch (error) {
+      console.error('Error syncing username everywhere:', error);
+    }
+  };
+
+  // Monitor for username changes and sync
+  useEffect(() => {
+    if (userProfile.username && userProfile.username !== 'Loading...' && userProfile.username !== 'OpinionTrader123') {
+      syncUsernameEverywhere(userProfile.username);
+    }
+  }, [userProfile.username]);
 
   // FIXED: Safe localStorage helpers to prevent SSR errors
   const safeGetFromStorage = (key: string, defaultValue: any = null) => {
@@ -226,7 +329,7 @@ export default function OpinionPage() {
       
       const currentUser = safeGetFromStorage('userProfile', {});
       return {
-        author: currentUser.username || 'OpinionTrader123',
+        author: currentUser.username || 'Anonymous',
         isBot: false,
         dateCreated: new Date().toLocaleDateString(),
         source: 'user'
@@ -1341,7 +1444,7 @@ const purchaseOpinion = () => {
             traderName = bot ? bot.username : 'AI Bot';
             isBot = true;
           } else if (matchingTransaction) {
-            traderName = currentUser.username || 'OpinionTrader123';
+            traderName = currentUser.username || 'Anonymous';
             isBot = false;
           } else {
             // Simulate realistic trader names for demonstration

@@ -80,17 +80,17 @@ export default function Sidebar({
     try {
       const storedOpinions: string[] = safeGetFromStorage('opinions', []);
       
-      // Get ONLY creation transactions (type: 'earn'), ignore all buy/sell/bet transactions
+      // Get ALL creation transactions (type: 'earn') from both user and bot transactions
       const userTransactions = safeGetFromStorage('transactions', []);
       const botTransactions = safeGetFromStorage('botTransactions', []);
       
-      // Filter to ONLY opinion creation transactions (type: 'earn')
-      const creationTransactions = [
+      // Combine all creation transactions
+      const allCreationTransactions = [
         ...userTransactions.filter((t: any) => t.type === 'earn'),
         ...botTransactions.filter((t: any) => t.type === 'earn')
       ];
       
-      console.log(`📊 Sidebar: Found ${storedOpinions.length} opinions, ${creationTransactions.length} creation transactions`);
+      console.log(`📊 Sidebar: Found ${storedOpinions.length} opinions, ${allCreationTransactions.length} creation transactions`);
       
       return storedOpinions
         .filter(Boolean)
@@ -99,16 +99,20 @@ export default function Sidebar({
           const originalIndex = index;
           
           // Find creation transaction for THIS SPECIFIC OPINION
-          const creationTransaction = creationTransactions
+          // Use a more flexible matching approach
+          const creationTransaction = allCreationTransactions
             .filter((t: any) => {
-              // EXACT match first (most reliable)
+              if (!t.opinionText) return false;
+              
+              // Try exact match first
               if (t.opinionText === text) return true;
               
-              // Fallback: partial match only if exact match not found
-              if (t.opinionText && (
-                text.includes(t.opinionText.slice(0, 50)) ||
-                t.opinionText.includes(text.slice(0, 50))
-              )) return true;
+              // Try partial match (either direction)
+              const textStart = text.slice(0, 50);
+              const transactionStart = t.opinionText.slice(0, 50);
+              
+              if (textStart === transactionStart) return true;
+              if (text.includes(transactionStart) || t.opinionText.includes(textStart)) return true;
               
               return false;
             })
@@ -119,18 +123,32 @@ export default function Sidebar({
               return bTime - aTime;
             })[0];
           
-          // Use creation timestamps for sorting
+          // Determine creation timestamp
           let createdAt: number;
           
           if (creationTransaction) {
-            createdAt = creationTransaction.timestamp || new Date(creationTransaction.date).getTime();
+            // Parse timestamp more carefully to ensure proper sorting
+            let timestamp: number;
+            if (creationTransaction.timestamp) {
+              timestamp = new Date(creationTransaction.timestamp).getTime();
+            } else if (creationTransaction.date) {
+              timestamp = new Date(creationTransaction.date).getTime();
+            } else {
+              timestamp = Date.now() - (storedOpinions.length - index) * 60 * 1000; // Fallback
+            }
+            
+            // Ensure timestamp is valid
+            if (isNaN(timestamp)) {
+              timestamp = Date.now() - (storedOpinions.length - index) * 60 * 1000;
+            }
+            
+            createdAt = timestamp;
             console.log(`📋 CREATION found for "${text.slice(0, 30)}...": ${new Date(createdAt).toLocaleString()}`);
           } else {
-            // FALLBACK: Use opinion position in array with recent bias
-            // Higher index = more recent opinion = more recent timestamp
-            const baseTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
-            const timeIncrement = 60 * 60 * 1000; // 1 hour increment per opinion
-            createdAt = baseTime + (index * timeIncrement);
+            // FIXED FALLBACK: Create proper chronological order
+            // Use current time minus decreasing amounts (newest opinions get newer timestamps)
+            const minutesAgo = (storedOpinions.length - index) * 2; // 2 minute increments
+            createdAt = Date.now() - (minutesAgo * 60 * 1000);
             
             console.log(`📋 FALLBACK timestamp for "${text.slice(0, 30)}..." (index ${index}): ${new Date(createdAt).toLocaleString()}`);
           }
@@ -141,7 +159,8 @@ export default function Sidebar({
             createdAt,
             originalIndex
           };
-        });
+        })
+        .sort((a, b) => b.createdAt - a.createdAt); // Sort here to ensure newest first
     } catch (error) {
       console.error('Error getting all opinions:', error);
       return [];
@@ -312,17 +331,15 @@ export default function Sidebar({
         console.log(`📊 Sidebar updating: Found ${allOpinions.length} total opinions`);
         setDebugInfo(`Found ${allOpinions.length} opinions`);
         
-        // Sort by creation timestamp - NEWEST FIRST
-        const sortedByCreationTime = allOpinions
-          .filter(Boolean)
-          .sort((a, b) => b.createdAt - a.createdAt); // Newest first
+        // Opinions are now already sorted by creation timestamp - NEWEST FIRST
+        const sortedOpinions = allOpinions.filter(Boolean);
         
-        console.log(`📊 After sorting by creation time: ${sortedByCreationTime.length} opinions`);
-        if (sortedByCreationTime.length > 0) {
-          console.log(`📊 Most recent: "${sortedByCreationTime[0]?.text?.slice(0, 30)}..." (Original ID: ${sortedByCreationTime[0]?.id}, Created: ${new Date(sortedByCreationTime[0]?.createdAt).toLocaleString()})`);
+        console.log(`📊 After filtering: ${sortedOpinions.length} opinions`);
+        if (sortedOpinions.length > 0) {
+          console.log(`📊 Most recent: "${sortedOpinions[0]?.text?.slice(0, 30)}..." (Original ID: ${sortedOpinions[0]?.id}, Created: ${new Date(sortedOpinions[0]?.createdAt).toLocaleString()})`);
         }
         
-        const processedOpinions: OpinionWithPrice[] = sortedByCreationTime
+        const processedOpinions: OpinionWithPrice[] = sortedOpinions
           .map((op: { id: string; text: string; createdAt: number; originalIndex: number }) => {
             try {
               const text = op.text;

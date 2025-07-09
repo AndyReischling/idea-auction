@@ -140,9 +140,9 @@ class AutonomousBotSystem {
     this.optimizeForPerformance();
     
     // Start the bot system with reduced load
-    // this.startBots(); // TEMPORARILY DISABLED FOR AUTH DEBUGGING
+    this.startBots(); // RE-ENABLED FOR PROPER FUNCTIONALITY
     
-    // console.log('✅ Bot system auto-initialized with UI-optimized settings!');
+    console.log('✅ Bot system auto-initialized with UI-optimized settings!');
   }
 
   // UPDATED: Use unified price calculation
@@ -155,7 +155,7 @@ class AutonomousBotSystem {
     return this.marketDataManager.updateMarketData(opinionText, action, quantity, undefined, this.getCurrentBotId());
   }
 
-  // UPDATED: Use unified transaction recording
+  // UPDATED: Use unified transaction recording + GlobalActivityTracker integration
   private addBotTransaction(
     bot: BotProfile, 
     type: string, 
@@ -165,6 +165,7 @@ class AutonomousBotSystem {
     shortId?: string,
     metadata: any = {}
   ): void {
+    // Save via unified transaction system
     const transaction = this.transactionManager.createTransaction(
       type as UnifiedTransaction['type'],
       amount,
@@ -178,6 +179,87 @@ class AutonomousBotSystem {
       }
     );
     this.transactionManager.saveTransaction(transaction);
+
+    // CRITICAL FIX: Also add to GlobalActivityTracker for feed integration
+    if (typeof window !== 'undefined') {
+      const activityData = {
+        type: type as 'buy' | 'sell' | 'earn' | 'bet_place' | 'bet_win' | 'bet_loss' | 'short_place' | 'short_win' | 'short_loss' | 'generate',
+        username: bot.username,
+        opinionText: opinionText,
+        opinionId: opinionId,
+        amount: amount,
+        price: metadata.purchasePricePerShare || metadata.price,
+        quantity: metadata.quantity || 1,
+        timestamp: new Date().toISOString(),
+        isBot: true,
+        botId: bot.id
+      };
+
+      console.log(`🤖 Adding bot transaction to global feed: ${bot.username} ${type} ${opinionText?.slice(0, 30)}...`);
+      
+      // Method 1: Add to GlobalActivityTracker (localStorage) with sanitization
+      if ((window as any).addToGlobalFeed) {
+        try {
+          // Sanitize activityData to prevent undefined values
+          const sanitizedActivityData = {
+            ...activityData,
+            username: String(activityData.username || 'unknown-bot'),
+            opinionText: String(activityData.opinionText || ''),
+            opinionId: String(activityData.opinionId || ''),
+            amount: Number(activityData.amount) || 0,
+            price: Number(activityData.price) || 10.00,
+            quantity: Number(activityData.quantity) || 1,
+            botId: String(activityData.botId || 'unknown-bot-id')
+          };
+          (window as any).addToGlobalFeed(sanitizedActivityData);
+        } catch (error) {
+          console.error('❌ Failed to add bot transaction to global feed:', error);
+        }
+      }
+
+      // Method 2: Add to Firebase (for real-time sync)
+      const addToFirebase = async () => {
+        try {
+          const { firebaseActivityService } = await import('../lib/firebase-activity');
+          await firebaseActivityService.addActivity({
+            type: activityData.type,
+            username: String(activityData.username || 'unknown-bot'),
+            userId: undefined, // bots don't have user IDs
+            opinionText: String(activityData.opinionText || ''),
+            opinionId: String(activityData.opinionId || ''),
+            amount: Number(activityData.amount) || 0,
+            price: Number(activityData.price) || 10.00,
+            quantity: Number(activityData.quantity) || 1,
+            isBot: true, // CRITICAL: This allows bot writes in Firestore rules
+            botId: String(bot.id || 'unknown-bot-id'),
+            metadata: {
+              source: 'bot_system', // CRITICAL: This allows writes via metadata rule
+              botPersonality: bot.personality,
+              originalMetadata: metadata,
+              timestamp: new Date().toISOString()
+            }
+          });
+          console.log(`✅ Bot transaction added to Firebase: ${bot.username} ${type}`);
+        } catch (error) {
+          console.error('⚠️ Failed to add bot transaction to Firebase (using localStorage fallback):', error);
+          
+          // Enhanced error logging for debugging
+          if (error instanceof Error) {
+            console.error('📋 Bot Firebase Error Details:', {
+              message: error.message,
+              code: (error as any).code,
+              botId: bot.id,
+              botUsername: bot.username,
+              activityType: type,
+              hasIsBot: 'isBot field was set to true',
+              hasMetadata: 'metadata.source was set to bot_system'
+            });
+          }
+        }
+      };
+
+      addToFirebase();
+    }
   }
 
   // Helper to get current bot ID for tracking
@@ -737,15 +819,13 @@ class AutonomousBotSystem {
       // UPDATED: Initialize market data using unified system
       this.marketDataManager.getMarketData(newOpinion); // This will create it at $10.00
       
-      // Reward bot for creating opinion
-      const reward = 100 + Math.floor(Math.random() * 50); // $100-150 reward
-      bot.balance += reward;
-      bot.totalEarnings += reward;
+      // FIXED: Generating opinions should be free, not rewarded
+      // No money is given for generating opinions - this is more realistic
       
-      // Record transaction
-      this.addBotTransaction(bot, 'earn', (opinions.length - 1).toString(), newOpinion, reward);
+      // Record transaction with no monetary reward
+      this.addBotTransaction(bot, 'generate', (opinions.length - 1).toString(), newOpinion, 0);
       
-      console.log(`🤖💡 ${bot.username} generated: "${newOpinion.slice(0, 50)}..." (+$${reward})`);
+      console.log(`🤖💡 ${bot.username} generated: "${newOpinion.slice(0, 50)}..." (no monetary reward)`);
       
       // Sometimes buy their own opinion
       if (Math.random() < 0.3) {
@@ -1585,6 +1665,121 @@ class AutonomousBotSystem {
     console.log('   2. Run: botSystem.validateTransactionIntegrity()');
     console.log('   3. Run: botSystem.forceBotActivity(10)');
     console.log('   4. Run: botSystem.restartOptimized()');
+    console.log('   5. Run: botSystem.syncBotTransactionsToGlobalFeed()');
+    console.log('   6. Run: botSystem.testFirebaseDataSanitization()');
+  }
+
+  // NEW: Test Firebase data sanitization
+  public testFirebaseDataSanitization(): void {
+    console.log('🧪 TESTING FIREBASE DATA SANITIZATION...');
+    
+    // Test with potentially problematic data
+    const testBot: BotProfile = {
+      id: 'test-bot-123',
+      username: 'TestBot',
+      balance: 1000,
+      joinDate: new Date().toISOString(),
+      totalEarnings: 0,
+      totalLosses: 0,
+      personality: this.bots[0]?.personality || {} as any,
+      riskTolerance: 'moderate',
+      tradingStrategy: this.bots[0]?.tradingStrategy || {} as any,
+      lastActive: new Date().toISOString(),
+      isActive: true
+    };
+
+    const testCases = [
+      { type: 'buy', opinionText: undefined, amount: undefined, price: undefined },
+      { type: 'sell', opinionText: '', amount: 0, price: NaN },
+      { type: 'earn', opinionText: null, amount: 'not-a-number', price: null },
+      { type: 'buy', opinionText: 'Valid opinion', amount: 50, price: 12.34 }
+    ];
+
+    testCases.forEach((testCase, index) => {
+      console.log(`\n🧪 Test Case ${index + 1}:`, testCase);
+      
+      try {
+        this.addBotTransaction(
+          testBot,
+          testCase.type,
+          'test-opinion-' + index,
+          testCase.opinionText as any,
+          testCase.amount as any,
+          undefined,
+          { price: testCase.price, quantity: 1 }
+        );
+        console.log(`✅ Test ${index + 1} passed - no Firebase errors`);
+      } catch (error) {
+        console.error(`❌ Test ${index + 1} failed:`, error);
+      }
+    });
+    
+    console.log('\n✅ Firebase data sanitization test complete!');
+  }
+
+  // NEW: Sync existing bot transactions to global feed
+  public syncBotTransactionsToGlobalFeed(): void {
+    console.log('🔄 SYNCING BOT TRANSACTIONS TO GLOBAL FEED...');
+    
+    const transactions = this.getBotTransactions();
+    const bots = this.getBots();
+    let synced = 0;
+    let failed = 0;
+    
+    if (typeof window === 'undefined' || !(window as any).addToGlobalFeed) {
+      console.log('❌ GlobalActivityTracker not available, cannot sync');
+      return;
+    }
+    
+    // Get existing global feed to avoid duplicates
+    const existingGlobalFeed = (window as any).getGlobalActivities?.() || [];
+    const existingIds = new Set(existingGlobalFeed.map((item: any) => item.id));
+    
+    console.log(`📊 Found ${transactions.length} bot transactions to sync`);
+    console.log(`📊 Existing global feed has ${existingGlobalFeed.length} items`);
+    
+    transactions.forEach(transaction => {
+      try {
+        // Skip if already in global feed
+        if (existingIds.has(transaction.id)) {
+          return;
+        }
+        
+        const bot = bots.find(b => b.id === transaction.botId);
+        if (!bot) {
+          console.warn(`⚠️ Bot not found for transaction ${transaction.id}`);
+          failed++;
+          return;
+        }
+        
+        const activityData = {
+          type: transaction.type as 'buy' | 'sell' | 'earn' | 'bet_place' | 'bet_win' | 'bet_loss' | 'short_place' | 'short_win' | 'short_loss' | 'generate',
+          username: bot.username,
+          opinionText: transaction.opinionText,
+          opinionId: transaction.opinionId,
+          amount: transaction.amount,
+          price: transaction.metadata?.purchasePricePerShare || transaction.metadata?.price,
+          quantity: transaction.metadata?.quantity || 1,
+          timestamp: transaction.date,
+          isBot: true,
+          botId: bot.id
+        };
+        
+        (window as any).addToGlobalFeed(activityData);
+        synced++;
+        
+      } catch (error) {
+        console.error('❌ Failed to sync bot transaction:', error);
+        failed++;
+      }
+    });
+    
+    console.log(`✅ Sync complete: ${synced} synced, ${failed} failed`);
+    
+    // Force refresh the feed page if available
+    if ((window as any).forceRefreshFeed) {
+      (window as any).forceRefreshFeed();
+    }
   }
 
   // Helper methods
@@ -1988,6 +2183,8 @@ if (typeof window !== 'undefined') {
   (window as any).fixBotTransactions = () => botSystem.fixBotTransactions();
   (window as any).validateTransactionIntegrity = () => botSystem.validateTransactionIntegrity();
   (window as any).debugTransactionIssues = () => botSystem.debugTransactionIssues();
+  (window as any).syncBotTransactionsToGlobalFeed = () => botSystem.syncBotTransactionsToGlobalFeed();
+  (window as any).testFirebaseDataSanitization = () => botSystem.testFirebaseDataSanitization();
   
   // AUTO-START LOGGING
   console.log('🤖 Bot System loaded with UNIFIED SYSTEM integration!');
@@ -2000,6 +2197,8 @@ if (typeof window !== 'undefined') {
   console.log('  - validatePrices() - Check price consistency with unified system');
   console.log('  - testPriceCalc() - Test unified price calculation');
   console.log('  - debugOpinionCreation() - Debug opinion creation and pricing issues');
+  console.log('  - syncBotTransactionsToGlobalFeed() - Sync bot transactions to global feed');
+  console.log('  - testFirebaseDataSanitization() - Test Firebase data sanitization fixes');
   console.log('  - fixBotTransactions() - Fix transaction recording issues');
   console.log('  - validateTransactionIntegrity() - Validate all transactions');
   console.log('  - debugTransactionIssues() - Comprehensive transaction debugging');

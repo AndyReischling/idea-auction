@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import styles from '../page.module.css';
 import { ScanSmiley, Balloon, Wallet, CurrencyCircleDollar, ChartLine, Folder, DiceSix, BookOpenText, Play, CurrencyDollar, Rss } from '@phosphor-icons/react';
+import { useAuth } from '../../lib/auth-context';
 
 interface UserProfile {
   username: string;
@@ -98,6 +99,7 @@ interface BetForm {
 export default function UserDetailPage() {
   const { username } = useParams();
   const router = useRouter();
+  const { user, userProfile: authUserProfile } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -110,7 +112,7 @@ export default function UserDetailPage() {
   // NEW: Betting states
   const [showBetModal, setShowBetModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
-    username: 'OpinionTrader123',
+    username: 'Loading...', // Will be updated with actual username
     balance: 10000,
     joinDate: new Date().toLocaleDateString(),
     totalEarnings: 0,
@@ -612,15 +614,65 @@ export default function UserDetailPage() {
     setIsClient(true);
   }, []);
 
+  // Load current user profile from auth context or localStorage
+  useEffect(() => {
+    const loadCurrentUserProfile = () => {
+      if (!isClient) return;
+      
+      const storedProfile = safeLocalStorage.getItem('userProfile');
+      
+      if (authUserProfile && user) {
+        console.log('User detail page: Using authenticated user profile');
+        let finalProfile = {
+          username: authUserProfile.username,
+          balance: authUserProfile.balance,
+          joinDate: authUserProfile.joinDate ? new Date(authUserProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
+          totalEarnings: authUserProfile.totalEarnings,
+          totalLosses: authUserProfile.totalLosses
+        };
+        
+        // Override with localStorage balance if available (transactions update localStorage)
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          finalProfile = {
+            ...finalProfile,
+            balance: localProfile.balance || finalProfile.balance,
+            totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
+            totalLosses: localProfile.totalLosses || finalProfile.totalLosses
+          };
+        }
+        
+        setCurrentUser(finalProfile);
+      } else if (user) {
+        console.log('User detail page: New authenticated user, checking localStorage first');
+        
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          setCurrentUser(localProfile);
+        } else {
+          setCurrentUser({
+            username: user.email?.split('@')[0] || 'NewTrader',
+            balance: 10000,
+            joinDate: new Date().toLocaleDateString(),
+            totalEarnings: 0,
+            totalLosses: 0
+          });
+        }
+      } else {
+        // Fallback to localStorage profile (for development/testing)
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          setCurrentUser(localProfile);
+        }
+      }
+    };
+
+    loadCurrentUserProfile();
+  }, [authUserProfile?.username, user?.uid, isClient]);
+
   useEffect(() => {
     if (!isClient) return;
     
-    // Load current user profile
-    const storedProfile = safeLocalStorage.getItem('userProfile');
-    if (storedProfile) {
-      setCurrentUser(JSON.parse(storedProfile));
-    }
-
     // Load active bets
     const storedBets = safeLocalStorage.getItem('advancedBets');
     if (storedBets) {

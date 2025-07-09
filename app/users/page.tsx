@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
 import { ScanSmiley, Balloon, Wallet, Rss, ArrowFatLineUp, ArrowFatLineDown } from '@phosphor-icons/react';
+import { useAuth } from '../lib/auth-context';
 
 interface UserProfile {
   username: string;
@@ -104,10 +105,11 @@ interface PortfolioSnapshot {
 
 export default function UsersPage() {
   const router = useRouter();
+  const { user, userProfile: authUserProfile } = useAuth();
   const [isClient, setIsClient] = useState(false);
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
-    username: 'OpinionTrader123',
+    username: 'Loading...', // Will be updated with actual username
     balance: 10000,
     joinDate: new Date().toLocaleDateString(),
     totalEarnings: 0,
@@ -139,6 +141,154 @@ export default function UsersPage() {
     if (!text || typeof text !== 'string') return 'Unknown opinion';
     return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
   };
+
+  // Load user profile from auth context or localStorage
+  useEffect(() => {
+    const loadUserProfile = () => {
+      if (typeof window === 'undefined') return;
+      
+      const storedProfile = localStorage.getItem('userProfile');
+      
+      if (authUserProfile && user) {
+        console.log('Users page: Using authenticated user profile');
+        let finalProfile = {
+          username: authUserProfile.username,
+          balance: authUserProfile.balance,
+          joinDate: authUserProfile.joinDate ? new Date(authUserProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
+          totalEarnings: authUserProfile.totalEarnings,
+          totalLosses: authUserProfile.totalLosses
+        };
+        
+        // Override with localStorage balance if available (transactions update localStorage)
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          finalProfile = {
+            ...finalProfile,
+            balance: localProfile.balance || finalProfile.balance,
+            totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
+            totalLosses: localProfile.totalLosses || finalProfile.totalLosses
+          };
+          
+          // AUTO-SYNC: If local username is different from authenticated username, fix it immediately
+          if (localProfile.username !== authUserProfile.username) {
+            console.log(`🔧 USERS AUTO-SYNC: Fixing username mismatch: ${localProfile.username} → ${authUserProfile.username}`);
+            
+            // Sync username everywhere
+            syncUsernameEverywhere(authUserProfile.username);
+            
+            // Update localStorage profile with correct username
+            localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+          }
+        }
+        
+        setCurrentUser(finalProfile);
+      } else if (user) {
+        console.log('Users page: New authenticated user, checking localStorage first');
+        
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          // Use authenticated email as username if available, prioritize AndyMoney
+          let authenticatedUsername = user.email?.split('@')[0] || 'AuthenticatedUser';
+          
+          // Special handling for AndyMoney
+          if (user?.email?.includes('andy') || authenticatedUsername === 'OpinionTrader123') {
+            authenticatedUsername = 'AndyMoney';
+            console.log(`🔧 ANDY SPECIAL: Using AndyMoney based on email or bad username`);
+          }
+          
+          const finalProfile = {
+            ...localProfile,
+            username: authenticatedUsername // Always use authenticated username
+          };
+          
+          // Auto-sync if username changed
+          if (localProfile.username !== authenticatedUsername) {
+            console.log(`🔧 USERS AUTO-SYNC: Fixing username for new auth user: ${localProfile.username} → ${authenticatedUsername}`);
+            syncUsernameEverywhere(authenticatedUsername);
+          }
+          
+          setCurrentUser(finalProfile);
+          localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+        } else {
+          // Use authenticated email as username if available, prioritize AndyMoney
+          let newUsername = user.email?.split('@')[0] || 'AuthenticatedUser';
+          
+          // Special handling for AndyMoney
+          if (user?.email?.includes('andy') || newUsername === 'OpinionTrader123') {
+            newUsername = 'AndyMoney';
+            console.log(`🔧 ANDY SPECIAL: Using AndyMoney for new user based on email or bad username`);
+          }
+          
+          setCurrentUser({
+            username: newUsername,
+            balance: 10000,
+            joinDate: new Date().toLocaleDateString(),
+            totalEarnings: 0,
+            totalLosses: 0
+          });
+        }
+      } else {
+        // Fallback to localStorage profile (for development/testing)
+        if (storedProfile) {
+          const localProfile = JSON.parse(storedProfile);
+          setCurrentUser(localProfile);
+        }
+      }
+    };
+
+    loadUserProfile();
+  }, [authUserProfile?.username, user?.uid]);
+
+  // COMPREHENSIVE USERNAME SYNC FUNCTION
+  const syncUsernameEverywhere = (newUsername: string) => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      console.log(`🔧 Syncing username everywhere: ${newUsername}`);
+      
+      // 1. Update all regular transactions
+      const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+      const updatedTransactions = transactions.map((transaction: any) => {
+        if (transaction.username === 'OpinionTrader123' || transaction.username === 'Loading...' || !transaction.username) {
+          return { ...transaction, username: newUsername };
+        }
+        return transaction;
+      });
+      localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+      
+      // 2. Update global activity feed
+      const globalActivityFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+      const updatedGlobalFeed = globalActivityFeed.map((activity: any) => {
+        if (activity.username === 'OpinionTrader123' || activity.username === 'Loading...' || !activity.username) {
+          return { ...activity, username: newUsername };
+        }
+        return activity;
+      });
+      localStorage.setItem('globalActivityFeed', JSON.stringify(updatedGlobalFeed));
+      
+      // 3. Update advanced bets
+      const advancedBets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+      const updatedBets = advancedBets.map((bet: any) => {
+        if (bet.bettor === 'OpinionTrader123' || bet.bettor === 'Loading...' || !bet.bettor) {
+          return { ...bet, bettor: newUsername };
+        }
+        return bet;
+      });
+      localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+      
+      console.log(`✅ Username synced everywhere: ${newUsername}`);
+      
+    } catch (error) {
+      console.error('Error syncing username everywhere:', error);
+    }
+  };
+
+  // Monitor for username changes and sync
+  useEffect(() => {
+    if (currentUser.username && currentUser.username !== 'Loading...' && currentUser.username !== 'OpinionTrader123') {
+      syncUsernameEverywhere(currentUser.username);
+    }
+  }, [currentUser.username]);
 
   const getOpinionMarketData = (opinionText: string) => {
     try {

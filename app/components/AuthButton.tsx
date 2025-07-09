@@ -28,12 +28,12 @@ const AuthButton: React.FC = () => {
     );
   }
 
-  if (user && userProfile) {
+  if (user) {
     return (
       <button
         onClick={handleLogout}
         className="auth-button"
-        title={`Sign out ${userProfile.username}`}
+        title={`Sign out ${userProfile?.username || user.email}`}
       >
         <SignOut size={24} /> Sign Out
       </button>

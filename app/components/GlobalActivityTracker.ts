@@ -3,7 +3,7 @@
 
 export interface ActivityFeedItem {
   id: string;
-  type: 'buy' | 'sell' | 'earn' | 'short_place' | 'short_win' | 'short_loss' | 'bet_place' | 'bet_win' | 'bet_loss' | 'generate';
+  type: 'buy' | 'sell' | 'generate' | 'earn' | 'short_place' | 'short_win' | 'short_loss' | 'bet_place' | 'bet_win' | 'bet_loss';
   username: string;
   opinionText?: string;
   opinionId?: string | number;
@@ -27,14 +27,15 @@ class GlobalActivityTracker {
   private initialize() {
     if (typeof window === 'undefined') return;
     
-    // Load current user from localStorage
+    // Load current user from localStorage (always use localStorage as it's most up-to-date)
     try {
       const storedUser = localStorage.getItem('userProfile');
       if (storedUser) {
         this.currentUser = JSON.parse(storedUser);
       } else {
+        // Fallback to anonymous user
         this.currentUser = {
-          username: 'OpinionTrader123',
+          username: 'AnonymousUser',
           balance: 10000,
           joinDate: new Date().toLocaleDateString(),
           totalEarnings: 0,
@@ -44,7 +45,7 @@ class GlobalActivityTracker {
     } catch (error) {
       console.error('Error loading user profile:', error);
       this.currentUser = {
-        username: 'OpinionTrader123',
+        username: 'AnonymousUser',
         balance: 10000,
         joinDate: new Date().toLocaleDateString(),
         totalEarnings: 0,
@@ -83,6 +84,21 @@ class GlobalActivityTracker {
   public setCurrentUser(user: any) {
     this.currentUser = user;
     // console.log('🔧 Global Activity Tracker user updated:', user?.username);
+  }
+
+  // Refresh user profile from localStorage
+  public refreshUserProfile() {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      const storedUser = localStorage.getItem('userProfile');
+      if (storedUser) {
+        this.currentUser = JSON.parse(storedUser);
+        console.log('🔄 Global Activity Tracker user refreshed:', this.currentUser?.username);
+      }
+    } catch (error) {
+      console.error('Error refreshing user profile:', error);
+    }
   }
 
   // CORE METHOD: Add to global feed (works with existing feed system)
@@ -225,15 +241,15 @@ class GlobalActivityTracker {
     }
 
     this.addToGlobalFeed({
-      type: 'earn',
+      type: 'generate',
       username: this.currentUser.username,
       opinionText: opinionText,
-      amount: earnings,
+      amount: 0, // FIXED: Generating opinions should be free, not rewarded
       timestamp: new Date().toISOString(),
       isBot: false
     });
 
-    console.log(`🔥 trackOpinionGeneration: ${this.currentUser.username} generated "${opinionText.slice(0, 30)}..." earned $${earnings.toFixed(2)}`);
+    console.log(`🔥 trackOpinionGeneration: ${this.currentUser.username} generated "${opinionText.slice(0, 30)}..." (no monetary reward)`);
   }
 
   // HELPER: Get all activities (works with existing loadRealActivity)
@@ -292,6 +308,7 @@ if (typeof window !== 'undefined') {
   (window as any).getActivityStats = globalActivityTracker.getActivityStats.bind(globalActivityTracker);
   (window as any).getGlobalActivities = globalActivityTracker.getActivities.bind(globalActivityTracker);
   (window as any).forceRefreshFeed = globalActivityTracker.forceRefreshFeed.bind(globalActivityTracker);
+  (window as any).refreshUserProfile = globalActivityTracker.refreshUserProfile.bind(globalActivityTracker);
   
   // Console logs temporarily disabled for auth debugging
   // console.log('🌐 Global Activity Tracker loaded - provides functions expected by opinion page!');

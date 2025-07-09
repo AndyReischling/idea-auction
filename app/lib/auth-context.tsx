@@ -22,6 +22,8 @@ import {
   collection 
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { dataReconciliationService } from './data-reconciliation';
+import { marketDataSyncService } from './market-data-sync';
 
 interface UserProfile {
   uid: string;
@@ -310,6 +312,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear user profile first
       setUserProfile(null);
       
+      // Stop market data sync
+      marketDataSyncService.stopRealtimeSync();
+      
       // Sign out from Firebase Auth
       await signOut(auth);
       
@@ -436,6 +441,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
           
           setUserProfile(profile);
+          
+          // Start market data sync for authenticated users
+          if (profile) {
+            marketDataSyncService.startRealtimeSync(user.uid);
+          }
         } catch (error) {
           console.warn('⏰ Profile loading timed out or failed:', error);
           setUserProfile(null); // Still allow user to be authenticated even without profile
@@ -451,6 +461,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return unsubscribe;
   }, []);
+
+  // Enhanced profile synchronization between localStorage and Firebase
+  useEffect(() => {
+    if (userProfile && user?.uid) {
+      const localProfile = {
+        username: userProfile.username,
+        balance: userProfile.balance,
+        joinDate: userProfile.joinDate instanceof Date ? userProfile.joinDate.toLocaleDateString() : userProfile.joinDate,
+        totalEarnings: userProfile.totalEarnings,
+        totalLosses: userProfile.totalLosses
+      };
+      
+      // Update localStorage for backward compatibility
+      try {
+        localStorage.setItem('userProfile', JSON.stringify(localProfile));
+      } catch (error) {
+        console.error('Failed to save profile to localStorage:', error);
+      }
+      
+      // Sync with Firebase periodically to keep data consistent
+      const syncProfile = async () => {
+        try {
+          await dataReconciliationService.reconcileUserProfile(user.uid);
+        } catch (error) {
+          console.error('Background profile sync failed:', error);
+        }
+      };
+      
+      // Initial sync and then every 5 minutes
+      syncProfile();
+      const syncInterval = setInterval(syncProfile, 5 * 60 * 1000);
+      
+      return () => {
+        clearInterval(syncInterval);
+      };
+    }
+  }, [userProfile, user?.uid]);
 
   const value: AuthContextType = {
     user,

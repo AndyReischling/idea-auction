@@ -218,19 +218,23 @@ export class UnifiedMarketDataManager {
     this.safeSetToStorage('opinionMarketData', allMarketData);
   }
 
-  // Normalize market data to ensure consistency
+  // Normalize market data to ensure consistency and prevent undefined values
   private normalizeMarketData(data: any): UnifiedOpinionMarketData {
     return {
-      opinionText: data.opinionText || '',
-      timesPurchased: data.timesPurchased || 0,
-      timesSold: data.timesSold || 0,
-      currentPrice: data.currentPrice || 10.00,
+      opinionText: String(data.opinionText || ''),
+      timesPurchased: Number(data.timesPurchased) || 0,
+      timesSold: Number(data.timesSold) || 0,
+      currentPrice: Number(data.currentPrice) || 10.00,
       basePrice: 10.00, // Always enforce 10.00
       lastUpdated: data.lastUpdated || new Date().toISOString(),
-      priceHistory: data.priceHistory || [],
-      liquidityScore: data.liquidityScore || 0,
-      dailyVolume: data.dailyVolume || 0,
-      manipulation_protection: data.manipulation_protection || {
+      priceHistory: Array.isArray(data.priceHistory) ? data.priceHistory : [],
+      liquidityScore: Number(data.liquidityScore) || 0,
+      dailyVolume: Number(data.dailyVolume) || 0,
+      manipulation_protection: data.manipulation_protection ? {
+        rapid_trades: Number(data.manipulation_protection.rapid_trades) || 0,
+        single_trader_percentage: Number(data.manipulation_protection.single_trader_percentage) || 0,
+        last_manipulation_check: data.manipulation_protection.last_manipulation_check || new Date().toISOString()
+      } : {
         rapid_trades: 0,
         single_trader_percentage: 0,
         last_manipulation_check: new Date().toISOString()
@@ -296,11 +300,16 @@ export class UnifiedTransactionManager {
     botId?: string,
     metadata: UnifiedTransaction['metadata'] = {}
   ): UnifiedTransaction {
+    // Ensure unique timestamps by adding microseconds
+    const timestamp = new Date();
+    // Add small random offset to prevent exact timestamp collisions
+    timestamp.setMilliseconds(timestamp.getMilliseconds() + Math.random() * 0.999);
+    
     return {
       id: this.generateTransactionId(),
       type,
       amount,
-      date: new Date().toISOString(),
+      date: timestamp.toISOString(),
       opinionId,
       opinionText,
       userId,
