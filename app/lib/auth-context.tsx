@@ -19,7 +19,8 @@ import {
   query, 
   where, 
   getDocs, 
-  collection 
+  collection,
+  updateDoc
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { dataReconciliationService } from './data-reconciliation';
@@ -51,6 +52,7 @@ interface AuthContextType {
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   checkUsernameAvailability: (username: string) => Promise<boolean>;
   testFirestoreConnection: () => Promise<boolean>;
+  forceSyncToFirebase: () => Promise<{ success: boolean; message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -399,6 +401,88 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Force immediate sync from localStorage to Firebase
+  const forceBalanceSync = async (user: User): Promise<void> => {
+    if (!user?.uid) return;
+    
+    try {
+      console.log('🔄 Force syncing localStorage balance to Firebase...');
+      
+      // Get current localStorage profile
+      const storedProfile = localStorage.getItem('userProfile');
+      if (!storedProfile) {
+        console.log('⚠️ No localStorage profile found to sync');
+        return;
+      }
+      
+      const localProfile = JSON.parse(storedProfile);
+      
+      // Get current Firebase profile
+      const firebaseDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!firebaseDoc.exists()) {
+        console.log('⚠️ No Firebase profile found - creating new one');
+        await setDoc(doc(db, 'users', user.uid), {
+          ...localProfile,
+          uid: user.uid,
+          email: user.email,
+          balance: Number(localProfile.balance) || 10000,
+          totalEarnings: Number(localProfile.totalEarnings) || 0,
+          totalLosses: Number(localProfile.totalLosses) || 0,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        console.log('✅ Firebase profile created from localStorage');
+        return;
+      }
+      
+      const firebaseProfile = firebaseDoc.data();
+      
+      // Check if sync is needed
+      const localBalance = Number(localProfile.balance) || 10000;
+      const firebaseBalance = Number(firebaseProfile.balance) || 10000;
+      const localEarnings = Number(localProfile.totalEarnings) || 0;
+      const firebaseEarnings = Number(firebaseProfile.totalEarnings) || 0;
+      const localLosses = Number(localProfile.totalLosses) || 0;
+      const firebaseLosses = Number(firebaseProfile.totalLosses) || 0;
+      
+      if (localBalance !== firebaseBalance || localEarnings !== firebaseEarnings || localLosses !== firebaseLosses) {
+        console.log('🔄 Syncing localStorage to Firebase:');
+        console.log(`  Balance: ${firebaseBalance} → ${localBalance}`);
+        console.log(`  Earnings: ${firebaseEarnings} → ${localEarnings}`);
+        console.log(`  Losses: ${firebaseLosses} → ${localLosses}`);
+        
+        await updateDoc(doc(db, 'users', user.uid), {
+          balance: localBalance,
+          totalEarnings: localEarnings,
+          totalLosses: localLosses,
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log('✅ Firebase profile updated with localStorage data');
+      } else {
+        console.log('✅ No sync needed - data is already consistent');
+      }
+      
+    } catch (error) {
+      console.error('❌ Force balance sync failed:', error);
+    }
+  };
+
+  // Manual sync function for users to force sync localStorage to Firebase
+  const forceSyncToFirebase = async (): Promise<{ success: boolean; message: string }> => {
+    if (!user?.uid) {
+      return { success: false, message: 'No authenticated user found' };
+    }
+    
+    try {
+      await forceBalanceSync(user);
+      return { success: true, message: 'Successfully synced localStorage data to Firebase' };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      return { success: false, message: `Sync failed: ${errorMessage}` };
+    }
+  };
+
   // Monitor authentication state with performance optimization
   useEffect(() => {
     console.log('🔄 Setting up auth state listener...');
@@ -422,6 +506,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (user) {
         console.log('✅ User is authenticated - maintaining session');
         setUser(user);
+        
+        // CRITICAL: Force sync localStorage to Firebase immediately
+        await forceBalanceSync(user);
         
         // Load user profile with timeout for better UX
         const profileStartTime = Date.now();
@@ -465,19 +552,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Enhanced profile synchronization between localStorage and Firebase
   useEffect(() => {
     if (userProfile && user?.uid) {
-      const localProfile = {
-        username: userProfile.username,
-        balance: userProfile.balance,
-        joinDate: userProfile.joinDate instanceof Date ? userProfile.joinDate.toLocaleDateString() : userProfile.joinDate,
-        totalEarnings: userProfile.totalEarnings,
-        totalLosses: userProfile.totalLosses
-      };
+      // Get current localStorage profile to check for balance differences
+      const storedProfile = localStorage.getItem('userProfile');
+      let localProfile = null;
       
-      // Update localStorage for backward compatibility
-      try {
-        localStorage.setItem('userProfile', JSON.stringify(localProfile));
-      } catch (error) {
-        console.error('Failed to save profile to localStorage:', error);
+      if (storedProfile) {
+        try {
+          localProfile = JSON.parse(storedProfile);
+        } catch (error) {
+          console.error('Error parsing stored profile:', error);
+        }
+      }
+      
+      // If localStorage has different balance/earnings/losses, update Firebase immediately
+      if (localProfile && (
+        localProfile.balance !== userProfile.balance ||
+        localProfile.totalEarnings !== userProfile.totalEarnings ||
+        localProfile.totalLosses !== userProfile.totalLosses
+      )) {
+        console.log('🔄 Balance mismatch detected - syncing localStorage to Firebase');
+        console.log('Firebase balance:', userProfile.balance);
+        console.log('localStorage balance:', localProfile.balance);
+        
+        // Update Firebase with localStorage values (localStorage wins)
+        const updatedProfile = {
+          ...userProfile,
+          balance: localProfile.balance,
+          totalEarnings: localProfile.totalEarnings,
+          totalLosses: localProfile.totalLosses,
+          updatedAt: serverTimestamp()
+        };
+        
+        // Update Firebase
+        setDoc(doc(db, 'users', user.uid), updatedProfile, { merge: true })
+          .then(() => {
+            console.log('✅ Firebase updated with localStorage balance');
+            setUserProfile(updatedProfile);
+          })
+          .catch(error => {
+            console.error('❌ Failed to update Firebase with localStorage balance:', error);
+          });
+      } else {
+        // Normal sync - update localStorage with current profile
+        const profileForStorage = {
+          username: userProfile.username,
+          balance: userProfile.balance,
+          joinDate: userProfile.joinDate instanceof Date ? userProfile.joinDate.toLocaleDateString() : userProfile.joinDate,
+          totalEarnings: userProfile.totalEarnings,
+          totalLosses: userProfile.totalLosses
+        };
+        
+        // Update localStorage for backward compatibility
+        try {
+          localStorage.setItem('userProfile', JSON.stringify(profileForStorage));
+        } catch (error) {
+          console.error('Failed to save profile to localStorage:', error);
+        }
       }
       
       // Sync with Firebase periodically to keep data consistent
@@ -509,7 +639,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     updateProfile,
     checkUsernameAvailability,
     testFirestoreConnection,
+    forceSyncToFirebase,
   };
+
+  // Make auth context available globally for other components
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).authContext = value;
+    }
+  }, [value]);
 
   return (
     <AuthContext.Provider value={value}>

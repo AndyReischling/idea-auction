@@ -621,6 +621,8 @@ export default function UserDetailPage() {
       
       if (authUserProfile && user) {
         console.log('User detail page: Using authenticated user profile');
+        
+        // Always start with auth profile
         let finalProfile = {
           username: authUserProfile.username,
           balance: authUserProfile.balance,
@@ -629,38 +631,78 @@ export default function UserDetailPage() {
           totalLosses: authUserProfile.totalLosses
         };
         
-        // Override with localStorage balance if available (transactions update localStorage)
+        // CRITICAL: localStorage ALWAYS wins for financial data (balance, earnings, losses)
         if (storedProfile) {
-          const localProfile = JSON.parse(storedProfile);
-          finalProfile = {
-            ...finalProfile,
-            balance: localProfile.balance || finalProfile.balance,
-            totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
-            totalLosses: localProfile.totalLosses || finalProfile.totalLosses
-          };
+          try {
+            const localProfile = JSON.parse(storedProfile);
+            
+            // Use localStorage balance/earnings/losses if they exist and are different
+            if (localProfile.balance !== undefined && localProfile.balance !== finalProfile.balance) {
+              console.log(`🔄 BALANCE OVERRIDE: Firebase ${finalProfile.balance} → localStorage ${localProfile.balance}`);
+              finalProfile.balance = localProfile.balance;
+            }
+            
+            if (localProfile.totalEarnings !== undefined && localProfile.totalEarnings !== finalProfile.totalEarnings) {
+              console.log(`🔄 EARNINGS OVERRIDE: Firebase ${finalProfile.totalEarnings} → localStorage ${localProfile.totalEarnings}`);
+              finalProfile.totalEarnings = localProfile.totalEarnings;
+            }
+            
+            if (localProfile.totalLosses !== undefined && localProfile.totalLosses !== finalProfile.totalLosses) {
+              console.log(`🔄 LOSSES OVERRIDE: Firebase ${finalProfile.totalLosses} → localStorage ${localProfile.totalLosses}`);
+              finalProfile.totalLosses = localProfile.totalLosses;
+            }
+            
+            console.log('✅ Final profile after localStorage override:', finalProfile);
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
+          }
         }
         
         setCurrentUser(finalProfile);
+        
+        // Update localStorage to ensure it has the latest profile
+        safeLocalStorage.setItem('userProfile', JSON.stringify(finalProfile));
+        
       } else if (user) {
         console.log('User detail page: New authenticated user, checking localStorage first');
         
         if (storedProfile) {
-          const localProfile = JSON.parse(storedProfile);
-          setCurrentUser(localProfile);
+          try {
+            const localProfile = JSON.parse(storedProfile);
+            console.log('✅ Using localStorage profile for new auth user:', localProfile);
+            setCurrentUser(localProfile);
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
+            // Fallback to default profile
+            setCurrentUser({
+              username: user.email?.split('@')[0] || 'NewTrader',
+              balance: 10000,
+              joinDate: new Date().toLocaleDateString(),
+              totalEarnings: 0,
+              totalLosses: 0
+            });
+          }
         } else {
-          setCurrentUser({
+          // No localStorage profile, create default
+          const defaultProfile = {
             username: user.email?.split('@')[0] || 'NewTrader',
             balance: 10000,
             joinDate: new Date().toLocaleDateString(),
             totalEarnings: 0,
             totalLosses: 0
-          });
+          };
+          setCurrentUser(defaultProfile);
+          safeLocalStorage.setItem('userProfile', JSON.stringify(defaultProfile));
         }
       } else {
         // Fallback to localStorage profile (for development/testing)
         if (storedProfile) {
-          const localProfile = JSON.parse(storedProfile);
-          setCurrentUser(localProfile);
+          try {
+            const localProfile = JSON.parse(storedProfile);
+            setCurrentUser(localProfile);
+          } catch (error) {
+            console.error('Error parsing localStorage profile:', error);
+          }
         }
       }
     };

@@ -91,7 +91,7 @@ interface BettingActivity {
 
 export default function UserProfile() {
   const [loading, setLoading] = useState(true);
-  const { user, userProfile: authUserProfile } = useAuth();
+  const { user, userProfile: authUserProfile, forceSyncToFirebase } = useAuth();
   
   const [userProfile, setUserProfile] = useState<UserProfile>({
     username: authUserProfile?.username || 'Loading...',
@@ -121,6 +121,42 @@ export default function UserProfile() {
   const [myShorts, setMyShorts] = useState<ShortPosition[]>([]);
   const [combinedBettingActivity, setCombinedBettingActivity] = useState<BettingActivity[]>([]);
   const [botsRunning, setBotsRunning] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<{ local: any; firebase: any } | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string>('');
+
+  // Debug function to check balance sources
+  const checkBalanceSources = () => {
+    const localProfile = localStorage.getItem('userProfile');
+    const local = localProfile ? JSON.parse(localProfile) : null;
+    
+    setDebugInfo({
+      local: {
+        balance: local?.balance || 'Not found',
+        totalEarnings: local?.totalEarnings || 'Not found',
+        totalLosses: local?.totalLosses || 'Not found',
+        username: local?.username || 'Not found'
+      },
+      firebase: {
+        balance: authUserProfile?.balance || 'Not found',
+        totalEarnings: authUserProfile?.totalEarnings || 'Not found',
+        totalLosses: authUserProfile?.totalLosses || 'Not found',
+        username: authUserProfile?.username || 'Not found'
+      }
+    });
+  };
+
+  // Manual sync function
+  const handleManualSync = async () => {
+    setSyncMessage('Syncing...');
+    try {
+      const result = await forceSyncToFirebase();
+      setSyncMessage(result.message);
+      setTimeout(() => setSyncMessage(''), 5000);
+    } catch (error) {
+      setSyncMessage('Sync failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setTimeout(() => setSyncMessage(''), 5000);
+    }
+  };
 
   // Get current price for an opinion
   const getCurrentPrice = (opinionText: string): number => {
@@ -244,21 +280,36 @@ export default function UserProfile() {
             totalLosses: authUserProfile.totalLosses
           };
           
-          // Override with localStorage balance if available (transactions update localStorage)
+          // CRITICAL: localStorage ALWAYS wins for financial data (balance, earnings, losses)
           if (storedProfile) {
-            const localProfile = JSON.parse(storedProfile);
-            finalProfile = {
-              ...finalProfile,
-              balance: localProfile.balance || finalProfile.balance,
-              totalEarnings: localProfile.totalEarnings || finalProfile.totalEarnings,
-              totalLosses: localProfile.totalLosses || finalProfile.totalLosses
-            };
-            console.log('Profile: Balance updated from localStorage:', localProfile.balance);
+            try {
+              const localProfile = JSON.parse(storedProfile);
+              
+              // Use localStorage balance/earnings/losses if they exist and are different
+              if (localProfile.balance !== undefined && localProfile.balance !== finalProfile.balance) {
+                console.log(`🔄 BALANCE OVERRIDE: Firebase ${finalProfile.balance} → localStorage ${localProfile.balance}`);
+                finalProfile.balance = localProfile.balance;
+              }
+              
+              if (localProfile.totalEarnings !== undefined && localProfile.totalEarnings !== finalProfile.totalEarnings) {
+                console.log(`🔄 EARNINGS OVERRIDE: Firebase ${finalProfile.totalEarnings} → localStorage ${localProfile.totalEarnings}`);
+                finalProfile.totalEarnings = localProfile.totalEarnings;
+              }
+              
+              if (localProfile.totalLosses !== undefined && localProfile.totalLosses !== finalProfile.totalLosses) {
+                console.log(`🔄 LOSSES OVERRIDE: Firebase ${finalProfile.totalLosses} → localStorage ${localProfile.totalLosses}`);
+                finalProfile.totalLosses = localProfile.totalLosses;
+              }
+              
+              console.log('✅ Final profile after localStorage override:', finalProfile);
+            } catch (error) {
+              console.error('Error parsing localStorage profile:', error);
+            }
           }
           
           setUserProfile(finalProfile);
           
-          // Save updated profile to localStorage
+          // Update localStorage to ensure it has the latest profile
           localStorage.setItem('userProfile', JSON.stringify(finalProfile));
         } else if (storedProfile) {
           // Fallback to localStorage profile if no auth profile yet
@@ -833,6 +884,66 @@ export default function UserProfile() {
               })}
             </div>
           )}
+        </section>
+
+        {/* Debug Section for Balance Persistence */}
+        <section className="section" style={{ marginTop: '40px', border: '2px dashed #e5e7eb', borderRadius: '8px', padding: '20px', backgroundColor: '#f9fafb' }}>
+          <h2 className="section-title" style={{ fontSize: '18px', marginBottom: '16px' }}>🔧 Balance Debug Tools</h2>
+          
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+            <button 
+              onClick={checkBalanceSources}
+              className="btn btn-secondary"
+              style={{ fontSize: '14px', padding: '8px 16px' }}
+            >
+              Check Balance Sources
+            </button>
+            <button 
+              onClick={handleManualSync}
+              className="btn btn-primary"
+              style={{ fontSize: '14px', padding: '8px 16px' }}
+            >
+              Force Sync to Firebase
+            </button>
+          </div>
+          
+          {syncMessage && (
+            <div style={{ 
+              padding: '8px 12px', 
+              borderRadius: '4px', 
+              backgroundColor: syncMessage.includes('failed') ? '#fee2e2' : '#dcfce7',
+              color: syncMessage.includes('failed') ? '#dc2626' : '#16a34a',
+              fontSize: '14px',
+              marginBottom: '16px'
+            }}>
+              {syncMessage}
+            </div>
+          )}
+          
+          {debugInfo && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '14px' }}>
+              <div style={{ padding: '12px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                <h4 style={{ marginBottom: '8px', color: '#374151' }}>localStorage (Should Win)</h4>
+                <div>Balance: ${debugInfo.local.balance}</div>
+                <div>Earnings: ${debugInfo.local.totalEarnings}</div>
+                <div>Losses: ${debugInfo.local.totalLosses}</div>
+                <div>Username: {debugInfo.local.username}</div>
+              </div>
+              
+              <div style={{ padding: '12px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
+                <h4 style={{ marginBottom: '8px', color: '#374151' }}>Firebase</h4>
+                <div>Balance: ${debugInfo.firebase.balance}</div>
+                <div>Earnings: ${debugInfo.firebase.totalEarnings}</div>
+                <div>Losses: ${debugInfo.firebase.totalLosses}</div>
+                <div>Username: {debugInfo.firebase.username}</div>
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginTop: '12px', fontSize: '12px', color: '#6b7280', lineHeight: '1.4' }}>
+            <strong>How it works:</strong> Your activity updates are stored in localStorage first, then synced to Firebase. 
+            If your balance resets to 10k, use "Force Sync" to push your localStorage data to Firebase.
+          </div>
         </section>
       </main>
     </div>

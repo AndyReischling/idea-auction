@@ -101,6 +101,40 @@ class GlobalActivityTracker {
     }
   }
 
+  // Add Firebase sync for balance updates
+  private async syncBalanceToFirebase() {
+    if (!this.currentUser || typeof window === 'undefined') return;
+    
+    try {
+      // Get auth user if available
+      const authContext = (window as any).authContext;
+      if (!authContext?.user?.uid) {
+        // console.log('⚠️ No authenticated user found for Firebase sync');
+        return;
+      }
+      
+      const userId = authContext.user.uid;
+      
+      // Import Firebase functions dynamically
+      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      
+      console.log('🔄 Syncing balance to Firebase:', this.currentUser.balance);
+      
+      await updateDoc(doc(db, 'users', userId), {
+        balance: Number(this.currentUser.balance) || 10000,
+        totalEarnings: Number(this.currentUser.totalEarnings) || 0,
+        totalLosses: Number(this.currentUser.totalLosses) || 0,
+        updatedAt: serverTimestamp()
+      });
+      
+      console.log('✅ Balance synced to Firebase successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to sync balance to Firebase:', error);
+    }
+  }
+
   // CORE METHOD: Add to global feed (works with existing feed system)
   public addToGlobalFeed(activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) {
     if (!this.initialized) this.initialize();
@@ -123,6 +157,30 @@ class GlobalActivityTracker {
     // Save back to localStorage
     this.safeSetToStorage('globalActivityFeed', updatedFeed);
     
+    // Update user balance if this activity affects it
+    if (this.currentUser && (activity.type === 'buy' || activity.type === 'sell' || activity.type === 'earn' || 
+        activity.type === 'bet_win' || activity.type === 'bet_loss' || activity.type === 'short_win' || activity.type === 'short_loss')) {
+      
+      // Update balance based on activity
+      const balanceChange = activity.amount;
+      this.currentUser.balance = (this.currentUser.balance || 0) + balanceChange;
+      
+      // Update earnings/losses
+      if (balanceChange > 0) {
+        this.currentUser.totalEarnings = (this.currentUser.totalEarnings || 0) + balanceChange;
+      } else if (balanceChange < 0) {
+        this.currentUser.totalLosses = (this.currentUser.totalLosses || 0) + Math.abs(balanceChange);
+      }
+      
+      // Save updated user profile to localStorage
+      this.safeSetToStorage('userProfile', this.currentUser);
+      
+      console.log(`💰 Balance updated: ${activity.username} balance is now $${this.currentUser.balance.toLocaleString()}`);
+      
+      // Sync to Firebase in the background
+      this.syncBalanceToFirebase();
+    }
+    
     // Dispatch event for real-time updates (works with existing feed page)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('globalActivityUpdate', {
@@ -132,6 +190,18 @@ class GlobalActivityTracker {
       window.dispatchEvent(new CustomEvent('newTransaction', {
         detail: newActivity
       }));
+      
+      // Dispatch balance update event
+      if (this.currentUser) {
+        window.dispatchEvent(new CustomEvent('balanceUpdate', {
+          detail: { 
+            username: this.currentUser.username,
+            balance: this.currentUser.balance,
+            totalEarnings: this.currentUser.totalEarnings,
+            totalLosses: this.currentUser.totalLosses
+          }
+        }));
+      }
     }
 
     // console.log(`🔥 Added to globalActivityFeed: ${activity.username} ${activity.type} ${activity.opinionText?.slice(0, 30)}...`);

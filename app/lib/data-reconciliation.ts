@@ -259,30 +259,64 @@ export class DataReconciliationService {
 
       if (!firebaseProfile) {
         // No Firebase profile, create one
-        await setDoc(doc(db, 'users', userId), {
+        const newProfile = {
           ...localProfile,
           uid: userId,
+          // Ensure numeric values are properly formatted
+          balance: Number(localProfile.balance) || 10000,
+          totalEarnings: Number(localProfile.totalEarnings) || 0,
+          totalLosses: Number(localProfile.totalLosses) || 0,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
-        });
+        };
+        
+        await setDoc(doc(db, 'users', userId), newProfile);
+        console.log('✅ Created new Firebase profile from localStorage');
         return { updated: true, conflicts: [] };
       }
 
-      // Compare profiles and resolve conflicts
+      // Compare profiles and resolve conflicts - localStorage ALWAYS wins for financial data
       const updates: any = {};
       
-      // Balance: localStorage often has more recent transaction data
-      if (localProfile.balance !== firebaseProfile.balance) {
-        conflicts.push(`Balance mismatch: local=${localProfile.balance}, firebase=${firebaseProfile.balance}`);
-        updates.balance = localProfile.balance; // localStorage wins for balance
+      // Balance: localStorage ALWAYS wins (most recent transaction data)
+      const localBalance = Number(localProfile.balance) || 10000;
+      const firebaseBalance = Number(firebaseProfile.balance) || 10000;
+      
+      if (localBalance !== firebaseBalance) {
+        conflicts.push(`Balance mismatch: local=${localBalance}, firebase=${firebaseBalance} - localStorage wins`);
+        updates.balance = localBalance;
+        console.log(`🔄 Syncing balance: Firebase ${firebaseBalance} → localStorage ${localBalance}`);
       }
 
-      // Earnings and losses: localStorage likely more current
-      if (localProfile.totalEarnings !== firebaseProfile.totalEarnings) {
-        updates.totalEarnings = localProfile.totalEarnings;
+      // Earnings and losses: localStorage ALWAYS wins (most recent transaction data)
+      const localEarnings = Number(localProfile.totalEarnings) || 0;
+      const firebaseEarnings = Number(firebaseProfile.totalEarnings) || 0;
+      
+      if (localEarnings !== firebaseEarnings) {
+        conflicts.push(`Earnings mismatch: local=${localEarnings}, firebase=${firebaseEarnings} - localStorage wins`);
+        updates.totalEarnings = localEarnings;
+        console.log(`🔄 Syncing earnings: Firebase ${firebaseEarnings} → localStorage ${localEarnings}`);
       }
-      if (localProfile.totalLosses !== firebaseProfile.totalLosses) {
-        updates.totalLosses = localProfile.totalLosses;
+      
+      const localLosses = Number(localProfile.totalLosses) || 0;
+      const firebaseLosses = Number(firebaseProfile.totalLosses) || 0;
+      
+      if (localLosses !== firebaseLosses) {
+        conflicts.push(`Losses mismatch: local=${localLosses}, firebase=${firebaseLosses} - localStorage wins`);
+        updates.totalLosses = localLosses;
+        console.log(`🔄 Syncing losses: Firebase ${firebaseLosses} → localStorage ${localLosses}`);
+      }
+
+      // Username: Keep Firebase version if different (username changes should come from Firebase)
+      if (localProfile.username !== firebaseProfile.username) {
+        conflicts.push(`Username mismatch: local=${localProfile.username}, firebase=${firebaseProfile.username} - Firebase wins`);
+        // Update localStorage with Firebase username
+        const updatedLocalProfile = {
+          ...localProfile,
+          username: firebaseProfile.username
+        };
+        this.safeSetToStorage('userProfile', updatedLocalProfile);
+        console.log(`🔄 Syncing username: localStorage ${localProfile.username} → Firebase ${firebaseProfile.username}`);
       }
 
       // Update Firebase if there are changes
@@ -291,6 +325,8 @@ export class DataReconciliationService {
           ...updates,
           updatedAt: serverTimestamp()
         });
+        
+        console.log('✅ Firebase profile updated with localStorage financial data');
         
         await this.updateMigrationStatus(
           userId,
