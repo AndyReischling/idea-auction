@@ -378,7 +378,7 @@
 }
 
 .portfolioValue.positive {
-  color: var(--lime-green) !important;
+  color: #22c55e !important;
 }
 
 .portfolioValue.negative {
@@ -392,7 +392,7 @@
 }
 
 .portfolioGains.positive {
-  color: var(--lime-green);
+  color: #22c55e;
 }
 
 .portfolioGains.negative {
@@ -453,7 +453,7 @@
 }
 
 .metricValue.positive {
-  color: var(--lime-green);
+  color: #22c55e;
 }
 
 .metricValue.negative {
@@ -1029,6 +1029,18 @@
   transform: translateY(-2px);
 }
 
+.directionButton.increase:hover {
+  border-color: #22c55e !important;
+  background: #f0fdf4 !important;
+  color: #22c55e !important;
+}
+
+.directionButton.decrease:hover {
+  border-color: var(--coral-red) !important;
+  background: #fef2f2 !important;
+  color: var(--coral-red) !important;
+}
+
 .rangeInput {
   width: 100%;
   margin: 0 0 0.5rem 0;
@@ -1228,7 +1240,7 @@
 }
 
 .holdingStats .positive {
-  color: var(--lime-green);
+  color: #22c55e;
 }
 
 .holdingStats .negative {
@@ -1320,7 +1332,7 @@
 }
 
 .walletCard.pnl.positive p {
-  color: var(--lime-green);
+  color: #22c55e;
 }
 
 .walletCard.pnl.negative p {
@@ -1408,11 +1420,44 @@
 
 /* Positive/Negative Modifiers */
 .positive {
-  color: var(--lime-green);
+  color: #22c55e;
 }
 
 .negative {
   color: var(--coral-red);
+}
+
+/* Performance text colors */
+.performancePositive {
+  color: #22c55e !important;
+  font-weight: 600;
+}
+
+.performanceNegative {
+  color: var(--coral-red) !important;
+  font-weight: 600;
+}
+
+/* Value colors for betting modal - Higher specificity to override summaryItem styles */
+.summaryItem p:last-child.valuePositive {
+  color: #22c55e !important;
+  font-weight: 800;
+}
+
+.summaryItem p:last-child.valueNegative {
+  color: var(--coral-red) !important;
+  font-weight: 800;
+}
+
+/* Fallback for other contexts */
+.valuePositive {
+  color: #22c55e !important;
+  font-weight: 600;
+}
+
+.valueNegative {
+  color: var(--coral-red) !important;
+  font-weight: 600;
 }
 
 /* Responsive Design */

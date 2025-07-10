@@ -924,9 +924,7 @@ export default function UsersPage() {
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
     localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
 
-    setMessage(`Bet placed! $${betForm.amount} on ${selectedUser.username} portfolio ${betForm.betType === 'increase' ? 'increasing' : 'decreasing'} by ${betForm.targetPercentage}% in ${betForm.timeFrame} days. Potential payout: $${potentialPayout} (${multiplier}x) | Risk: $${potentialLoss} if lost`);
     setShowBetModal(false);
-    setTimeout(() => setMessage(''), 10000);
   };
 
   const resolveBet = (bet: AdvancedBet) => {
@@ -1003,8 +1001,8 @@ export default function UsersPage() {
   };
 
   const getPerformanceClass = (percentage: number) => {
-    if (percentage >= 0) return 'positive';
-    return 'negative';
+    if (percentage >= 0) return styles.positive;
+    return styles.negative;
   };
 
   const getVolatilityClass = (volatility: number) => {
@@ -1260,13 +1258,10 @@ export default function UsersPage() {
                           {user.isCurrentUser && <span className={styles.youLabel}> (You)</span>}
                         </h3>
                         <p>{user.opinionsCount} opinions • Joined {user.joinDate}</p>
-                        {(user.activeBetsCount || user.activeShortsCount) && (
-                          <p style={{ fontSize: '12px', color: '#666' }}>
-                            {user.activeBetsCount ? `${user.activeBetsCount} bets` : ''} 
-                            {user.activeBetsCount && user.activeShortsCount ? ' • ' : ''}
-                            {user.activeShortsCount ? `${user.activeShortsCount} shorts` : ''}
-                          </p>
-                        )}
+                        <p style={{ fontSize: '12px', color: '#666' }}>
+                          {user.activeBetsCount || 0} bets
+                          {user.activeShortsCount ? ` • ${user.activeShortsCount} shorts` : ''}
+                        </p>
                       </div>
                     </div>
                     
@@ -1294,7 +1289,7 @@ export default function UsersPage() {
                               user.portfolioValue > 0
                                 ? '#22c55e'
                                 : user.portfolioValue < 0
-                                ? '#ef4444'
+                                ? 'var(--coral-red)'
                                 : '#18181b',
                           }}
                         >
@@ -1304,17 +1299,15 @@ export default function UsersPage() {
                         {user.totalGainsLosses >= 0 ? '+' : ''}${user.totalGainsLosses.toFixed(0)} 
                         ({user.performancePercentage >= 0 ? '+' : ''}{user.performancePercentage.toFixed(1)}%)
                       </p>
-                      {(user.shortExposure || user.betExposure) && (
-                          <span className={styles.exposureText + ' ' + styles.portfolioStatsLine} style={{ fontSize: '16px', color: '#f59e0b', display: 'inline-block', fontWeight: 600, textTransform: 'none' }}>
-                          Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
-                            <span className={styles.exposureTooltip}>
-                              <div style={{ fontWeight: 400, fontSize: '0.95rem', fontStyle: 'italic', lineHeight: 1.5 }}>
-                                Exposure is the total amount of money you have at risk in open bets and short positions.<br/>
-                                If all your active bets and shorts lost, this is the maximum you could lose.
-                              </div>
-                            </span>
-                          </span>
-                      )}
+                      <span className={styles.exposureText + ' ' + styles.portfolioStatsLine} style={{ fontSize: '16px', color: '#f59e0b', display: 'inline-block', fontWeight: 600, textTransform: 'none' }}>
+                      Exposure: ${((user.shortExposure || 0) + (user.betExposure || 0)).toLocaleString()}
+                        <span className={styles.exposureTooltip}>
+                          <div style={{ fontWeight: 400, fontSize: '0.95rem', fontStyle: 'italic', lineHeight: 1.5 }}>
+                            Exposure is the total amount of money you have at risk in open bets and short positions.<br/>
+                            If all your active bets and shorts lost, this is the maximum you could lose.
+                          </div>
+                        </span>
+                      </span>
                       </div>
                     </div>
                   </div>
@@ -1686,11 +1679,11 @@ export default function UsersPage() {
                   <div className={styles.portfolioSummary}>
                     <div className={styles.summaryItem}>
                       <p>Current Value</p>
-                      <p>${selectedUser.portfolioValue.toLocaleString()}</p>
+                      <p className={selectedUser.portfolioValue < 0 ? styles.valueNegative : styles.valuePositive}>${selectedUser.portfolioValue.toLocaleString()}</p>
                     </div>
                     <div className={styles.summaryItem}>
                       <p>Real 7-Day Performance</p>
-                      <p className={getPerformanceClass(selectedUser.recentPerformance)}>
+                      <p className={selectedUser.recentPerformance >= 0 ? styles.performancePositive : styles.performanceNegative}>
                         {selectedUser.recentPerformance >= 0 ? '+' : ''}{selectedUser.recentPerformance.toFixed(1)}%
                       </p>
                     </div>

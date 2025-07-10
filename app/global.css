@@ -9,6 +9,7 @@
   /* Core Brand & Semantic Colors */
   --green: #0F7950;        /* Up/Increase/Positive */
   --red: #BB0006;          /* Down/Decrease/Negative */
+  --coral-red: #ef4444;    /* Negative values - matches portfolio value */
   --yellow: #FED031;       /* Active/Highlight */
   --light-green: #CDF546;  /* Use sparingly */
   --pink: #FFB5D9;         /* Use sparingly */
@@ -202,6 +203,14 @@ a { color: inherit; text-decoration: none; }
   font-family: 'Noto Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   gap: 12px;
   transition: all var(--transition);
+  background: transparent;
+  border-top: none;
+  border-left: none;
+  border-bottom: none;
+  cursor: pointer;
+  text-decoration: none;
+  outline: none;
+  box-shadow: none;
 }
 .nav-button:hover { transform: translateY(-2px); filter: brightness(1.05); }
 

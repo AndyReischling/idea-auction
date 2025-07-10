@@ -1922,7 +1922,7 @@ export default function FeedPage() {
         setCurrentUser(storedProfile);
       }
     }
-  };
+    };
 
     loadUserProfile();
   }, [authUserProfile?.username, user?.uid]);
@@ -2088,6 +2088,119 @@ export default function FeedPage() {
     } catch (error) {
       console.error('UNIFIED: Error getting current price:', error);
       return 10.00;
+    }
+  };
+
+  // Activity filtering functions
+  const filterActivities = (activities: ActivityFeedItem[]): ActivityFeedItem[] => {
+    switch (filter) {
+      case 'trades':
+        return activities.filter(a => ['buy', 'sell'].includes(a.type));
+      case 'bets':
+        return activities.filter(a => a.type.includes('bet'));
+      case 'shorts':
+        return activities.filter(a => a.type.includes('short'));
+      case 'generates':
+        return activities.filter(a => ['generate', 'earn'].includes(a.type));
+      default:
+        return activities;
+    }
+  };
+
+  const getFilterCount = (filterType: string): number => {
+    switch (filterType) {
+      case 'all':
+        return activityFeed.length;
+      case 'trades':
+        return activityFeed.filter(a => ['buy', 'sell'].includes(a.type)).length;
+      case 'bets':
+        return activityFeed.filter(a => a.type.includes('bet')).length;
+      case 'shorts':
+        return activityFeed.filter(a => a.type.includes('short')).length;
+      case 'generates':
+        return activityFeed.filter(a => ['generate', 'earn'].includes(a.type)).length;
+      default:
+        return 0;
+    }
+  };
+
+  // Event handlers
+  const handleActivityClick = (activity: ActivityFeedItem, event: React.MouseEvent) => {
+    // Don't open modal if username was clicked
+    if ((event.target as HTMLElement).closest('.clickableUsername')) {
+      return;
+    }
+    
+    setSelectedActivity(activity);
+    setShowActivityDetailModal(true);
+  };
+
+  const handleUsernameClick = (username: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    router.push(`/users/${username}`);
+  };
+
+  const handleTransactionClick = (activity: ActivityFeedItem) => {
+    // Convert activity to transaction detail format
+    const transaction: TransactionDetail = {
+      ...activity,
+      fullDescription: formatActivityDescription(activity)
+    };
+    setSelectedTransaction(transaction);
+    setShowTransactionModal(true);
+  };
+
+  // FIREBASE HELPERS: Functions for combining Firebase and local data
+  const getLocalBotActivities = (): ActivityFeedItem[] => {
+    if (!isClient) return [];
+    
+    try {
+      // Get bot transactions from localStorage as fallback
+      const botTransactions = safeGetFromStorage('botTransactions', []);
+      const botMap = getBotUsernames();
+      const activities: ActivityFeedItem[] = [];
+      
+      botTransactions.forEach((transaction: any, index: number) => {
+        try {
+          const uniqueId = transaction.id || `local_bot_${Date.now()}_${index}`;
+          let botName = 'Unknown Bot';
+          
+          if (transaction.botId && botMap[transaction.botId]) {
+            botName = botMap[transaction.botId];
+          } else if (transaction.botId) {
+            botName = `Bot_${transaction.botId.slice(-6)}`;
+          }
+
+          let timestamp: string;
+          try {
+            const parsedDate = new Date(transaction.date || new Date());
+            timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
+          } catch {
+            timestamp = new Date().toISOString();
+          }
+
+          activities.push({
+            id: uniqueId,
+            type: transaction.type,
+            username: botName,
+            opinionText: transaction.opinionText,
+            opinionId: transaction.opinionId,
+            amount: parseFloat(transaction.amount) || 0,
+            price: transaction.metadata?.purchasePricePerShare || transaction.metadata?.price,
+            quantity: transaction.metadata?.quantity || 1,
+            timestamp: timestamp,
+            relativeTime: getRelativeTime(timestamp),
+            isBot: true
+          });
+        } catch (error) {
+          console.error('Error processing local bot transaction:', error);
+        }
+      });
+      
+      return activities;
+    } catch (error) {
+      console.error('Error getting local bot activities:', error);
+      return [];
     }
   };
 
@@ -2487,6 +2600,7 @@ export default function FeedPage() {
     console.error('UNIFIED: Error in transaction processor:', error);
     return [];
   }
+};
 
   // Helper functions for UI rendering
   const getActivityIcon = (type: string): React.ReactNode => {
@@ -2562,119 +2676,6 @@ export default function FeedPage() {
         return `${userPrefix} ${username} lost portfolio bet on ${targetUser}`;
       default:
         return `${userPrefix} ${username} performed ${type}`;
-    }
-  };
-
-  // Activity filtering functions
-  const filterActivities = (activities: ActivityFeedItem[]): ActivityFeedItem[] => {
-    switch (filter) {
-      case 'trades':
-        return activities.filter(a => ['buy', 'sell'].includes(a.type));
-      case 'bets':
-        return activities.filter(a => a.type.includes('bet'));
-      case 'shorts':
-        return activities.filter(a => a.type.includes('short'));
-      case 'generates':
-        return activities.filter(a => ['generate', 'earn'].includes(a.type));
-      default:
-        return activities;
-    }
-  };
-
-  const getFilterCount = (filterType: string): number => {
-    switch (filterType) {
-      case 'all':
-        return activityFeed.length;
-      case 'trades':
-        return activityFeed.filter(a => ['buy', 'sell'].includes(a.type)).length;
-      case 'bets':
-        return activityFeed.filter(a => a.type.includes('bet')).length;
-      case 'shorts':
-        return activityFeed.filter(a => a.type.includes('short')).length;
-      case 'generates':
-        return activityFeed.filter(a => ['generate', 'earn'].includes(a.type)).length;
-      default:
-        return 0;
-    }
-  };
-
-  // Event handlers
-  const handleActivityClick = (activity: ActivityFeedItem, event: React.MouseEvent) => {
-    // Don't open modal if username was clicked
-    if ((event.target as HTMLElement).closest('.clickableUsername')) {
-      return;
-    }
-    
-    setSelectedActivity(activity);
-    setShowActivityDetailModal(true);
-  };
-
-  const handleUsernameClick = (username: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    router.push(`/users/${username}`);
-  };
-
-  const handleTransactionClick = (activity: ActivityFeedItem) => {
-    // Convert activity to transaction detail format
-    const transaction: TransactionDetail = {
-      ...activity,
-      fullDescription: formatActivityDescription(activity)
-    };
-    setSelectedTransaction(transaction);
-    setShowTransactionModal(true);
-  };
-
-  // FIREBASE HELPERS: Functions for combining Firebase and local data
-  const getLocalBotActivities = (): ActivityFeedItem[] => {
-    if (!isClient) return [];
-    
-    try {
-      // Get bot transactions from localStorage as fallback
-      const botTransactions = safeGetFromStorage('botTransactions', []);
-      const botMap = getBotUsernames();
-      const activities: ActivityFeedItem[] = [];
-      
-      botTransactions.forEach((transaction: any, index: number) => {
-        try {
-          const uniqueId = transaction.id || `local_bot_${Date.now()}_${index}`;
-          let botName = 'Unknown Bot';
-          
-          if (transaction.botId && botMap[transaction.botId]) {
-            botName = botMap[transaction.botId];
-          } else if (transaction.botId) {
-            botName = `Bot_${transaction.botId.slice(-6)}`;
-          }
-
-          let timestamp: string;
-          try {
-            const parsedDate = new Date(transaction.date || new Date());
-            timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
-          } catch {
-            timestamp = new Date().toISOString();
-          }
-
-          activities.push({
-            id: uniqueId,
-            type: transaction.type,
-            username: botName,
-            opinionText: transaction.opinionText,
-            opinionId: transaction.opinionId,
-            amount: parseFloat(transaction.amount) || 0,
-            price: transaction.metadata?.purchasePricePerShare || transaction.metadata?.price,
-            quantity: transaction.metadata?.quantity || 1,
-            timestamp: timestamp,
-            relativeTime: getRelativeTime(timestamp),
-            isBot: true
-          });
-        } catch (error) {
-          console.error('Error processing local bot transaction:', error);
-        }
-      });
-      
-      return activities;
-    } catch (error) {
-      console.error('Error getting local bot activities:', error);
-      return [];
     }
   };
 
@@ -4396,12 +4397,12 @@ The app is working in localStorage mode for now.`;
                               <HandPeace color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
                             </div>
                           );
-                                } else if (["bet", "bet_place", "bet_win", "bet_loss"].includes(activity.type)) {
-          return (
-            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255, 118, 2, 1)' }}>
-              <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
-            </div>
-          );
+                        } else if (["bet", "bet_place", "bet_win", "bet_loss"].includes(activity.type)) {
+                          return (
+                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255, 118, 2, 1)' }}>
+                              <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
+                            </div>
+                          );
                         } else if (["short_place", "short_win", "short_loss"].includes(activity.type)) {
                           return (
                             <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(236,72,153,1)' }}>
@@ -4410,9 +4411,9 @@ The app is working in localStorage mode for now.`;
                           );
                         } else {
                           return (
-                      <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
-                        {getActivityIcon(activity.type)}
-                      </div>
+                            <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
+                              {getActivityIcon(activity.type)}
+                            </div>
                           );
                         }
                       })()}

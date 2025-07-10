@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
@@ -17,11 +17,41 @@ function GenerateOpinions() {
   const [userInput, setUserInput] = useState('');
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [charCount, setCharCount] = useState(0);
   const [lastGenerated, setLastGenerated] = useState<string>('');
 
   const MAX_CHARS = 500;
   const router = useRouter();
+  
+  // Calculate charCount directly from userInput to avoid infinite loop
+  const charCount = userInput.length;
+
+  // Memoize sidebar opinions to prevent re-renders
+  const sidebarOpinions = useMemo(() => {
+    return allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }));
+  }, [allOpinions]);
+
+  // Memoize stats calculations
+  const stats = useMemo(() => ({
+    totalOpinions: allOpinions.length,
+    generatedToday: lastGenerated ? 1 : 0,
+    draftReady: userInput.trim() ? 1 : 0
+  }), [allOpinions.length, lastGenerated, userInput]);
+
+  // Memoize character count class calculation
+  const charCountClass = useMemo(() => {
+    if (charCount > MAX_CHARS) return styles.error;
+    if (charCount > MAX_CHARS * 0.8) return styles.warning;
+    return '';
+  }, [charCount, MAX_CHARS]);
+
+  // Debounced localStorage save function
+  const saveToLocalStorage = useCallback((opinions: string[]) => {
+    try {
+      localStorage.setItem('opinions', JSON.stringify(opinions));
+    } catch (error) {
+      console.error('Error saving opinions:', error);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -39,11 +69,7 @@ function GenerateOpinions() {
     }
   }, []);
 
-  useEffect(() => {
-    setCharCount(userInput.length);
-  }, [userInput]);
-
-  const generateOpinion = async () => {
+  const generateOpinion = useCallback(async () => {
     setLoading(true);
     
     try {
@@ -66,7 +92,7 @@ function GenerateOpinions() {
       
       const updatedOpinions = [...allOpinions, newOpinion];
       setAllOpinions(updatedOpinions);
-      localStorage.setItem('opinions', JSON.stringify(updatedOpinions));
+      saveToLocalStorage(updatedOpinions);
       
     } catch (error) {
       console.error('Error generating opinion:', error);
@@ -88,35 +114,65 @@ function GenerateOpinions() {
       
       const updatedOpinions = [...allOpinions, randomOpinion];
       setAllOpinions(updatedOpinions);
-      localStorage.setItem('opinions', JSON.stringify(updatedOpinions));
+      saveToLocalStorage(updatedOpinions);
     } finally {
       setLoading(false);
     }
-  };
+  }, [allOpinions, saveToLocalStorage]);
 
-  const submitUserOpinion = () => {
+  const submitUserOpinion = useCallback(() => {
     if (userInput.trim() && userInput.length <= MAX_CHARS) {
       const trimmedInput = userInput.trim();
       
       const updatedOpinions = [...allOpinions, trimmedInput];
       setAllOpinions(updatedOpinions);
-      localStorage.setItem('opinions', JSON.stringify(updatedOpinions));
+      saveToLocalStorage(updatedOpinions);
+      
+      // CRITICAL FIX: Create a transaction to mark this as user-submitted
+      // This allows the Sidebar to properly identify user-submitted opinions
+      try {
+        const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+        const currentUser = userProfile.username || 'User';
+        
+        const transaction = {
+          id: Date.now().toString(),
+          type: 'earn',
+          opinionText: trimmedInput,
+          amount: 0, // No monetary reward for submitting opinions
+          date: new Date().toISOString(),
+          description: 'User submitted opinion'
+        };
+        
+        const existingTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+        const updatedTransactions = [transaction, ...existingTransactions];
+        localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+        
+        console.log(`✅ User submitted opinion: "${trimmedInput.slice(0, 30)}..."`);
+        
+        // Also track with global activity tracker if available
+        if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
+          (window as any).addToGlobalFeed({
+            type: 'earn',
+            username: currentUser,
+            opinionText: trimmedInput,
+            amount: 0,
+            timestamp: new Date().toISOString(),
+            isBot: false
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error creating transaction for user-submitted opinion:', error);
+      }
       
       setUserInput('');
       setOpinion(`Submitted: ${trimmedInput}`);
-      setCharCount(0);
     }
-  };
-
-  const getCharCountClass = () => {
-    if (charCount > MAX_CHARS) return styles.error;
-    if (charCount > MAX_CHARS * 0.8) return styles.warning;
-    return '';
-  };
+  }, [userInput, allOpinions, MAX_CHARS, saveToLocalStorage]);
 
   return (
     <div className="page-container">
-      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text: text || '' }))} />
+      <Sidebar opinions={sidebarOpinions} />
       
       <main className="main-content">
         <div className={styles.pageHeader}>
@@ -148,15 +204,15 @@ function GenerateOpinions() {
         {/* Statistics Display */}
         <div className={styles.statsDisplay}>
           <div className={styles.statItem}>
-            <p className={styles.statNumber}>{allOpinions.length}</p>
+            <p className={styles.statNumber}>{stats.totalOpinions}</p>
             <p className={styles.statLabel}>Total Opinions</p>
           </div>
           <div className={styles.statItem}>
-            <p className={styles.statNumber}>{lastGenerated ? '1' : '0'}</p>
+            <p className={styles.statNumber}>{stats.generatedToday}</p>
             <p className={styles.statLabel}>Generated Today</p>
           </div>
           <div className={styles.statItem}>
-            <p className={styles.statNumber}>{userInput.trim() ? '1' : '0'}</p>
+            <p className={styles.statNumber}>{stats.draftReady}</p>
             <p className={styles.statLabel}>Draft Ready</p>
           </div>
         </div>
@@ -199,7 +255,7 @@ function GenerateOpinions() {
             maxLength={MAX_CHARS + 50} // Allow slight overflow for warning
           />
           
-          <div className={`${styles.characterCounter} ${getCharCountClass()}`}>
+          <div className={`${styles.characterCounter} ${charCountClass}`}>
             {charCount}/{MAX_CHARS} characters
           </div>
           

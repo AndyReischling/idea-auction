@@ -6,6 +6,7 @@ import { useAuth } from './lib/auth-context';
 import AuthModal from './components/AuthModal';
 import Sidebar from './components/Sidebar';
 import AuthButton from './components/AuthButton';
+import { realtimeDataService } from './lib/realtime-data-service';
 import { TrendUp, TrendDown, Minus, Sparkle, Clock, Fire, Eye, ChartLineUp, ChartLineDown, User, SignIn } from '@phosphor-icons/react';
 
 interface OpinionWithPrice {
@@ -44,6 +45,7 @@ export default function HomePage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
   const [priceFlash, setPriceFlash] = useState<{[key: string]: string}>({});
+  const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
   
   const { user, userProfile } = useAuth();
   const router = useRouter();
@@ -53,7 +55,7 @@ export default function HomePage() {
     console.log('HomePage: Auth state - user:', !!user, 'userProfile:', !!userProfile);
   }, [user, userProfile]);
 
-  // Safe localStorage helpers
+  // Safe localStorage helpers (kept for fallback)
   const safeGetFromStorage = (key: string, defaultValue: any = null) => {
     if (typeof window === 'undefined') return defaultValue;
     try {
@@ -90,33 +92,65 @@ export default function HomePage() {
   };
 
   // Get market data for an opinion
-  const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
-    const marketData = safeGetFromStorage('opinionMarketData', {});
-    
-    if (marketData[opinionText]) {
-      const data = marketData[opinionText];
+  const getOpinionMarketData = async (opinionText: string): Promise<OpinionMarketData> => {
+    try {
+      // Get market data from Firebase/localStorage via realtimeDataService
+      const marketData = await realtimeDataService.getMarketData();
+      
+      if (marketData[opinionText]) {
+        const data = marketData[opinionText];
+        return {
+          opinionText,
+          timesPurchased: data.timesPurchased || 0,
+          timesSold: data.timesSold || 0,
+          currentPrice: data.currentPrice || 10,
+          basePrice: data.basePrice || 10,
+          volatility: data.volatility || 1.0,
+          lastUpdated: data.lastUpdated || new Date().toISOString(),
+          priceHistory: data.priceHistory || []
+        };
+      }
+      
       return {
         opinionText,
-        timesPurchased: data.timesPurchased || 0,
-        timesSold: data.timesSold || 0,
-        currentPrice: data.currentPrice || 10,
-        basePrice: data.basePrice || 10,
-        volatility: data.volatility || 1.0,
-        lastUpdated: data.lastUpdated || new Date().toISOString(),
-        priceHistory: data.priceHistory || []
+        timesPurchased: 0,
+        timesSold: 0,
+        currentPrice: 10,
+        basePrice: 10,
+        volatility: 1.0,
+        lastUpdated: new Date().toISOString(),
+        priceHistory: []
+      };
+    } catch (error) {
+      console.error('Error getting market data:', error);
+      
+      // Fallback to localStorage
+      const fallbackData = safeGetFromStorage('opinionMarketData', {});
+      if (fallbackData[opinionText]) {
+        const data = fallbackData[opinionText];
+        return {
+          opinionText,
+          timesPurchased: data.timesPurchased || 0,
+          timesSold: data.timesSold || 0,
+          currentPrice: data.currentPrice || 10,
+          basePrice: data.basePrice || 10,
+          volatility: data.volatility || 1.0,
+          lastUpdated: data.lastUpdated || new Date().toISOString(),
+          priceHistory: data.priceHistory || []
+        };
+      }
+      
+      return {
+        opinionText,
+        timesPurchased: 0,
+        timesSold: 0,
+        currentPrice: 10,
+        basePrice: 10,
+        volatility: 1.0,
+        lastUpdated: new Date().toISOString(),
+        priceHistory: []
       };
     }
-    
-    return {
-      opinionText,
-      timesPurchased: 0,
-      timesSold: 0,
-      currentPrice: 10,
-      basePrice: 10,
-      volatility: 1.0,
-      lastUpdated: new Date().toISOString(),
-      priceHistory: []
-    };
   };
 
   // Calculate price trend
@@ -143,104 +177,130 @@ export default function HomePage() {
     };
   };
 
-  // Get opinion attribution
-  const getOpinionAttribution = (opinionText: string): { author: string, isBot: boolean } => {
-    const attributions = safeGetFromStorage('opinionAttributions', {});
-    
-    if (attributions[opinionText]) {
-      return {
-        author: attributions[opinionText].author,
-        isBot: attributions[opinionText].isBot
-      };
-    }
-    
-    const botTransactions = safeGetFromStorage('botTransactions', []);
-    const botGenerated = botTransactions.find((t: any) => 
-      t.type === 'earn' && t.opinionText === opinionText
-    );
-    
-    if (botGenerated) {
-      const bots = safeGetFromStorage('autonomousBots', []);
-      const bot = bots.find((b: any) => b.id === botGenerated.botId);
-      return {
-        author: bot ? bot.username : 'AI Bot',
-        isBot: true
-      };
-    }
-    
-    return {
-      author: 'Community',
-      isBot: false
-    };
-  };
-
-  // Load and process opinions
-  const loadOpinions = () => {
-    const storedOpinions: string[] = safeGetFromStorage('opinions', []);
-    const processedOpinions: OpinionWithPrice[] = [];
-    
-    storedOpinions.forEach((text: string, index: number) => {
-      if (!text || typeof text !== 'string') return;
+  // Get opinion attribution with Firebase fallback
+  const getOpinionAttribution = async (opinionText: string): Promise<{ author: string, isBot: boolean }> => {
+    try {
+      // First try Firebase via realtimeDataService
+      const transactions = await realtimeDataService.getUserTransactions();
+      const userProfile = await realtimeDataService.getUserProfile();
       
-      const marketData = getOpinionMarketData(text);
-      const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-      const attribution = getOpinionAttribution(text);
+      // Check for user-generated opinion
+      const userGenerated = transactions.find((t: any) => 
+        t.type === 'earn' && 
+        (t.opinionText === opinionText || t.description?.includes(opinionText.slice(0, 30)))
+      );
       
-      // Check for price changes to trigger flash effect
-      const oldPrice = opinions.find(op => op.text === text)?.currentPrice || marketData.currentPrice;
-      if (oldPrice !== marketData.currentPrice) {
-        setPriceFlash(prev => ({
-          ...prev,
-          [text]: trend === 'up' ? 'price-up' : trend === 'down' ? 'price-down' : 'neutral'
-        }));
-        
-        // Clear flash after animation
-        setTimeout(() => {
-          setPriceFlash(prev => {
-            const newFlash = { ...prev };
-            delete newFlash[text];
-            return newFlash;
-          });
-        }, 1000);
+      if (userGenerated) {
+        return {
+          author: userProfile?.username || 'User',
+          isBot: false
+        };
       }
       
-      processedOpinions.push({
-        id: index.toString(),
-        text,
-        currentPrice: marketData.currentPrice,
-        priceChange,
-        priceChangePercent,
-        trend,
-        volatility: marketData.volatility! > 1.5 ? 'high' : marketData.volatility! < 0.8 ? 'low' : 'medium',
-        createdAt: Date.now() - (index * 60000), // Mock creation time
-        originalIndex: index,
-        timesPurchased: marketData.timesPurchased,
-        timesSold: marketData.timesSold,
-        volume: marketData.timesPurchased + marketData.timesSold,
-        author: attribution.author,
-        isBot: attribution.isBot
-      });
-    });
-    
-    // Sort by creation time (newest first)
-    processedOpinions.sort((a, b) => b.createdAt - a.createdAt);
-    
-    setOpinions(processedOpinions);
-    
-    // Set featured opinions (high volume or significant price changes)
-    const featured = processedOpinions
-      .filter(op => op.volume > 5 || Math.abs(op.priceChangePercent) > 10)
-      .slice(0, 3);
-    setFeaturedOpinions(featured);
-    
-    // Set trending opinions (most active)
-    const trending = processedOpinions
-      .filter(op => op.volume > 0)
-      .sort((a, b) => b.volume - a.volume)
-      .slice(0, 6);
-    setTrendingOpinions(trending);
-    
-    setLastUpdateTime(new Date().toLocaleTimeString());
+      // Fallback to localStorage for now (bot data isn't fully migrated yet)
+      const attributions = safeGetFromStorage('opinionAttributions', {});
+      
+      if (attributions[opinionText]) {
+        return {
+          author: attributions[opinionText].author,
+          isBot: attributions[opinionText].isBot
+        };
+      }
+      
+      const botTransactions = safeGetFromStorage('botTransactions', []);
+      const botGenerated = botTransactions.find((t: any) => 
+        (t.type === 'generate' || t.type === 'earn') && 
+        (t.opinionText === opinionText || t.opinionText?.includes(opinionText.slice(0, 30)))
+      );
+      
+      if (botGenerated) {
+        const bots = safeGetFromStorage('autonomousBots', []);
+        const bot = bots.find((b: any) => b.id === botGenerated.botId);
+        return {
+          author: bot ? bot.username : 'AI Bot',
+          isBot: true
+        };
+      }
+      
+      return {
+        author: 'AI',
+        isBot: false
+      };
+    } catch (error) {
+      console.error('Error getting opinion attribution:', error);
+      return {
+        author: 'AI',
+        isBot: false
+      };
+    }
+  };
+
+  // Load and process opinions with real-time updates
+  const loadOpinions = async () => {
+    try {
+      setLoading(true);
+      
+      // Get opinions from Firebase/localStorage via realtimeDataService
+      const storedOpinions: string[] = await realtimeDataService.getOpinions();
+      const processedOpinions: OpinionWithPrice[] = [];
+      
+      // Process each opinion with market data and attribution
+      for (let index = 0; index < storedOpinions.length; index++) {
+        const text = storedOpinions[index];
+        if (!text || typeof text !== 'string') continue;
+        
+        const marketData = await getOpinionMarketData(text);
+        const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
+        const attribution = await getOpinionAttribution(text);
+        
+        // Calculate creation timestamp
+        const createdAt = Date.now() - (storedOpinions.length - index) * 60 * 1000;
+        
+        processedOpinions.push({
+          id: index.toString(),
+          text,
+          currentPrice: marketData.currentPrice,
+          priceChange,
+          priceChangePercent,
+          trend,
+          volatility: marketData.volatility && marketData.volatility > 1.5 ? 'high' : 
+                     marketData.volatility && marketData.volatility > 1.2 ? 'medium' : 'low',
+          createdAt,
+          originalIndex: index,
+          timesPurchased: marketData.timesPurchased,
+          timesSold: marketData.timesSold,
+          volume: marketData.timesPurchased + marketData.timesSold,
+          author: attribution.author,
+          isBot: attribution.isBot
+        });
+      }
+      
+      // Sort by creation time (newest first)
+      const sortedOpinions = processedOpinions.sort((a, b) => b.createdAt - a.createdAt);
+      
+      setOpinions(sortedOpinions);
+      
+      // Set featured opinions (high volume or trending)
+      const featured = sortedOpinions
+        .filter(op => op.volume > 5 || Math.abs(op.priceChangePercent) > 10)
+        .slice(0, 3);
+      setFeaturedOpinions(featured);
+      
+      // Set trending opinions (recent activity)
+      const trending = sortedOpinions
+        .filter(op => op.trend !== 'neutral')
+        .sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent))
+        .slice(0, 5);
+      setTrendingOpinions(trending);
+      
+      setLastUpdateTime(new Date().toLocaleTimeString());
+      console.log(`📊 HomePage: Loaded ${sortedOpinions.length} opinions`);
+      
+    } catch (error) {
+      console.error('Error loading opinions:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle opinion click
@@ -273,32 +333,73 @@ export default function HomePage() {
     
     const badge = badges[volatility];
     return (
-      <span className={`${badge.class}`} style={{ fontSize: '12px', fontWeight: '500' }}>
+      <span className={`${badge.class}`} style={{ 
+        fontSize: '12px', 
+        fontWeight: '500', 
+        padding: '2px 6px',
+        borderRadius: '4px',
+        backgroundColor: volatility === 'low' ? '#22c55e' : volatility === 'high' ? '#ef4444' : '#6b7280',
+        color: 'white'
+      }}>
         {badge.emoji} {badge.label}
       </span>
     );
   };
 
-  // Auto-refresh opinions
+  // Setup real-time subscriptions
   useEffect(() => {
-    loadOpinions();
-    setLoading(false);
-    
-    const interval = setInterval(() => {
-      loadOpinions();
-    }, 3000); // Update every 3 seconds for dynamic feel
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  // Listen for localStorage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
+    const setupSubscriptions = () => {
+      const subscriptionIds: string[] = [];
+      
+      // Subscribe to opinions changes
+      const opinionsSub = realtimeDataService.subscribeToOpinions((opinions) => {
+        console.log('📊 HomePage: Opinions updated from Firebase/localStorage');
+        loadOpinions();
+      });
+      subscriptionIds.push(opinionsSub);
+      
+      // Subscribe to market data changes
+      const marketSub = realtimeDataService.subscribeToMarketData((marketData) => {
+        console.log('📊 HomePage: Market data updated from Firebase/localStorage');
+        loadOpinions();
+      });
+      subscriptionIds.push(marketSub);
+      
+      setSubscriptionIds(subscriptionIds);
+      
+      // Initial load
       loadOpinions();
     };
     
+    setupSubscriptions();
+    
+    // Cleanup subscriptions on unmount
+    return () => {
+      subscriptionIds.forEach(id => {
+        realtimeDataService.unsubscribe(id);
+      });
+    };
+  }, []);
+
+  // Handle storage changes (for localStorage fallback)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      console.log('📊 HomePage: Storage change detected, reloading opinions');
+      loadOpinions();
+    };
+
+    // Listen for localStorage changes
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    
+    // Custom events for manual updates
+    window.addEventListener('opinionsUpdated', handleStorageChange);
+    window.addEventListener('marketDataUpdated', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('opinionsUpdated', handleStorageChange);
+      window.removeEventListener('marketDataUpdated', handleStorageChange);
+    };
   }, []);
 
   if (loading) {

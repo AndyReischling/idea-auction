@@ -296,7 +296,8 @@ export default function OpinionPage() {
       
       const botTransactions = safeGetFromStorage('botTransactions', []);
       const botGenerated = botTransactions.find((t: any) => 
-        t.type === 'earn' && t.opinionText === opinionText
+        (t.type === 'generate' || t.type === 'earn') && 
+        (t.opinionText === opinionText || t.opinionText?.includes(opinionText.slice(0, 30)))
       );
       
       if (botGenerated) {
@@ -312,18 +313,18 @@ export default function OpinionPage() {
       }
       
       const transactions = safeGetFromStorage('transactions', []);
-      const aiGenerated = transactions.find((t: any) => 
+      const userGenerated = transactions.find((t: any) => 
         t.type === 'earn' && 
         (t.opinionText === opinionText || t.description?.includes(opinionText.slice(0, 30)))
       );
       
-      if (aiGenerated) {
+      if (userGenerated) {
         const currentUser = safeGetFromStorage('userProfile', {});
         return {
           author: currentUser.username || 'OpinionTrader123',
           isBot: false,
-          dateCreated: aiGenerated.date || new Date().toLocaleDateString(),
-          source: 'ai_generated'
+          dateCreated: userGenerated.date || new Date().toLocaleDateString(),
+          source: 'user'
         };
       }
       
@@ -892,8 +893,7 @@ export default function OpinionPage() {
     setShowShortModal(false);
     loadShortPositions();
     
-    setMessage(`📉 Short bet placed! You'll win $${potentialWinnings.toFixed(2)} if price drops to $${targetPrice.toFixed(2)} within ${shortSettings.timeLimit} hours.`);
-    setTimeout(() => setMessage(''), 10000);
+    // Short bet placed - no notification message
   };
 
   // Update all owned opinions with new market prices

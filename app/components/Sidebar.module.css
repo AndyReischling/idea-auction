@@ -252,6 +252,7 @@
   text-transform: uppercase;
   letter-spacing: 0.3px;
   display: inline-block;
+  border-radius: 4px;
 }
 
 .attributionBadge.ai {
@@ -264,7 +265,8 @@
 }
 
 .attributionBadge.user {
-  background: #CEBFA2;
+  background: #4A90E2;
+  color: var(--white);
 }
 
 .priceSection {

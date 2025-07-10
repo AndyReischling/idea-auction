@@ -317,8 +317,8 @@ export default function UserDetailPage() {
   };
 
   const getPerformanceClass = (percentage: number) => {
-    if (percentage >= 0) return 'positive';
-    return 'negative';
+    if (percentage >= 0) return styles.positive;
+    return styles.negative;
   };
 
   const calculatePortfolioVolatility = (opinions: OpinionAsset[]): number => {
@@ -440,9 +440,7 @@ export default function UserDetailPage() {
     const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
     safeLocalStorage.setItem('transactions', JSON.stringify(updatedTransactions));
 
-    setMessage(`Bet placed! $${betForm.amount} on ${userProfile.username} portfolio ${betForm.betType === 'increase' ? 'increasing' : 'decreasing'} by ${betForm.targetPercentage}% in ${betForm.timeFrame} days. Potential payout: $${potentialPayout} (${multiplier}x) | Risk: $${potentialLoss} if lost`);
     setShowBetModal(false);
-    setTimeout(() => setMessage(''), 10000);
   };
 
   // Validate percentage range (1%-100%)
@@ -835,7 +833,7 @@ export default function UserDetailPage() {
                     <div style={{ color: '#444', fontSize: '1rem', marginBottom: '6px' }}>Bought: ${opinion.purchasePrice}</div>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                       <span style={{ fontWeight: 900, fontSize: '1.5rem', color: '#111' }}>${opinion.currentPrice.toFixed(2)}</span>
-                      <span style={{ fontWeight: 700, fontSize: '1rem', color: gain >= 0 ? '#16a34a' : '#dc2626' }}>
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: gain >= 0 ? '#22c55e' : '#dc2626' }}>
                         {gain >= 0 ? '+' : ''}${gain.toFixed(2)} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%)
                       </span>
                     </div>
@@ -1157,11 +1155,11 @@ export default function UserDetailPage() {
                 <div className={styles.portfolioSummary}>
                   <div className={styles.summaryItem}>
                     <p>Current Value</p>
-                    <p>${portfolioValue.toLocaleString()}</p>
+                    <p className={portfolioValue < 0 ? styles.valueNegative : styles.valuePositive}>${portfolioValue.toLocaleString()}</p>
                   </div>
                   <div className={styles.summaryItem}>
                     <p>Real 7-Day Performance</p>
-                    <p className={getPerformanceClass(calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined))}>
+                    <p className={calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined) >= 0 ? styles.performancePositive : styles.performanceNegative}>
                       {calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined) >= 0 ? '+' : ''}{calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined).toFixed(1)}%
                     </p>
                   </div>

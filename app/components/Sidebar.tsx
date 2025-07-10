@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import styles from './Sidebar.module.css';
-import { ArrowLeft, PiggyBank, ScanSmiley, RssSimple, Balloon, RocketLaunch, ChartLineUp, ChartLineDown, Skull, FlowerLotus, Ticket, CheckSquare, CaretRight, CaretDown, Lightbulb } from "@phosphor-icons/react";
+import { Lightbulb } from "@phosphor-icons/react";
+import { realtimeDataService } from '../lib/realtime-data-service';
 
 type OpinionItem = { id: string; text: string } | string;
 
@@ -30,17 +31,17 @@ interface OpinionWithPrice {
   originalIndex: number;
 }
 
-export default function Sidebar({
+function SidebarComponent({
   opinions = [],
 }: {
   opinions?: OpinionItem[];
 }) {
   const [opinionsWithPrices, setOpinionsWithPrices] = useState<OpinionWithPrice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [debugInfo, setDebugInfo] = useState<string>('');
+  const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
 
-  // Safe localStorage helpers
-  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
+  // Safe localStorage helpers - memoized (kept for fallback)
+  const safeGetFromStorage = useCallback((key: string, defaultValue: any = null) => {
     if (typeof window === 'undefined') return defaultValue;
     try {
       const item = localStorage.getItem(key);
@@ -49,19 +50,19 @@ export default function Sidebar({
       console.error(`Error reading localStorage key ${key}:`, error);
       return defaultValue;
     }
-  };
+  }, []);
 
-  const safeSetToStorage = (key: string, value: any) => {
+  const safeSetToStorage = useCallback((key: string, value: any) => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
       console.error(`Error writing to localStorage key ${key}:`, error);
     }
-  };
+  }, []);
 
-  // Price calculation matching other components
-  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
+  // Price calculation matching other components - memoized
+  const calculatePrice = useCallback((timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
     const netDemand = timesPurchased - timesSold;
     let priceMultiplier;
     
@@ -73,15 +74,24 @@ export default function Sidebar({
     
     const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
     return Math.round(calculatedPrice * 100) / 100;
-  };
+  }, []);
 
   // Get all opinions with proper creation timestamps and maintain array index mapping
-  const getAllOpinions = (): { id: string; text: string; createdAt: number; originalIndex: number }[] => {
+  const getAllOpinions = async (): Promise<{ id: string; text: string; createdAt: number; originalIndex: number }[]> => {
     try {
-      const storedOpinions: string[] = safeGetFromStorage('opinions', []);
+      // Get opinions from Firebase/localStorage via realtimeDataService
+      const storedOpinions: string[] = await realtimeDataService.getOpinions();
       
-      // Get ALL creation transactions (type: 'earn') from both user and bot transactions
-      const userTransactions = safeGetFromStorage('transactions', []);
+      // Get user transactions from Firebase first, then fallback to localStorage
+      let userTransactions: any[] = [];
+      try {
+        userTransactions = await realtimeDataService.getUserTransactions();
+      } catch (error) {
+        console.log('📊 Sidebar: Using localStorage fallback for user transactions');
+        userTransactions = safeGetFromStorage('transactions', []);
+      }
+      
+      // Get bot transactions from localStorage (not yet migrated to Firebase)
       const botTransactions = safeGetFromStorage('botTransactions', []);
       
       // Combine all creation transactions
@@ -168,39 +178,42 @@ export default function Sidebar({
   };
 
   // FIXED: Get market data for an opinion with proper format handling
-  const getOpinionMarketData = (opinionText: string): OpinionMarketData => {
-    const marketData = safeGetFromStorage('opinionMarketData', {});
-    
-    if (marketData[opinionText]) {
-      const data = marketData[opinionText];
+  const getOpinionMarketData = async (opinionText: string): Promise<OpinionMarketData> => {
+    try {
+      // Get market data from Firebase/localStorage via realtimeDataService
+      const marketData = await realtimeDataService.getMarketData();
       
-      // Ensure we have all required fields
-      const result: OpinionMarketData = {
-        opinionText,
-        timesPurchased: data.timesPurchased || 0,
-        timesSold: data.timesSold || 0,
-        currentPrice: data.currentPrice || 10,
-        basePrice: data.basePrice || 10,
-        volatility: data.volatility || 1.0, // Default volatility if not present
-        lastUpdated: data.lastUpdated || new Date().toISOString(),
-        priceHistory: data.priceHistory || []
-      };
-
-      // Recalculate price if it seems incorrect
-      const expectedPrice = calculatePrice(result.timesPurchased, result.timesSold, result.basePrice);
-      if (Math.abs(expectedPrice - result.currentPrice) > 0.01) {
-        console.log(`🔧 FIXING price for "${opinionText}": ${result.currentPrice} → ${expectedPrice}`);
-        result.currentPrice = expectedPrice;
+      if (marketData[opinionText]) {
+        const data = marketData[opinionText];
         
-        // Update the stored data
-        marketData[opinionText] = result;
-        safeSetToStorage('opinionMarketData', marketData);
+        // Ensure we have all required fields
+        const result: OpinionMarketData = {
+          opinionText,
+          timesPurchased: data.timesPurchased || 0,
+          timesSold: data.timesSold || 0,
+          currentPrice: data.currentPrice || 10,
+          basePrice: data.basePrice || 10,
+          volatility: data.volatility || 1.0, // Default volatility if not present
+          lastUpdated: data.lastUpdated || new Date().toISOString(),
+          priceHistory: data.priceHistory || []
+        };
+
+        // Recalculate price if it seems incorrect
+        const expectedPrice = calculatePrice(result.timesPurchased, result.timesSold, result.basePrice);
+        if (Math.abs(expectedPrice - result.currentPrice) > 0.01) {
+          console.log(`🔧 Sidebar: FIXING price for "${opinionText}": ${result.currentPrice} → ${expectedPrice}`);
+          result.currentPrice = expectedPrice;
+          
+          // Update the stored data via realtimeDataService
+          marketData[opinionText] = result;
+          safeSetToStorage('opinionMarketData', marketData);
+        }
+        
+        return result;
       }
       
-      return result;
-    } else {
-      // Create new market data with default values
-      const newData: OpinionMarketData = {
+      // Default market data if not found
+      const defaultData: OpinionMarketData = {
         opinionText,
         timesPurchased: 0,
         timesSold: 0,
@@ -211,238 +224,244 @@ export default function Sidebar({
         priceHistory: []
       };
       
-      // Save the new market data
-      marketData[opinionText] = newData;
-      safeSetToStorage('opinionMarketData', marketData);
+      return defaultData;
+    } catch (error) {
+      console.error('Error getting market data:', error);
       
-      return newData;
+      // Fallback to default
+      return {
+        opinionText,
+        timesPurchased: 0,
+        timesSold: 0,
+        currentPrice: 10,
+        basePrice: 10,
+        volatility: 1.0,
+        lastUpdated: new Date().toISOString(),
+        priceHistory: []
+      };
     }
   };
 
   // Calculate price trend and movement
   const calculatePriceTrend = (marketData: OpinionMarketData): { trend: 'up' | 'down' | 'neutral', priceChange: number, priceChangePercent: number } => {
-    const { priceHistory = [], currentPrice, basePrice } = marketData;
+    const priceHistory = marketData.priceHistory || [];
     
-    if (!priceHistory || priceHistory.length < 2) {
-      const change = currentPrice - basePrice;
-      const changePercent = ((currentPrice - basePrice) / basePrice) * 100;
-      return {
-        trend: change > 0 ? 'up' : change < 0 ? 'down' : 'neutral',
-        priceChange: change,
-        priceChangePercent: changePercent
-      };
+    if (priceHistory.length < 2) {
+      return { trend: 'neutral', priceChange: 0, priceChangePercent: 0 };
     }
-
-    // Compare current price to price from 2 actions ago (or earliest available)
-    const comparisonIndex = Math.max(0, priceHistory.length - 3);
-    const previousPrice = priceHistory[comparisonIndex]?.price || basePrice;
     
-    const change = currentPrice - previousPrice;
-    const changePercent = previousPrice > 0 ? ((currentPrice - previousPrice) / previousPrice) * 100 : 0;
+    const currentPrice = marketData.currentPrice;
+    const previousPrice = priceHistory[priceHistory.length - 2]?.price || marketData.basePrice;
+    
+    const priceChange = currentPrice - previousPrice;
+    const priceChangePercent = previousPrice > 0 ? (priceChange / previousPrice) * 100 : 0;
+    
+    let trend: 'up' | 'down' | 'neutral';
+    
+    if (priceChange > 0.05) {
+      trend = 'up';
+    } else if (priceChange < -0.05) {
+      trend = 'down';
+    } else {
+      trend = 'neutral';
+    }
     
     return {
-      trend: change > 0.5 ? 'up' : change < -0.5 ? 'down' : 'neutral',
-      priceChange: change,
-      priceChangePercent: changePercent
+      trend,
+      priceChange: Math.round(priceChange * 100) / 100,
+      priceChangePercent: Math.round(priceChangePercent * 100) / 100
     };
   };
 
   // Determine volatility level with fallback
   const getVolatilityLevel = (volatility: number = 1.0): 'high' | 'medium' | 'low' => {
-    if (volatility > 2.0) return 'high';
-    if (volatility > 1.3) return 'medium';
+    if (volatility > 1.5) return 'high';
+    if (volatility > 1.2) return 'medium';
     return 'low';
   };
 
   // Determine opinion source/attribution
   const getOpinionAttribution = (opinionText: string): { type: 'ai' | 'community' | 'user', emoji: string } => {
-    // Check if this is from user's actual transactions (user-submitted)
-    const userTransactions = safeGetFromStorage('transactions', []);
-    const isUserSubmitted = userTransactions.some((t: any) => 
-      t.type === 'earn' && t.opinionText && opinionText.includes(t.opinionText.slice(0, 20))
-    );
-
-    if (isUserSubmitted) {
-      return { type: 'user', emoji: '✨' };
-    }
-
-    // Check if this is from bot transactions (bot-generated)
-    const botTransactions = safeGetFromStorage('botTransactions', []);
-    const isBotGenerated = botTransactions.some((t: any) => 
-      t.type === 'earn' && t.opinionText && opinionText.includes(t.opinionText.slice(0, 20))
-    );
-
-    if (isBotGenerated) {
-      return { type: 'ai', emoji: '🤖' };
-    }
-
-    // Check for AI-generated patterns or keywords
-    const text = opinionText.toLowerCase();
-    const aiPatterns = [
-      'i think', 'in my opinion', 'it seems', 'perhaps', 'likely', 'probably',
-      'could be', 'might be', 'appears', 'suggests', 'indicates', 'future will',
-      'prediction:', 'forecast:', 'analysis shows', 'data suggests'
-    ];
-
-    const hasAiPattern = aiPatterns.some(pattern => text.includes(pattern));
+    const opinionAttributions = safeGetFromStorage('opinionAttributions', {});
     
-    if (hasAiPattern || text.length > 100) {
+    if (opinionAttributions[opinionText]) {
+      const attribution = opinionAttributions[opinionText];
+      
+      if (attribution.type === 'ai') {
+        return { type: 'ai', emoji: '🤖' };
+      } else if (attribution.type === 'community') {
+        return { type: 'community', emoji: '🌐' };
+      } else if (attribution.type === 'user') {
+        return { type: 'user', emoji: '👤' };
+      }
+    }
+    
+    // Check if it's a bot opinion
+    const botOpinions = safeGetFromStorage('botOpinions', []);
+    if (botOpinions.some((botOpinion: any) => 
+      botOpinion.text === opinionText || 
+      botOpinion.opinionText === opinionText ||
+      botOpinion.opinion === opinionText
+    )) {
       return { type: 'ai', emoji: '🤖' };
     }
-
-    // Default to community for shorter, more casual opinions
-    return { type: 'community', emoji: '👥' };
+    
+    // Check if it's from bot transactions
+    const botTransactions = safeGetFromStorage('botTransactions', []);
+    if (botTransactions.some((t: any) => t.opinionText === opinionText)) {
+      return { type: 'ai', emoji: '🤖' };
+    }
+    
+    // Check if it's from user transactions (assuming user-created)
+    const userTransactions = safeGetFromStorage('transactions', []);
+    if (userTransactions.some((t: any) => t.opinionText === opinionText && t.type === 'earn')) {
+      return { type: 'user', emoji: '👤' };
+    }
+    
+    // Default to community
+    return { type: 'community', emoji: '🌐' };
   };
 
   // Get trend indicator classes and emoji
   const getTrendIndicator = (trend: 'up' | 'down' | 'neutral', volatility: 'high' | 'medium' | 'low') => {
-    const className = `${styles.trendIndicator} ${styles[trend]} ${volatility === 'high' ? styles.highVolatility : ''}`;
-    
-    if (trend === 'up') {
-      return { className, emoji: volatility === 'high' ? '🚀' : '📈' };
-    } else if (trend === 'down') {
-      return { className, emoji: volatility === 'high' ? '💥' : '📉' };
-    } else {
-      return { className, emoji: '➡️' };
-    }
+    if (trend === 'up') return { symbol: '↗', className: styles.up };
+    if (trend === 'down') return { symbol: '↘', className: styles.down };
+    return { symbol: '→', className: styles.neutral };
   };
 
   // Get price change class
   const getPriceChangeClass = (trend: 'up' | 'down' | 'neutral') => {
-    return `${styles.priceChange} ${styles[trend === 'up' ? 'positive' : trend === 'down' ? 'negative' : 'neutral']}`;
+    if (trend === 'up') return styles.positive;
+    if (trend === 'down') return styles.negative;
+    return styles.neutral;
   };
 
   // Get volatility indicator
   const getVolatilityIndicator = (volatility: 'high' | 'medium' | 'low') => {
-    const emoji = volatility === 'high' ? '⚡' : volatility === 'medium' ? '🔄' : '🔒';
-    const text = volatility === 'high' ? 'High Vol' : volatility === 'medium' ? 'Med Vol' : 'Low Vol';
-    return { emoji, text, className: `${styles.volatilityIndicator} ${styles[volatility]}` };
+    if (volatility === 'high') return { text: 'High Vol', className: styles.high };
+    if (volatility === 'medium') return { text: 'Med Vol', className: styles.medium };
+    return { text: 'Low Vol', className: styles.low };
   };
 
-  // FIXED: Load and process opinion data with better error handling
+  // Enhanced update function with real-time data
+  const updateOpinions = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get all opinions with creation timestamps
+      const allOpinions = await getAllOpinions();
+      
+      if (allOpinions.length === 0) {
+        console.log('📊 Sidebar: No opinions found');
+        setOpinionsWithPrices([]);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Get market data for all opinions
+      const opinionsWithMarketData = await Promise.all(
+        allOpinions.map(async (opinion) => {
+          const marketData = await getOpinionMarketData(opinion.text);
+          const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
+          const volatilityLevel = getVolatilityLevel(marketData.volatility);
+          
+          return {
+            id: opinion.id,
+            text: opinion.text,
+            currentPrice: marketData.currentPrice,
+            priceChange,
+            priceChangePercent,
+            trend,
+            volatility: volatilityLevel,
+            createdAt: opinion.createdAt,
+            originalIndex: opinion.originalIndex
+          };
+        })
+      );
+      
+      // Sort by creation time (most recent first)
+      const sortedOpinions = opinionsWithMarketData.sort((a, b) => b.createdAt - a.createdAt);
+      
+      console.log(`📊 Sidebar: Updated ${sortedOpinions.length} opinions with market data`);
+      setOpinionsWithPrices(sortedOpinions);
+      
+    } catch (error) {
+      console.error('Error updating opinions:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getAllOpinions, getOpinionMarketData, calculatePriceTrend, getVolatilityLevel]);
+
+  // Setup real-time subscriptions on mount
   useEffect(() => {
-    setIsLoading(true);
-    
-    const updateOpinions = () => {
-      try {
-        // Fetch ALL opinions from storage
-        const allOpinions = getAllOpinions();
-        
-        console.log(`📊 Sidebar updating: Found ${allOpinions.length} total opinions`);
-        setDebugInfo(`Found ${allOpinions.length} opinions`);
-        
-        // Opinions are now already sorted by creation timestamp - NEWEST FIRST
-        const sortedOpinions = allOpinions.filter(Boolean);
-        
-        console.log(`📊 After filtering: ${sortedOpinions.length} opinions`);
-        if (sortedOpinions.length > 0) {
-          console.log(`📊 Most recent: "${sortedOpinions[0]?.text?.slice(0, 30)}..." (Original ID: ${sortedOpinions[0]?.id}, Created: ${new Date(sortedOpinions[0]?.createdAt).toLocaleString()})`);
-        }
-        
-        const processedOpinions: OpinionWithPrice[] = sortedOpinions
-          .map((op: { id: string; text: string; createdAt: number; originalIndex: number }) => {
-            try {
-              const text = op.text;
-              const id = op.id; // Keep original ID for proper URL routing
-              
-              const marketData = getOpinionMarketData(text);
-              const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-              const volatilityLevel = getVolatilityLevel(marketData.volatility);
-              
-              return {
-                id, // Original array index for URL consistency
-                text,
-                currentPrice: marketData.currentPrice,
-                priceChange,
-                priceChangePercent,
-                trend,
-                volatility: volatilityLevel,
-                createdAt: op.createdAt,
-                originalIndex: op.originalIndex
-              };
-            } catch (error) {
-              console.error('Error processing opinion:', error);
-              // Return a fallback opinion
-              return {
-                id: op.id,
-                text: op.text,
-                currentPrice: 10,
-                priceChange: 0,
-                priceChangePercent: 0,
-                trend: 'neutral' as const,
-                volatility: 'low' as const,
-                createdAt: op.createdAt,
-                originalIndex: op.originalIndex
-              };
-            }
-          });
-
-        console.log(`📊 Processed ${processedOpinions.length} opinions for display`);
-        setDebugInfo(`Processed ${processedOpinions.length} opinions`);
-
-        setOpinionsWithPrices(processedOpinions);
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error in updateOpinions:', error);
-        setDebugInfo(`Error: ${error}`);
-        setIsLoading(false);
-      }
-    };
-
-    // Initial load
-    updateOpinions();
-
-    // Multiple update mechanisms for faster detection
-    
-    // 1. Fast interval for real-time updates
-    const fastInterval = setInterval(updateOpinions, 2000); // Reduced to 2 seconds
-    
-    // 2. Storage event listener for immediate updates when localStorage changes
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'opinions' || e.key === 'botTransactions' || e.key === 'transactions' || e.key === 'opinionMarketData') {
-        console.log('🔄 Storage changed, updating sidebar...', e.key);
-        setTimeout(updateOpinions, 100);
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // 3. Custom event listener for bot activity
-    const handleBotActivity = () => {
-      console.log('🤖 Bot activity detected, updating sidebar...');
-      setTimeout(updateOpinions, 200);
-    };
-    
-    window.addEventListener('botActivityUpdate', handleBotActivity);
-    
-    // 4. Manual polling with visibility check
-    const visibilityInterval = setInterval(() => {
-      if (!document.hidden) {
+    const setupSubscriptions = () => {
+      const subscriptionIds: string[] = [];
+      
+      // Subscribe to opinions changes
+      const opinionsSub = realtimeDataService.subscribeToOpinions((opinions) => {
+        console.log('📊 Sidebar: Opinions updated from Firebase/localStorage');
         updateOpinions();
-      }
-    }, 5000);
-
-    // 5. Add a custom event for manual refresh
-    const handleManualRefresh = () => {
-      console.log('🔄 Manual refresh triggered');
+      });
+      subscriptionIds.push(opinionsSub);
+      
+      // Subscribe to market data changes
+      const marketSub = realtimeDataService.subscribeToMarketData((marketData) => {
+        console.log('📊 Sidebar: Market data updated from Firebase/localStorage');
+        updateOpinions();
+      });
+      subscriptionIds.push(marketSub);
+      
+      setSubscriptionIds(subscriptionIds);
+      
+      // Initial load
       updateOpinions();
     };
     
-    window.addEventListener('sidebarRefresh', handleManualRefresh);
+    setupSubscriptions();
+    
+    // Cleanup subscriptions on unmount
+    return () => {
+      subscriptionIds.forEach(id => {
+        realtimeDataService.unsubscribe(id);
+      });
+    };
+  }, [updateOpinions]);
+
+  // Handle storage changes (for localStorage fallback)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'opinions' || e.key === 'opinionMarketData') {
+        console.log('📊 Sidebar: Storage change detected, updating opinions');
+        updateOpinions();
+      }
+    };
+
+    const handleBotActivity = () => {
+      console.log('📊 Sidebar: Bot activity detected, updating opinions');
+      updateOpinions();
+    };
+
+    const handleManualRefresh = () => {
+      console.log('📊 Sidebar: Manual refresh requested, updating opinions');
+      updateOpinions();
+    };
+
+    // Add event listeners for localStorage changes and bot activity
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('botActivityUpdated', handleBotActivity);
+    window.addEventListener('manualRefresh', handleManualRefresh);
 
     return () => {
-      clearInterval(fastInterval);
-      clearInterval(visibilityInterval);
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('botActivityUpdate', handleBotActivity);
-      window.removeEventListener('sidebarRefresh', handleManualRefresh);
+      window.removeEventListener('botActivityUpdated', handleBotActivity);
+      window.removeEventListener('manualRefresh', handleManualRefresh);
     };
-  }, []);
+  }, [updateOpinions]);
 
   // Add a manual refresh function that can be called from other components
   useEffect(() => {
     (window as any).refreshSidebar = () => {
-      window.dispatchEvent(new CustomEvent('sidebarRefresh'));
+      window.dispatchEvent(new CustomEvent('manualRefresh'));
     };
   }, []);
 
@@ -509,7 +528,7 @@ export default function Sidebar({
                       
                       {/* Attribution Badge */}
                       <div className={`${styles.attributionBadge} ${styles[attribution.type]}`}>
-                        {attribution.emoji} {attribution.type === 'ai' ? 'AI' : 
+                        {attribution.type === 'ai' ? 'AI' : 
                          attribution.type === 'community' ? 'Community' : 'User'}
                       </div>
                     </div>
@@ -518,7 +537,7 @@ export default function Sidebar({
                       <div className={styles.priceDisplay}>
                         ${opinion.currentPrice.toFixed(2)}
                         <span className={trendIndicator.className}>
-                          {trendIndicator.emoji}
+                          {trendIndicator.symbol}
                         </span>
                       </div>
                     </div>
@@ -538,7 +557,7 @@ export default function Sidebar({
                     </div>
                     
                     <div className={volatilityIndicator.className}>
-                      {volatilityIndicator.emoji} {volatilityIndicator.text}
+                      {volatilityIndicator.text}
                     </div>
                   </div>
                 </Link>
@@ -583,3 +602,6 @@ export default function Sidebar({
     </aside>
   );
 }
+
+  // Export memoized component to prevent unnecessary re-renders
+export default memo(SidebarComponent);
