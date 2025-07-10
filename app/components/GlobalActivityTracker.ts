@@ -1,110 +1,66 @@
 // components/GlobalActivityTracker.ts
 // Unified system that works with your existing feed architecture
 
-export interface ActivityFeedItem {
+import { firebaseDataService, ActivityFeedItem, UserProfile } from '../lib/firebase-data-service';
+
+interface ActivityTracker {
   id: string;
-  type: 'buy' | 'sell' | 'generate' | 'earn' | 'short_place' | 'short_win' | 'short_loss' | 'bet_place' | 'bet_win' | 'bet_loss';
+  type: string;
   username: string;
   opinionText?: string;
-  opinionId?: string | number;
-  amount: number;
-  price?: number;
+  targetUser?: string;
+  betType?: string;
+  targetPercentage?: number;
+  amount?: number;
   quantity?: number;
-  timestamp: string;
-  relativeTime?: string;
-  isBot: boolean;
-  botId?: string;
+  timestamp: Date;
+  isBot?: boolean;
 }
 
 class GlobalActivityTracker {
-  private currentUser: any = null;
-  private initialized = false;
+  private static instance: GlobalActivityTracker;
+  private currentUser: UserProfile | null = null;
+  private subscribers: Map<string, (activity: ActivityTracker) => void> = new Map();
 
-  constructor() {
-    this.initialize();
+  private constructor() {
+    this.initializeGlobalUser();
   }
 
-  private initialize() {
+  public static getInstance(): GlobalActivityTracker {
+    if (!GlobalActivityTracker.instance) {
+      GlobalActivityTracker.instance = new GlobalActivityTracker();
+    }
+    return GlobalActivityTracker.instance;
+  }
+
+  // Initialize user from Firebase via auth context
+  private async initializeGlobalUser() {
     if (typeof window === 'undefined') return;
-    
-    // Load current user from localStorage (always use localStorage as it's most up-to-date)
+
     try {
-      const storedUser = localStorage.getItem('userProfile');
-      if (storedUser) {
-        this.currentUser = JSON.parse(storedUser);
+      // Get auth user if available
+      const authContext = (window as any).authContext;
+      if (authContext?.user?.uid) {
+        this.currentUser = authContext.userProfile;
+        console.log('🔄 GlobalActivityTracker: Initialized with Firebase user:', this.currentUser?.username);
       } else {
-        // Fallback to anonymous user
-        this.currentUser = {
-          username: 'AnonymousUser',
-          balance: 10000,
-          joinDate: new Date().toLocaleDateString(),
-          totalEarnings: 0,
-          totalLosses: 0
-        };
+        console.log('⚠️ GlobalActivityTracker: No authenticated user found');
       }
     } catch (error) {
-      console.error('Error loading user profile:', error);
-      this.currentUser = {
-        username: 'AnonymousUser',
-        balance: 10000,
-        joinDate: new Date().toLocaleDateString(),
-        totalEarnings: 0,
-        totalLosses: 0
-      };
-    }
-
-    this.initialized = true;
-    // console.log('🔧 Global Activity Tracker initialized with user:', this.currentUser?.username);
-  }
-
-  private safeGetFromStorage(key: string, defaultValue: any = null) {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading from localStorage key ${key}:`, error);
-      return defaultValue;
+      console.error('❌ Error initializing global user:', error);
     }
   }
 
-  private safeSetToStorage(key: string, value: any) {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  }
-
-  public getCurrentUser() {
-    return this.currentUser;
-  }
-
-  public setCurrentUser(user: any) {
+  // Update current user (called by auth context when user changes)
+  public updateCurrentUser(user: UserProfile | null) {
     this.currentUser = user;
-    // console.log('🔧 Global Activity Tracker user updated:', user?.username);
-  }
-
-  // Refresh user profile from localStorage
-  public refreshUserProfile() {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      const storedUser = localStorage.getItem('userProfile');
-      if (storedUser) {
-        this.currentUser = JSON.parse(storedUser);
-        console.log('🔄 Global Activity Tracker user refreshed:', this.currentUser?.username);
-      }
-    } catch (error) {
-      console.error('Error refreshing user profile:', error);
-    }
+    console.log('👤 GlobalActivityTracker: User updated:', user?.username || 'None');
   }
 
   // Add Firebase sync for balance updates
   private async syncBalanceToFirebase() {
     if (!this.currentUser || typeof window === 'undefined') return;
-    
+
     try {
       // Get auth user if available
       const authContext = (window as any).authContext;
@@ -112,286 +68,330 @@ class GlobalActivityTracker {
         // console.log('⚠️ No authenticated user found for Firebase sync');
         return;
       }
-      
+
       const userId = authContext.user.uid;
-      
-      // Import Firebase functions dynamically
-      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
-      const { db } = await import('../lib/firebase');
       
       console.log('🔄 Syncing balance to Firebase:', this.currentUser.balance);
       
-      await updateDoc(doc(db, 'users', userId), {
-        balance: Number(this.currentUser.balance) || 10000,
-        totalEarnings: Number(this.currentUser.totalEarnings) || 0,
-        totalLosses: Number(this.currentUser.totalLosses) || 0,
-        updatedAt: serverTimestamp()
-      });
+      // Update Firebase directly using the auth context methods
+      if (authContext.updateBalance) {
+        await authContext.updateBalance(this.currentUser.balance);
+      }
+      
+      // Update earnings if needed
+      if (authContext.updateEarnings) {
+        await authContext.updateEarnings(
+          this.currentUser.totalEarnings || 0,
+          this.currentUser.totalLosses || 0
+        );
+      }
       
       console.log('✅ Balance synced to Firebase successfully');
-      
     } catch (error) {
-      console.error('❌ Failed to sync balance to Firebase:', error);
+      console.error('❌ Error syncing balance to Firebase:', error);
     }
   }
 
-  // CORE METHOD: Add to global feed (works with existing feed system)
-  public addToGlobalFeed(activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) {
-    if (!this.initialized) this.initialize();
-    
-    const newActivity: ActivityFeedItem = {
-      ...activity,
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      relativeTime: this.getRelativeTime(activity.timestamp),
-      // Ensure proper decimal precision
-      amount: Math.round(activity.amount * 100) / 100,
-      price: activity.price ? Math.round(activity.price * 100) / 100 : activity.price
-    };
+  // Track user activity and persist to Firebase
+  async trackActivity(
+    type: string,
+    details: {
+      opinionText?: string;
+      targetUser?: string;
+      betType?: string;
+      targetPercentage?: number;
+      amount?: number;
+      quantity?: number;
+      isBot?: boolean;
+    }
+  ) {
+    if (!this.currentUser) {
+      console.warn('⚠️ Cannot track activity: No current user');
+      return;
+    }
 
-    // Get existing global feed
-    const existingFeed = this.safeGetFromStorage('globalActivityFeed', []);
-    
-    // Add new activity to beginning and keep last 200 items
-    const updatedFeed = [newActivity, ...existingFeed].slice(0, 200);
-    
-    // Save back to localStorage
-    this.safeSetToStorage('globalActivityFeed', updatedFeed);
-    
-    // Update user balance if this activity affects it
-    if (this.currentUser && (activity.type === 'buy' || activity.type === 'sell' || activity.type === 'earn' || 
-        activity.type === 'bet_win' || activity.type === 'bet_loss' || activity.type === 'short_win' || activity.type === 'short_loss')) {
-      
-      // Update balance based on activity
-      const balanceChange = activity.amount;
-      this.currentUser.balance = (this.currentUser.balance || 0) + balanceChange;
-      
-      // Update earnings/losses
-      if (balanceChange > 0) {
-        this.currentUser.totalEarnings = (this.currentUser.totalEarnings || 0) + balanceChange;
-      } else if (balanceChange < 0) {
-        this.currentUser.totalLosses = (this.currentUser.totalLosses || 0) + Math.abs(balanceChange);
+    try {
+      const activity: ActivityTracker = {
+        id: `activity_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        type,
+        username: this.currentUser.username,
+        timestamp: new Date(),
+        ...details
+      };
+
+      console.log('📊 Tracking activity:', activity);
+
+      // Add to Firebase activity feed
+      await firebaseDataService.addActivityFeedItem({
+        userId: this.currentUser.uid,
+        type: activity.type,
+        username: activity.username,
+        opinionText: activity.opinionText,
+        targetUser: activity.targetUser,
+        betType: activity.betType,
+        targetPercentage: activity.targetPercentage,
+        amount: activity.amount,
+        quantity: activity.quantity,
+        timestamp: activity.timestamp,
+        isBot: activity.isBot || false
+      });
+
+      // Notify subscribers
+      this.notifySubscribers(activity);
+
+      console.log('✅ Activity tracked and saved to Firebase');
+    } catch (error) {
+      console.error('❌ Error tracking activity:', error);
+    }
+  }
+
+  // Track transaction-specific activities
+  async trackTransaction(
+    type: 'buy' | 'sell' | 'earn',
+    opinionText: string,
+    amount: number,
+    price: number,
+    quantity: number = 1,
+    isBot: boolean = false
+  ) {
+    await this.trackActivity(type, {
+      opinionText,
+      amount,
+      quantity,
+      isBot
+    });
+
+    // Also create the transaction record in Firebase
+    if (this.currentUser) {
+      try {
+        if (isBot) {
+          // Create bot transaction
+          await firebaseDataService.createBotTransaction({
+            userId: this.currentUser.uid,
+            botId: 'auto-bot', // Default bot ID for now
+            type,
+            opinionText,
+            amount,
+            price,
+            quantity,
+            timestamp: new Date(),
+            date: new Date()
+          });
+        } else {
+          // Create user transaction
+          await firebaseDataService.createTransaction({
+            userId: this.currentUser.uid,
+            type,
+            opinionText,
+            amount,
+            price,
+            quantity,
+            timestamp: new Date(),
+            date: new Date()
+          });
+        }
+
+        console.log('✅ Transaction record created in Firebase');
+      } catch (error) {
+        console.error('❌ Error creating transaction record:', error);
       }
-      
-      // Save updated user profile to localStorage
-      this.safeSetToStorage('userProfile', this.currentUser);
-      
-      console.log(`💰 Balance updated: ${activity.username} balance is now $${this.currentUser.balance.toLocaleString()}`);
-      
-      // Sync to Firebase in the background
-      this.syncBalanceToFirebase();
     }
-    
-    // Dispatch event for real-time updates (works with existing feed page)
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('globalActivityUpdate', {
-        detail: { activity: newActivity, totalCount: updatedFeed.length }
-      }));
-      
-      window.dispatchEvent(new CustomEvent('newTransaction', {
-        detail: newActivity
-      }));
-      
-      // Dispatch balance update event
-      if (this.currentUser) {
-        window.dispatchEvent(new CustomEvent('balanceUpdate', {
-          detail: { 
-            username: this.currentUser.username,
-            balance: this.currentUser.balance,
-            totalEarnings: this.currentUser.totalEarnings,
-            totalLosses: this.currentUser.totalLosses
-          }
-        }));
+  }
+
+  // Track betting activities
+  async trackBet(
+    type: 'bet_place' | 'bet_win' | 'bet_loss',
+    targetUser: string,
+    betType: 'gain' | 'loss',
+    targetPercentage: number,
+    amount: number,
+    isBot: boolean = false
+  ) {
+    await this.trackActivity(type, {
+      targetUser,
+      betType,
+      targetPercentage,
+      amount,
+      isBot
+    });
+  }
+
+  // Track short position activities
+  async trackShort(
+    type: 'short_place' | 'short_win' | 'short_loss',
+    opinionText: string,
+    amount: number,
+    isBot: boolean = false
+  ) {
+    await this.trackActivity(type, {
+      opinionText,
+      amount,
+      isBot
+    });
+  }
+
+  // Track opinion generation
+  async trackOpinionGeneration(opinionText: string, isBot: boolean = false) {
+    await this.trackActivity(isBot ? 'bot_generate' : 'generate', {
+      opinionText,
+      isBot
+    });
+  }
+
+  // Update user balance and sync to Firebase
+  async updateBalance(newBalance: number) {
+    if (!this.currentUser) {
+      console.warn('⚠️ Cannot update balance: No current user');
+      return;
+    }
+
+    const oldBalance = this.currentUser.balance;
+    this.currentUser.balance = newBalance;
+
+    // Calculate earnings/losses
+    const change = newBalance - oldBalance;
+    if (change > 0) {
+      this.currentUser.totalEarnings = (this.currentUser.totalEarnings || 0) + change;
+    } else if (change < 0) {
+      this.currentUser.totalLosses = (this.currentUser.totalLosses || 0) + Math.abs(change);
+    }
+
+    console.log('💰 Balance updated:', { oldBalance, newBalance, change });
+
+    // Sync to Firebase
+    await this.syncBalanceToFirebase();
+  }
+
+  // Get current user balance from Firebase
+  async getCurrentBalance(): Promise<number> {
+    if (!this.currentUser) return 10000;
+
+    try {
+      // Get fresh data from Firebase
+      const authContext = (window as any).authContext;
+      if (authContext?.user?.uid) {
+        const profile = await firebaseDataService.getUserProfile(authContext.user.uid);
+        if (profile) {
+          this.currentUser = profile;
+          return profile.balance;
+        }
       }
+    } catch (error) {
+      console.error('❌ Error getting current balance from Firebase:', error);
     }
 
-    // console.log(`🔥 Added to globalActivityFeed: ${activity.username} ${activity.type} ${activity.opinionText?.slice(0, 30)}...`);
+    return this.currentUser.balance;
   }
 
-  private getRelativeTime(timestamp: string): string {
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
+  // Get user activity feed from Firebase
+  async getUserActivityFeed(limit: number = 50): Promise<ActivityTracker[]> {
+    if (!this.currentUser) return [];
 
-    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
-  }
-
-  // WRAPPER: trackTrade function (calls addToGlobalFeed)
-  public trackTrade(action: 'buy' | 'sell', opinion: string, quantity: number, price: number, totalCost: number) {
-    if (!this.currentUser) {
-      console.warn('⚠️ trackTrade called but no current user set');
-      return;
+    try {
+      const activities = await firebaseDataService.getUserActivityFeed(this.currentUser.uid, limit);
+      return activities.map(activity => ({
+        id: activity.id,
+        type: activity.type,
+        username: activity.username,
+        opinionText: activity.opinionText,
+        targetUser: activity.targetUser,
+        betType: activity.betType,
+        targetPercentage: activity.targetPercentage,
+        amount: activity.amount,
+        quantity: activity.quantity,
+        timestamp: activity.timestamp,
+        isBot: activity.isBot
+      }));
+    } catch (error) {
+      console.error('❌ Error getting user activity feed:', error);
+      return [];
     }
+  }
 
-    this.addToGlobalFeed({
-      type: action,
-      username: this.currentUser.username,
-      opinionText: opinion,
-      amount: action === 'buy' ? -Math.abs(totalCost) : Math.abs(totalCost),
-      price: price,
-      quantity: quantity,
-      timestamp: new Date().toISOString(),
-      isBot: false
+  // Get global activity feed from Firebase
+  async getGlobalActivityFeed(limit: number = 100): Promise<ActivityTracker[]> {
+    try {
+      const activities = await firebaseDataService.getGlobalActivityFeed(limit);
+      return activities.map(activity => ({
+        id: activity.id,
+        type: activity.type,
+        username: activity.username,
+        opinionText: activity.opinionText,
+        targetUser: activity.targetUser,
+        betType: activity.betType,
+        targetPercentage: activity.targetPercentage,
+        amount: activity.amount,
+        quantity: activity.quantity,
+        timestamp: activity.timestamp,
+        isBot: activity.isBot
+      }));
+    } catch (error) {
+      console.error('❌ Error getting global activity feed:', error);
+      return [];
+    }
+  }
+
+  // Subscribe to activity updates
+  subscribe(callback: (activity: ActivityTracker) => void): string {
+    const id = `activity_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    this.subscribers.set(id, callback);
+    return id;
+  }
+
+  // Unsubscribe from activity updates
+  unsubscribe(id: string) {
+    this.subscribers.delete(id);
+  }
+
+  // Notify subscribers of new activity
+  private notifySubscribers(activity: ActivityTracker) {
+    this.subscribers.forEach(callback => {
+      try {
+        callback(activity);
+      } catch (error) {
+        console.error('❌ Error notifying activity subscriber:', error);
+      }
     });
-
-    // console.log(`🔥 trackTrade: ${this.currentUser.username} ${action} ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)} = $${totalCost.toFixed(2)}`);
   }
 
-  // WRAPPER: interceptBuyTransaction function  
-  public interceptBuyTransaction(opinion: string, quantity: number, price: number) {
-    if (!this.currentUser) {
-      console.warn('⚠️ interceptBuyTransaction called but no current user set');
-      return;
-    }
-
-    const totalCost = quantity * price;
-    this.addToGlobalFeed({
-      type: 'buy',
-      username: this.currentUser.username,
-      opinionText: opinion,
-      amount: -Math.abs(totalCost),
-      price: price,
-      quantity: quantity,
-      timestamp: new Date().toISOString(),
-      isBot: false
-    });
-
-    // console.log(`🔥 interceptBuyTransaction: ${this.currentUser.username} bought ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)}`);
+  // Get current user info
+  getCurrentUser(): UserProfile | null {
+    return this.currentUser;
   }
 
-  // WRAPPER: interceptSellTransaction function
-  public interceptSellTransaction(opinion: string, quantity: number, price: number) {
-    if (!this.currentUser) {
-      console.warn('⚠️ interceptSellTransaction called but no current user set');
-      return;
-    }
-
-    const totalReceived = quantity * price;
-    this.addToGlobalFeed({
-      type: 'sell',
-      username: this.currentUser.username,
-      opinionText: opinion,
-      amount: Math.abs(totalReceived),
-      price: price,
-      quantity: quantity,
-      timestamp: new Date().toISOString(),
-      isBot: false
-    });
-
-    console.log(`🔥 interceptSellTransaction: ${this.currentUser.username} sold ${quantity}x "${opinion.slice(0, 30)}..." @ $${price.toFixed(2)}`);
+  // Real-time activity feed subscription
+  subscribeToGlobalActivityFeed(callback: (activities: ActivityTracker[]) => void, limit: number = 100): string {
+    return firebaseDataService.subscribeToGlobalActivityFeed((activities) => {
+      const trackerActivities = activities.map(activity => ({
+        id: activity.id,
+        type: activity.type,
+        username: activity.username,
+        opinionText: activity.opinionText,
+        targetUser: activity.targetUser,
+        betType: activity.betType,
+        targetPercentage: activity.targetPercentage,
+        amount: activity.amount,
+        quantity: activity.quantity,
+        timestamp: activity.timestamp,
+        isBot: activity.isBot
+      }));
+      callback(trackerActivities);
+    }, limit);
   }
 
-  // Method to track short position activities
-  public trackShortActivity(type: 'short_place' | 'short_win' | 'short_loss', opinionText: string, amount: number, additionalData?: any) {
-    if (!this.currentUser) {
-      console.warn('⚠️ trackShortActivity called but no current user set');
-      return;
-    }
-
-    this.addToGlobalFeed({
-      type: type,
-      username: this.currentUser.username,
-      opinionText: opinionText,
-      amount: amount,
-      timestamp: new Date().toISOString(),
-      isBot: false,
-      ...additionalData
-    });
-
-    console.log(`🔥 trackShortActivity: ${this.currentUser.username} ${type} "${opinionText.slice(0, 30)}..." = $${amount.toFixed(2)}`);
+  // Unsubscribe from Firebase subscriptions
+  unsubscribeFromFirebase(subscriptionId: string) {
+    firebaseDataService.unsubscribe(subscriptionId);
   }
 
-  // Method to track opinion generation
-  public trackOpinionGeneration(opinionText: string, earnings: number = 0) {
-    if (!this.currentUser) {
-      console.warn('⚠️ trackOpinionGeneration called but no current user set');
-      return;
-    }
-
-    this.addToGlobalFeed({
-      type: 'generate',
-      username: this.currentUser.username,
-      opinionText: opinionText,
-      amount: 0, // FIXED: Generating opinions should be free, not rewarded
-      timestamp: new Date().toISOString(),
-      isBot: false
-    });
-
-    console.log(`🔥 trackOpinionGeneration: ${this.currentUser.username} generated "${opinionText.slice(0, 30)}..." (no monetary reward)`);
-  }
-
-  // HELPER: Get all activities (works with existing loadRealActivity)
-  public getActivities(): ActivityFeedItem[] {
-    return this.safeGetFromStorage('globalActivityFeed', []);
-  }
-
-  // HELPER: Force refresh of feed page
-  public forceRefreshFeed() {
-    if (typeof window !== 'undefined' && (window as any).forceRefreshFeed) {
-      console.log('🔄 Triggering feed refresh...');
-      (window as any).forceRefreshFeed();
-    }
-  }
-
-  // HELPER: Statistics
-  public getActivityStats() {
-    const activities = this.getActivities();
-    const stats = {
-      total: activities.length,
-      botActivities: activities.filter(a => a.isBot).length,
-      humanActivities: activities.filter(a => !a.isBot).length,
-      buyActivities: activities.filter(a => a.type === 'buy').length,
-      sellActivities: activities.filter(a => a.type === 'sell').length,
-      shortActivities: activities.filter(a => a.type.includes('short')).length,
-      earnActivities: activities.filter(a => a.type === 'earn').length,
-      last24Hours: activities.filter(a => {
-        const activityTime = new Date(a.timestamp).getTime();
-        return Date.now() - activityTime < 24 * 60 * 60 * 1000;
-      }).length
-    };
-
-    console.log('📊 Activity Statistics:', stats);
-    return stats;
+  // Clean up all subscriptions
+  cleanup() {
+    this.subscribers.clear();
+    firebaseDataService.unsubscribeAll();
   }
 }
 
-// Create global instance
-const globalActivityTracker = new GlobalActivityTracker();
-
-// Make it globally accessible - EXACTLY the functions your opinion page expects
-if (typeof window !== 'undefined') {
-  (window as any).globalActivityTracker = globalActivityTracker;
-  
-  // PRIMARY FUNCTIONS - these are what your opinion page calls
-  (window as any).addToGlobalFeed = globalActivityTracker.addToGlobalFeed.bind(globalActivityTracker);
-  (window as any).trackTrade = globalActivityTracker.trackTrade.bind(globalActivityTracker);
-  (window as any).interceptBuyTransaction = globalActivityTracker.interceptBuyTransaction.bind(globalActivityTracker);
-  (window as any).interceptSellTransaction = globalActivityTracker.interceptSellTransaction.bind(globalActivityTracker);
-  
-  // ADDITIONAL FUNCTIONS
-  (window as any).trackShortActivity = globalActivityTracker.trackShortActivity.bind(globalActivityTracker);
-  (window as any).trackOpinionGeneration = globalActivityTracker.trackOpinionGeneration.bind(globalActivityTracker);
-  
-  // DEBUG FUNCTIONS
-  (window as any).getActivityStats = globalActivityTracker.getActivityStats.bind(globalActivityTracker);
-  (window as any).getGlobalActivities = globalActivityTracker.getActivities.bind(globalActivityTracker);
-  (window as any).forceRefreshFeed = globalActivityTracker.forceRefreshFeed.bind(globalActivityTracker);
-  (window as any).refreshUserProfile = globalActivityTracker.refreshUserProfile.bind(globalActivityTracker);
-  
-  // Console logs temporarily disabled for auth debugging
-  // console.log('🌐 Global Activity Tracker loaded - provides functions expected by opinion page!');
-  // console.log('📱 Available functions that your code expects:');
-  // console.log('  ✅ addToGlobalFeed(activity)');
-  // console.log('  ✅ trackTrade(action, opinion, quantity, price, totalCost)');
-  // console.log('  ✅ interceptBuyTransaction(opinion, quantity, price)');
-  // console.log('  ✅ interceptSellTransaction(opinion, quantity, price)');
-  // console.log('📱 Additional functions:');
-  // console.log('  - trackShortActivity(type, opinionText, amount)');
-  // console.log('  - trackOpinionGeneration(opinionText, earnings)');
-  // console.log('  - getActivityStats() - View activity statistics');
-  // console.log('  - getGlobalActivities() - View all activities');
-}
-
+// Export singleton instance
+export default GlobalActivityTracker.getInstance();
+export default globalActivityTracker;
 export default globalActivityTracker;
