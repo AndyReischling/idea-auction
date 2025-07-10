@@ -175,7 +175,7 @@ export class FirebaseMigrationService {
    * Migrate user profile
    */
   private async migrateUserProfile(result: MigrationResult): Promise<void> {
-    const localProfile = this.getFromLocalStorage('userProfile', null);
+    const localProfile: any = this.getFromLocalStorage('userProfile', null);
     if (!localProfile) return;
 
     try {
@@ -184,9 +184,9 @@ export class FirebaseMigrationService {
       
       const profileData = {
         username: localProfile.username || 'User',
-        balance: localProfile.balance || 10000,
-        totalEarnings: localProfile.totalEarnings || 0,
-        totalLosses: localProfile.totalLosses || 0,
+        balance: Number(localProfile.balance) || 10000,
+        totalEarnings: Number(localProfile.totalEarnings) || 0,
+        totalLosses: Number(localProfile.totalLosses) || 0,
         joinDate: localProfile.joinDate || serverTimestamp(),
         updatedAt: serverTimestamp(),
         ...(!existingDoc.exists() && { createdAt: serverTimestamp() })
@@ -207,7 +207,7 @@ export class FirebaseMigrationService {
    * Migrate opinions
    */
   private async migrateOpinions(result: MigrationResult): Promise<void> {
-    const localOpinions = this.getFromLocalStorage('opinions', []);
+    const localOpinions: string[] = this.getFromLocalStorage('opinions', []);
     if (!localOpinions.length) return;
 
     try {
@@ -271,7 +271,7 @@ export class FirebaseMigrationService {
    * Migrate transactions
    */
   private async migrateTransactions(result: MigrationResult): Promise<void> {
-    const localTransactions = this.getFromLocalStorage('transactions', []);
+    const localTransactions: any[] = this.getFromLocalStorage('transactions', []);
     if (!localTransactions.length) return;
 
     try {
@@ -281,11 +281,11 @@ export class FirebaseMigrationService {
         
         const transactionData = {
           userId: this.userId,
-          type: transaction.type,
-          opinionText: transaction.opinionText,
-          amount: transaction.amount,
-          price: transaction.price,
-          quantity: transaction.quantity || 1,
+          type: transaction.type || 'buy',
+          opinionText: transaction.opinionText || 'Unknown Opinion',
+          amount: Number(transaction.amount) || 0,
+          price: Number(transaction.price) || 10.0,
+          quantity: Number(transaction.quantity) || 1,
           timestamp: transaction.timestamp || serverTimestamp(),
           date: transaction.date || new Date().toISOString()
         };
@@ -306,7 +306,7 @@ export class FirebaseMigrationService {
    * Migrate bot transactions
    */
   private async migrateBotTransactions(result: MigrationResult): Promise<void> {
-    const localBotTransactions = this.getFromLocalStorage('botTransactions', []);
+    const localBotTransactions: any[] = this.getFromLocalStorage('botTransactions', []);
     if (!localBotTransactions.length) return;
 
     try {
@@ -316,12 +316,12 @@ export class FirebaseMigrationService {
         
         const transactionData = {
           userId: this.userId,
-          botId: transaction.botId,
-          type: transaction.type,
-          opinionText: transaction.opinionText,
-          amount: transaction.amount,
-          price: transaction.price,
-          quantity: transaction.quantity || 1,
+          botId: transaction.botId || 'unknown-bot',
+          type: transaction.type || 'buy',
+          opinionText: transaction.opinionText || 'Unknown Opinion',
+          amount: Number(transaction.amount) || 0,
+          price: Number(transaction.price) || 10.0,
+          quantity: Number(transaction.quantity) || 1,
           timestamp: transaction.timestamp || serverTimestamp(),
           date: transaction.date || new Date().toISOString()
         };
@@ -394,7 +394,7 @@ export class FirebaseMigrationService {
    * Migrate advanced bets
    */
   private async migrateAdvancedBets(result: MigrationResult): Promise<void> {
-    const localBets = this.getFromLocalStorage('advancedBets', []);
+    const localBets: any[] = this.getFromLocalStorage('advancedBets', []);
     if (!localBets.length) return;
 
     try {
@@ -404,7 +404,14 @@ export class FirebaseMigrationService {
         
         const betData = {
           userId: this.userId,
-          ...bet,
+          targetUser: bet.targetUser || 'unknown',
+          betType: bet.betType || 'gain',
+          targetPercentage: Number(bet.targetPercentage) || 0,
+          betAmount: Number(bet.betAmount) || 0,
+          potentialWinnings: Number(bet.potentialWinnings) || 0,
+          placedDate: bet.placedDate || serverTimestamp(),
+          expiryDate: bet.expiryDate || serverTimestamp(),
+          status: bet.status || 'active',
           updatedAt: serverTimestamp()
         };
 
@@ -424,7 +431,7 @@ export class FirebaseMigrationService {
    * Migrate short positions
    */
   private async migrateShortPositions(result: MigrationResult): Promise<void> {
-    const localShorts = this.getFromLocalStorage('shortPositions', []);
+    const localShorts: any[] = this.getFromLocalStorage('shortPositions', []);
     if (!localShorts.length) return;
 
     try {
@@ -434,7 +441,16 @@ export class FirebaseMigrationService {
         
         const shortData = {
           userId: this.userId,
-          ...short,
+          opinionId: short.opinionId || 'unknown',
+          opinionText: short.opinionText || 'Unknown Opinion',
+          betAmount: Number(short.betAmount) || 0,
+          targetDropPercentage: Number(short.targetDropPercentage) || 0,
+          potentialWinnings: Number(short.potentialWinnings) || 0,
+          startingPrice: Number(short.startingPrice) || 10.0,
+          targetPrice: Number(short.targetPrice) || 5.0,
+          createdDate: short.createdDate || serverTimestamp(),
+          expirationDate: short.expirationDate || serverTimestamp(),
+          status: short.status || 'active',
           updatedAt: serverTimestamp()
         };
 
@@ -632,8 +648,8 @@ export class FirebaseMigrationService {
       const settingsRef = doc(db, 'user-settings', this.userId);
       const settingsData = {
         userId: this.userId,
-        botsAutoStart: botsAutoStart === 'true',
-        botsInitialized: botsInitialized === 'true',
+        botsAutoStart: String(botsAutoStart) === 'true',
+        botsInitialized: String(botsInitialized) === 'true',
         updatedAt: serverTimestamp()
       };
 

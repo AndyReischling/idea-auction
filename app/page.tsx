@@ -55,26 +55,7 @@ export default function HomePage() {
     console.log('HomePage: Auth state - user:', !!user, 'userProfile:', !!userProfile);
   }, [user, userProfile]);
 
-  // Safe localStorage helpers (kept for fallback)
-  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key ${key}:`, error);
-      return defaultValue;
-    }
-  };
-
-  const safeSetToStorage = (key: string, value: any) => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  };
+  // Note: Using Firebase data only, no localStorage helpers needed
 
   // Calculate price based on market activity
   const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
@@ -124,21 +105,7 @@ export default function HomePage() {
     } catch (error) {
       console.error('Error getting market data:', error);
       
-      // Fallback to localStorage
-      const fallbackData = safeGetFromStorage('opinionMarketData', {});
-      if (fallbackData[opinionText]) {
-        const data = fallbackData[opinionText];
-        return {
-          opinionText,
-          timesPurchased: data.timesPurchased || 0,
-          timesSold: data.timesSold || 0,
-          currentPrice: data.currentPrice || 10,
-          basePrice: data.basePrice || 10,
-          volatility: data.volatility || 1.0,
-          lastUpdated: data.lastUpdated || new Date().toISOString(),
-          priceHistory: data.priceHistory || []
-        };
-      }
+      // No localStorage fallback - Firebase only
       
       return {
         opinionText,
@@ -197,30 +164,8 @@ export default function HomePage() {
         };
       }
       
-      // Fallback to localStorage for now (bot data isn't fully migrated yet)
-      const attributions = safeGetFromStorage('opinionAttributions', {});
-      
-      if (attributions[opinionText]) {
-        return {
-          author: attributions[opinionText].author,
-          isBot: attributions[opinionText].isBot
-        };
-      }
-      
-      const botTransactions = safeGetFromStorage('botTransactions', []);
-      const botGenerated = botTransactions.find((t: any) => 
-        (t.type === 'generate' || t.type === 'earn') && 
-        (t.opinionText === opinionText || t.opinionText?.includes(opinionText.slice(0, 30)))
-      );
-      
-      if (botGenerated) {
-        const bots = safeGetFromStorage('autonomousBots', []);
-        const bot = bots.find((b: any) => b.id === botGenerated.botId);
-        return {
-          author: bot ? bot.username : 'AI Bot',
-          isBot: true
-        };
-      }
+      // No localStorage fallback - Firebase only
+      // Bot data should be in Firebase now
       
       return {
         author: 'AI',

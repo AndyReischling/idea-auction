@@ -1761,214 +1761,34 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
 export default function FeedPage() {
   const router = useRouter();
   const { user, userProfile: authUserProfile } = useAuth();
+  
+  // Core state
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
   const [opinions, setOpinions] = useState<{ id: string; text: string }[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile>({
-    username: 'Loading...', // Will be updated with actual username
+    username: 'Loading...',
     balance: 10000
   });
+  
+  // UI state
   const [filter, setFilter] = useState<'all' | 'trades' | 'bets' | 'generates' | 'shorts'>('all');
-  const [lastRefresh, setLastRefresh] = useState(Date.now());
-  const [selectedTransaction, setSelectedTransaction] = useState<TransactionDetail | null>(null);
-  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityFeedItem | null>(null);
+  const [showActivityDetailModal, setShowActivityDetailModal] = useState(false);
   const [isClient, setIsClient] = useState(false);
   
-  // Firebase-specific state
-  const [firebaseActivities, setFirebaseActivities] = useState<LocalActivityItem[]>([]);
+  // Loading states for better UX
   const [isLoadingFirebase, setIsLoadingFirebase] = useState(true);
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
-
-  // NEW: Activity detail modal states
-  const [showActivityDetailModal, setShowActivityDetailModal] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState<ActivityFeedItem | null>(null);
-
-  // REAL-TIME FEED: Live update state and refs
+  
+  // Real-time feed state
   const [liveConnectionStatus, setLiveConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [newActivityCount, setNewActivityCount] = useState(0);
   const feedContainerRef = useRef<HTMLDivElement>(null);
   const realTimeFeedManager = useRef<RealTimeFeedManager | null>(null);
   const [isAtTop, setIsAtTop] = useState(true);
-  
-  // Load user profile from Firebase/auth context with localStorage fallback
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      try {
-        // First try to get profile from Firebase via realtimeDataService
-        const firebaseProfile = await realtimeDataService.getUserProfile();
-        
-        if (firebaseProfile && user) {
-          console.log('Feed page: Using Firebase user profile');
-          const finalProfile = {
-            username: firebaseProfile.username,
-            balance: firebaseProfile.balance || 10000
-          };
-          
-          setCurrentUser(finalProfile);
-          
-          // CRITICAL: Update the global activity tracker immediately
-          if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
-            (window as any).globalActivityTracker.setCurrentUser(finalProfile);
-          }
-          
-          // Update localStorage to ensure consistency
-          localStorage.setItem('userProfile', JSON.stringify({
-            username: finalProfile.username,
-            balance: finalProfile.balance,
-            joinDate: firebaseProfile.joinDate ? new Date(firebaseProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
-            totalEarnings: firebaseProfile.totalEarnings || 0,
-            totalLosses: firebaseProfile.totalLosses || 0
-          }));
-          
-          return;
-        }
-        
-        // Fallback to auth context + localStorage
-        const storedProfile = safeGetFromStorage('userProfile', null);
-        
-        if (authUserProfile && user) {
-          console.log('Feed page: Using authenticated user profile');
-          let finalProfile = {
-            username: authUserProfile.username,
-            balance: authUserProfile.balance
-          };
-          
-          // Override with localStorage balance if available (transactions update localStorage)
-          if (storedProfile) {
-            finalProfile = {
-              ...finalProfile,
-              balance: storedProfile.balance || finalProfile.balance
-            };
-            
-            // AUTO-SYNC: If local username is different from authenticated username, fix it immediately
-            if (storedProfile.username !== authUserProfile.username) {
-              console.log(`🔧 FEED AUTO-SYNC: Fixing username mismatch: ${storedProfile.username} → ${authUserProfile.username}`);
-              
-              // Sync username everywhere
-              syncUsernameInTransactions(authUserProfile.username);
-            }
-          }
-          
-          setCurrentUser(finalProfile);
-          
-          // CRITICAL: Update the global activity tracker immediately
-          if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
-            (window as any).globalActivityTracker.setCurrentUser(finalProfile);
-          }
-          
-          // Update localStorage to ensure consistency
-          localStorage.setItem('userProfile', JSON.stringify({
-            username: finalProfile.username,
-            balance: finalProfile.balance,
-            joinDate: authUserProfile.joinDate ? new Date(authUserProfile.joinDate).toLocaleDateString() : new Date().toLocaleDateString(),
-            totalEarnings: authUserProfile.totalEarnings || 0,
-            totalLosses: authUserProfile.totalLosses || 0
-          }));
-        
-      } else if (user) {
-        console.log('Feed page: New authenticated user, checking localStorage first');
-        
-        if (storedProfile) {
-          // Use authenticated email as username if available, prioritize AndyMoney
-          let authenticatedUsername = user.email?.split('@')[0] || 'AndyMoney';
-          if (user?.email?.includes('andy') || authenticatedUsername === 'OpinionTrader123') {
-            authenticatedUsername = 'AndyMoney';
-            console.log(`🔧 ANDY SPECIAL: Using AndyMoney based on email or bad username`);
-          }
-          const finalProfile = {
-            ...storedProfile,
-            username: authenticatedUsername // Always use authenticated username
-          };
-          
-          // Auto-sync if username changed
-          if (storedProfile.username !== authenticatedUsername) {
-            console.log(`🔧 FEED AUTO-SYNC: Fixing username for new auth user: ${storedProfile.username} → ${authenticatedUsername}`);
-            syncUsernameInTransactions(authenticatedUsername);
-          }
-          
-          setCurrentUser(finalProfile);
-          
-          // Update global activity tracker
-          if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
-            (window as any).globalActivityTracker.setCurrentUser(finalProfile);
-          }
-        } else {
-          const newProfile = {
-            username: user.email?.split('@')[0] || 'NewTrader',
-            balance: 10000
-          };
-          setCurrentUser(newProfile);
-          
-          // Update global activity tracker
-          if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
-            (window as any).globalActivityTracker.setCurrentUser(newProfile);
-          }
-        }
-      } else {
-        // Fallback to localStorage profile (for development/testing)
-        if (storedProfile) {
-          setCurrentUser(storedProfile);
-          
-          // Update global activity tracker
-          if (typeof window !== 'undefined' && (window as any).globalActivityTracker) {
-            (window as any).globalActivityTracker.setCurrentUser(storedProfile);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
-      // Fallback to localStorage profile
-      const storedProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-      if (storedProfile.username) {
-        setCurrentUser(storedProfile);
-      }
-    }
-  };
 
-    loadUserProfile();
-  }, [authUserProfile?.username, user?.uid]);
-
-  // USERNAME SYNC FUNCTION - ensures consistency across all transactions
-  const syncUsernameInTransactions = (newUsername: string) => {
-    if (typeof window === 'undefined') return;
-    
-    try {
-      // Update all existing transactions with new username
-      const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-      const updatedTransactions = transactions.map((transaction: any) => {
-        if (transaction.username === 'OpinionTrader123' || transaction.username === 'Loading...' || !transaction.username) {
-          return { ...transaction, username: newUsername };
-        }
-        return transaction;
-      });
-      localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
-      
-      // Update activity feed
-      const activityFeed = JSON.parse(localStorage.getItem('activityFeed') || '[]');
-      const updatedActivityFeed = activityFeed.map((activity: any) => {
-        if (activity.username === 'OpinionTrader123' || activity.username === 'Loading...' || !activity.username) {
-          return { ...activity, username: newUsername };
-        }
-        return activity;
-      });
-      localStorage.setItem('activityFeed', JSON.stringify(updatedActivityFeed));
-      
-      console.log('✅ Username synced across all transactions and activities');
-      
-    } catch (error) {
-      console.error('Error syncing username:', error);
-    }
-  };
-  
-  // Monitor for username changes and sync
-  useEffect(() => {
-    if (currentUser.username && currentUser.username !== 'Loading...' && currentUser.username !== 'OpinionTrader123') {
-      syncUsernameInTransactions(currentUser.username);
-    }
-  }, [currentUser.username]);
-
-  // UNIFIED TRANSACTION PROCESSING - Complete Implementation
-  // Safe localStorage helpers with proper error handling
-  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
+  // Safe localStorage helpers
+  const safeGetFromStorage = useCallback((key: string, defaultValue: any = null) => {
     if (typeof window === 'undefined') return defaultValue;
     try {
       const item = localStorage.getItem(key);
@@ -1977,70 +1797,19 @@ export default function FeedPage() {
       console.error(`Error reading localStorage key ${key}:`, error);
       return defaultValue;
     }
-  };
+  }, []);
 
-  const safeSetToStorage = (key: string, value: any) => {
+  const safeSetToStorage = useCallback((key: string, value: any) => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
       console.error(`Error writing to localStorage key ${key}:`, error);
     }
-  };
+  }, []);
 
-  // UNIFIED: Bot username mapping
-  const getBotUsernames = (): { [botId: string]: string } => {
-    if (!isClient) return {};
-    
-    try {
-      const bots = safeGetFromStorage('autonomousBots', []);
-      const botMap: { [botId: string]: string } = {};
-      
-      console.log(`🔍 DEBUG: Raw bot data from localStorage:`, bots.slice(0, 3));
-      
-      bots.forEach((bot: any) => {
-        if (bot && bot.id && bot.username) {
-          botMap[bot.id] = bot.username;
-        }
-      });
-      
-      console.log(`🤖 UNIFIED: Loaded ${Object.keys(botMap).length} bot usernames:`, Object.values(botMap).slice(0, 10));
-      console.log(`🔍 DEBUG: Sample bot IDs:`, Object.keys(botMap).slice(0, 5));
-      return botMap;
-    } catch (error) {
-      console.error('UNIFIED: Error loading bot usernames:', error);
-      return {};
-    }
-  };
-
-  // UNIFIED: Enhanced bot detection
-  const isBot = (username: string): boolean => {
-    const botMap = getBotUsernames();
-    const botUsernames = Object.values(botMap);
-    
-    return botUsernames.includes(username) || 
-           username.includes('Bot') || 
-           username.includes('Alpha') ||
-           username.includes('Beta') ||
-           username.includes('Gamma') ||
-           username.includes('Delta') ||
-           username.includes('Sigma') ||
-           username.includes('Prime') ||
-           username.includes('The') ||
-           username.includes('Contrarian') ||
-           username.includes('Trend') ||
-           username.includes('Value') ||
-           username.includes('Day') ||
-           username.includes('Whale') ||
-           username.includes('Gambler') ||
-           username.includes('Scalper') ||
-           username.includes('HODLer') ||
-           username.includes('Swing') ||
-           username.includes('Arbitrageur');
-  };
-
-  // UNIFIED: Get relative time
-  const getRelativeTime = (timestamp: string): string => {
+  // Helper functions
+  const getRelativeTime = useCallback((timestamp: string): string => {
     try {
       const now = new Date();
       const time = new Date(timestamp);
@@ -2053,487 +1822,143 @@ export default function FeedPage() {
     } catch {
       return 'Unknown time';
     }
-  };
+  }, []);
 
-  // UNIFIED: Price calculation with 0.1% movements
-  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
-    const netDemand = timesPurchased - timesSold;
-    
-    let priceMultiplier;
-    if (netDemand >= 0) {
-      // EXACT: 1.001 = 0.1% increase per purchase (NO volatility multiplier)
-      priceMultiplier = Math.pow(1.001, netDemand);
-    } else {
-      // EXACT: 0.999 = 0.1% decrease per sale (NO volatility multiplier)
-      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
-    }
-    
-    const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
-    
-    // CRITICAL: Always return exactly 2 decimal places
-    return Math.round(calculatedPrice * 100) / 100;
-  };
+  const isBot = useCallback((username: string): boolean => {
+    return username.includes('Bot') || 
+           username.includes('Alpha') ||
+           username.includes('Beta') ||
+           username.includes('Gamma') ||
+           username.includes('Delta') ||
+           username.includes('Sigma');
+  }, []);
 
-  // UNIFIED: Get current price for an opinion
-  const getCurrentPrice = (opinionText: string): number => {
-    if (!isClient) return 10.00;
+  // Load Firebase data only (simplified)
+  const loadFirebaseData = useCallback(async () => {
+    console.log('🔥 Loading Firebase data...');
+    console.log('👤 User authenticated:', !!user);
+    console.log('🔑 User ID:', user?.uid);
+    setIsLoadingFirebase(true);
+    setFirebaseError(null);
     
     try {
-      const marketData = safeGetFromStorage('opinionMarketData', {});
-      if (marketData[opinionText]) {
-        const price = marketData[opinionText].currentPrice;
-        return Math.round(price * 100) / 100;
-      }
-      return 10.00;
-    } catch (error) {
-      console.error('UNIFIED: Error getting current price:', error);
-      return 10.00;
-    }
-  };
-
-  // UNIFIED TRANSACTION PROCESSOR (MAIN)
-  const unifiedTransactionProcessor = (): ActivityFeedItem[] => {
-    console.log('🔄 UNIFIED: Starting transaction processor...');
-    console.log('🔄 UNIFIED: isClient =', isClient);
-    
-    if (!isClient) {
-      console.log('❌ UNIFIED: Not client-side, returning empty array');
-      return [];
-    }
-    
-    console.log('🔄 UNIFIED: Processing all transactions with hybrid processor...');
-    
-    const activities: ActivityFeedItem[] = [];
-    const seenIds = new Set<string>();
-    const botMap = getBotUsernames();
-    
-    console.log('🔄 UNIFIED: Bot map loaded with', Object.keys(botMap).length, 'entries');
-    
-    try {
-      // STEP 1: Process bot transactions with enhanced handling
-      const botTransactions = safeGetFromStorage('botTransactions', []);
-      console.log(`🤖 UNIFIED: Processing ${botTransactions.length} bot transactions`);
-      console.log(`🔍 DEBUG: Sample bot transactions:`, botTransactions.slice(0, 3));
-      console.log(`🔍 DEBUG: Bot map has ${Object.keys(botMap).length} entries`);
-      
-      // Enhanced debugging for bot transactions
-      if (botTransactions.length > 0) {
-        const botIds = [...new Set(botTransactions.map((t: any) => t.botId))].filter(Boolean) as string[];
-        console.log(`🔍 DEBUG: Bot transaction IDs found:`, botIds.slice(0, 10));
-        const botUsernames = botIds.map(id => botMap[id]).filter(Boolean);
-        console.log(`🔍 DEBUG: Bot usernames mapped:`, botUsernames.slice(0, 10));
+      // Load user profile from Firebase/auth
+      if (user?.uid) {
+        console.log('👤 Loading user profile...');
+        const firebaseProfile = await realtimeDataService.getUserProfile();
+        if (firebaseProfile) {
+          console.log('✅ User profile loaded:', firebaseProfile.username);
+          setCurrentUser({
+            username: firebaseProfile.username,
+            balance: firebaseProfile.balance || 10000
+          });
+        } else {
+          console.log('⚠️ No user profile found in Firebase');
+        }
       } else {
-        console.log(`⚠️ DEBUG: No bot transactions found!`);
+        console.log('⚠️ No authenticated user, skipping profile load');
       }
       
-      let botTransactionsProcessed = 0;
-      let botTransactionsSkipped = 0;
-
-      botTransactions.forEach((transaction: any, index: number) => {
-        try {
-          // Generate unique ID with better collision prevention
-          const uniqueId = transaction.id || `bot_${transaction.botId}_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`;
-          
-          // Skip if we've already seen this ID
-          if (seenIds.has(uniqueId)) {
-            console.log(`⚠️ UNIFIED: Duplicate transaction ID skipped: ${uniqueId}`);
-            botTransactionsSkipped++;
-            return;
-          }
-          seenIds.add(uniqueId);
-
-          // Get actual bot name with fallback
-          let botName = 'Unknown Bot';
-          if (transaction.botId && botMap[transaction.botId]) {
-            botName = botMap[transaction.botId];
-          } else if (transaction.botId) {
-            botName = `Bot_${transaction.botId.slice(-6)}`;
-            console.log(`🔍 DEBUG: Bot ID ${transaction.botId} not found in map, using fallback: ${botName}`);
-          } else {
-            console.log(`🔍 DEBUG: No botId found in transaction:`, transaction);
-          }
-
-          // Extract transaction data
-          let activityType = transaction.type;
-          let amount = parseFloat(transaction.amount) || 0;
-          
-          // Extract actual price and quantity from metadata with better fallbacks
-          let actualPrice: number | undefined;
-          let actualQuantity: number | undefined;
-          
-          if (transaction.metadata && typeof transaction.metadata === 'object') {
-            actualPrice = transaction.metadata.purchasePricePerShare || transaction.metadata.price;
-            actualQuantity = transaction.metadata.quantity;
-            
-            if (actualPrice) {
-              console.log(`💰 UNIFIED: Extracted price from metadata: ${botName} - ${actualPrice.toFixed(2)} x ${actualQuantity || 1}`);
-            }
-          }
-          
-          // Calculate proper price if not in metadata - NEVER allow $0.00
-          if (!actualPrice && (transaction.type === 'buy' || transaction.type === 'sell')) {
-            if (transaction.opinionText) {
-              const marketData = safeGetFromStorage('opinionMarketData', {});
-              if (marketData[transaction.opinionText]) {
-                actualPrice = marketData[transaction.opinionText].currentPrice;
-                console.log(`💡 UNIFIED: Using market price for ${transaction.opinionText}: ${actualPrice?.toFixed(2)}`);
-              } else {
-                // Calculate price based on purchase history
-                const allBotTx = botTransactions.filter((tx: any) => tx.opinionText === transaction.opinionText);
-                const purchases = allBotTx.filter((tx: any) => tx.type === 'buy').length;
-                const sales = allBotTx.filter((tx: any) => tx.type === 'sell').length;
-                actualPrice = calculatePrice(purchases, sales, 10.00);
-                console.log(`🔧 UNIFIED: Calculated price for ${transaction.opinionText}: ${actualPrice.toFixed(2)} (${purchases} buys, ${sales} sells)`);
-              }
-              
-              if (!actualQuantity) {
-                actualQuantity = Math.max(1, Math.round(Math.abs(amount) / (actualPrice ?? 10.00)));
-              }
-            } else {
-              actualPrice = Math.max(10.00, Math.abs(amount));
-              actualQuantity = 1;
-              console.log(`⚠️ UNIFIED: Fallback pricing for ${botName}: ${actualPrice.toFixed(2)} x 1`);
-            }
-          }
-          
-          // Ensure prices are never $0.00
-          if (actualPrice && actualPrice < 0.01) {
-            actualPrice = 10.00;
-            console.log(`🔧 UNIFIED: Fixed $0.00 price for ${botName} - reset to $10.00`);
-          }
-          
-          // Normalize transaction types and amounts
-          switch (transaction.type) {
-            case 'bet':
-              activityType = 'bet_place';
-              amount = -Math.abs(amount);
-              break;
-            case 'buy':
-              activityType = 'buy';
-              amount = -Math.abs(amount);
-              break;
-            case 'sell':
-              activityType = 'sell';
-              amount = Math.abs(amount);
-              break;
-            case 'generate':
-              activityType = 'generate';
-              amount = 0; // FIXED: Generating opinions should be free, not rewarded
-              break;
-            case 'earn':
-              activityType = 'earn';
-              amount = Math.abs(amount); // Only legitimate earnings (from trading wins, etc.)
-              break;
-            case 'short_place':
-              activityType = 'short_place';
-              amount = -Math.abs(amount);
-              break;
-            case 'short_win':
-              activityType = 'short_win';
-              amount = Math.abs(amount);
-              break;
-            case 'short_loss':
-              activityType = 'short_loss';
-              amount = -Math.abs(amount);
-              break;
-          }
-
-          // Parse timestamp with multiple format support
-          let timestamp: string;
-          if (transaction.date) {
-            try {
-              let parsedDate: Date;
-              
-              if (typeof transaction.date === 'string') {
-                if (transaction.date.includes('T')) {
-                  parsedDate = new Date(transaction.date);
-                } else {
-                  parsedDate = new Date(transaction.date);
-                }
-              } else {
-                parsedDate = new Date(transaction.date);
-              }
-
-              if (!isNaN(parsedDate.getTime())) {
-                timestamp = parsedDate.toISOString();
-              } else {
-                timestamp = new Date().toISOString();
-                console.log(`⚠️ UNIFIED: Invalid date for transaction ${uniqueId}, using current time`);
-              }
-            } catch (error) {
-              timestamp = new Date().toISOString();
-              console.log(`⚠️ UNIFIED: Date parsing error for transaction ${uniqueId}:`, error);
-            }
-          } else {
-            timestamp = new Date().toISOString();
-          }
-
-          const newActivity: ActivityFeedItem = {
-            id: uniqueId,
-            type: activityType as any,
-            username: botName,
-            opinionText: transaction.opinionText,
-            opinionId: transaction.opinionId,
-            amount: amount,
-            price: actualPrice ? Math.round(actualPrice * 100) / 100 : undefined,
-            quantity: actualQuantity,
-            timestamp: timestamp,
-            relativeTime: getRelativeTime(timestamp),
-            isBot: true
-          };
-
-          activities.push(newActivity);
-          botTransactionsProcessed++;
-
-          // Debug log for verification
-          if (actualPrice && (transaction.type === 'buy' || transaction.type === 'sell')) {
-            console.log(`🤖💰 UNIFIED: Processed: ${botName} - ${activityType} - ${actualQuantity}x @ ${actualPrice.toFixed(2)} = ${Math.abs(amount).toFixed(2)}`);
-          }
-
-        } catch (error) {
-          console.error(`UNIFIED: Error processing bot transaction ${index}:`, error, transaction);
-          botTransactionsSkipped++;
-        }
-      });
-
-      console.log(`✅ UNIFIED: Bot transactions: ${botTransactionsProcessed} processed, ${botTransactionsSkipped} skipped`);
-
-      // STEP 2: Process user transactions - SKIP LOCAL TRANSACTIONS
-      // NOTE: Local transactions only contain current user's activity
-      // All user activity should be in globalActivityFeed instead
-      console.log(`👤 UNIFIED: Skipping local transactions (only current user's data)`);
+      // Load Firebase activities
+      console.log('📊 Loading Firebase activities...');
+      const firebaseActivities = await Promise.race([
+        firebaseActivityService.getRecentActivities(200),
+        new Promise<any[]>((_, reject) => 
+          setTimeout(() => reject(new Error('Firebase timeout after 10 seconds')), 10000)
+        )
+      ]);
       
-      // Only process local transactions for current user if not in global feed
-      try {
-        const userTransactions = safeGetFromStorage('transactions', []);
-        console.log(`👤 UNIFIED: Found ${userTransactions.length} local transactions for current user`);
-        
-        let userTransactionsProcessed = 0;
-
-        userTransactions.forEach((t: any, index: number) => {
-          try {
-            const uniqueId = t.id || `user_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            if (seenIds.has(uniqueId)) return;
-            seenIds.add(uniqueId);
-
-            let timestamp: string;
-            try {
-              const parsedDate = new Date(t.date || new Date());
-              timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
-            } catch {
-              timestamp = new Date().toISOString();
-            }
-
-            activities.push({
-              id: uniqueId,
-              type: t.type,
-              username: t.username || currentUser.username, // Use actual username from transaction
-              opinionText: t.opinionText || t.description?.replace(/^(Bought|Sold|Generated) /, ''),
-              opinionId: t.opinionId,
-              amount: parseFloat(t.amount) || 0,
-              price: t.price ? Math.round(t.price * 100) / 100 : undefined,
-              quantity: t.quantity,
-              timestamp: timestamp,
-              relativeTime: getRelativeTime(timestamp),
-              isBot: isBot(t.username || currentUser.username) // Check if it's a bot username
-            });
-
-            userTransactionsProcessed++;
-          } catch (error) {
-            console.error(`UNIFIED: Error processing user transaction ${index}:`, error);
-          }
-        });
-
-        console.log(`✅ UNIFIED: Local transactions: ${userTransactionsProcessed} processed`);
-      } catch (error) {
-        console.error('UNIFIED: Error loading local transactions:', error);
-      }
-
-      // STEP 3: Process global activity feed - ENHANCED DEBUGGING
-      try {
-        const globalFeed = safeGetFromStorage('globalActivityFeed', []);
-        console.log(`🌐 UNIFIED: Processing ${globalFeed.length} global feed entries`);
-        
-        // Enhanced debugging for global feed
-        if (globalFeed.length > 0) {
-          console.log(`🔍 UNIFIED: Sample global feed entries:`, globalFeed.slice(0, 3));
-          const usernames = [...new Set(globalFeed.map((a: any) => a.username))];
-          console.log(`🔍 UNIFIED: Global feed usernames:`, usernames.slice(0, 10));
-        } else {
-          console.log(`⚠️ UNIFIED: Global activity feed is EMPTY! This is likely the issue.`);
-        }
-        
-        let globalEntriesProcessed = 0;
-
-        globalFeed.forEach((activity: any) => {
-          try {
-            if (seenIds.has(activity.id)) return;
-            seenIds.add(activity.id);
-
-            activities.push({
-              ...activity,
-              isBot: isBot(activity.username),
-              relativeTime: getRelativeTime(activity.timestamp),
-              amount: typeof activity.amount === 'number' ? Math.round(activity.amount * 100) / 100 : activity.amount,
-              price: activity.price ? Math.round(activity.price * 100) / 100 : activity.price
-            });
-
-            globalEntriesProcessed++;
-          } catch (error) {
-            console.error('UNIFIED: Error processing global feed entry:', error);
-          }
-        });
-
-        console.log(`✅ UNIFIED: Global feed: ${globalEntriesProcessed} processed`);
-      } catch (error) {
-        console.error('UNIFIED: Error loading global activity feed:', error);
+      console.log(`🔥 Loaded ${firebaseActivities.length} Firebase activities`);
+      
+      if (firebaseActivities.length > 0) {
+        console.log('📊 Sample activity:', firebaseActivities[0]);
       }
       
-      // STEP 4: Handle empty feed with bot system diagnostics
-      if (activities.length === 0) {
-        console.log('📝 UNIFIED: No real activity found - checking bot system status...');
-        
-        if (typeof window !== 'undefined' && (window as any).botSystem) {
-          const botSystem = (window as any).botSystem;
-          const isRunning = botSystem.isSystemRunning();
-          console.log(`🤖 UNIFIED: Bot system status: ${isRunning ? 'RUNNING' : 'STOPPED'}`);
-          
-          if (!isRunning) {
-            console.log('⚠️ UNIFIED: Bot system is stopped! Attempting to start...');
-            try {
-              botSystem.startBots();
-              console.log('✅ UNIFIED: Bot system start command sent');
-            } catch (error) {
-              console.error('❌ UNIFIED: Failed to start bot system:', error);
-            }
-          } else {
-            console.log('🤖 UNIFIED: Bot system running but no transactions found - forcing activity...');
-            try {
-              botSystem.forceBotActivity(5);
-              console.log('✅ UNIFIED: Forced bot activity command sent');
-            } catch (error) {
-              console.error('❌ UNIFIED: Failed to force bot activity:', error);
-            }
-          }
-        } else {
-          console.log('❌ UNIFIED: Bot system not found in window object');
-        }
-
-        // Add helpful system message
-        activities.push({
-          id: 'system_message',
-          type: 'generate',
-          username: 'System',
-          opinionText: 'Bot system initializing... If this persists, click "Start Bots" above.',
-          amount: 0,
-          timestamp: new Date().toISOString(),
-          relativeTime: 'just now',
-          isBot: false
-        });
-      }
-
+      // Convert Firebase activities to our format
+      const formattedActivities: ActivityFeedItem[] = firebaseActivities.map(activity => ({
+        id: activity.id,
+        type: activity.type,
+        username: activity.username,
+        opinionText: activity.opinionText,
+        opinionId: activity.opinionId,
+        amount: activity.amount,
+        price: activity.price,
+        quantity: activity.quantity,
+        targetUser: activity.targetUser,
+        betType: activity.betType,
+        targetPercentage: activity.targetPercentage,
+        timeframe: activity.timeframe,
+        timestamp: activity.timestamp,
+        relativeTime: getRelativeTime(activity.timestamp),
+        isBot: activity.isBot
+      }));
+      
+      console.log(`✅ Formatted ${formattedActivities.length} activities for display`);
+      setActivityFeed(formattedActivities);
+      
+      // Load opinions from Firebase
+      console.log('💭 Loading opinions from Firebase...');
+      const firebaseDataService = (await import('../lib/firebase-data-service')).FirebaseDataService.getInstance();
+      const firebaseOpinions = await firebaseDataService.getOpinions(100);
+      
+      console.log(`💭 Loaded ${firebaseOpinions.length} opinions from Firebase`);
+      
+      // Convert Firebase opinions to our format
+      const formattedOpinions = firebaseOpinions.map(opinion => ({
+        id: opinion.id,
+        text: opinion.text
+      }));
+      
+      setOpinions(formattedOpinions);
+      console.log(`✅ Set ${formattedOpinions.length} opinions in state`);
+      
+      setIsLoadingFirebase(false);
+      
     } catch (error) {
-      console.error('❌ UNIFIED: Error in transaction processing:', error);
+      console.error('❌ Firebase data load failed:', error);
+      const errorMessage = (error as Error).message || 'Firebase connection error';
+      setFirebaseError(errorMessage);
+      setIsLoadingFirebase(false);
     }
+  }, [user?.uid, getRelativeTime]);
 
-    // STEP 5: Sort, deduplicate, and return results
-    const uniqueActivities = activities
-      .filter((activity, index, self) => {
-        const isDuplicate = self.findIndex(a => 
-          a.id === activity.id || 
-          (a.username === activity.username && 
-           a.type === activity.type && 
-           a.amount === activity.amount && 
-           Math.abs(new Date(a.timestamp).getTime() - new Date(activity.timestamp).getTime()) < 1000)
-        ) !== index;
-        
-        return !isDuplicate;
-      })
-      .sort((a, b) => {
-        try {
-          const timeA = new Date(a.timestamp).getTime();
-          const timeB = new Date(b.timestamp).getTime();
-          
-          // Handle invalid timestamps
-          if (isNaN(timeA) && isNaN(timeB)) return 0;
-          if (isNaN(timeA)) return 1; // Move invalid timestamps to end
-          if (isNaN(timeB)) return -1; // Move invalid timestamps to end
-          
-          return timeB - timeA; // Newest first
-        } catch (error) {
-          console.error('Error sorting activities by timestamp:', error);
-          return 0;
-        }
-      })
-      .slice(0, 200);
 
-    // Enhanced logging for diagnostics
-    const botActivities = uniqueActivities.filter(a => a.isBot);
-    const userActivities = uniqueActivities.filter(a => !a.isBot);
-    const activityBreakdown = uniqueActivities.reduce((acc, a) => {
-      acc[a.type] = (acc[a.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
 
-    console.log(`📊 UNIFIED: Final result - ${uniqueActivities.length} unique activities`);
-    console.log(`   🤖 Bot activities: ${botActivities.length}`);
-    console.log(`   👤 User activities: ${userActivities.length}`);
-    console.log(`   📈 Activity breakdown:`, activityBreakdown);
-    console.log(`   🔗 Unique bot usernames:`, [...new Set(botActivities.map(a => a.username))].slice(0, 10));
-    
-    return uniqueActivities;
-  } catch (error) {
-    console.error('UNIFIED: Error in transaction processor:', error);
-    return [];
-  }
-
-  // Helper functions for UI rendering
-  const getActivityIcon = (type: string): React.ReactNode => {
-    switch (type) {
-      case 'buy':
-        return <CurrencyDollar color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
-      case 'sell':
-        return <HandPeace color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
-      case 'bet':
-      case 'bet_place':
-      case 'bet_win':
-      case 'bet_loss':
-        return <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
-      case 'short_place':
-      case 'short_win':
-      case 'short_loss':
-        return <ChartLineDown color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />;
-      case 'earn':
-      case 'generate':
-        return <Plus size={24} />;
+  // Activity filtering
+  const filterActivities = useCallback((activities: ActivityFeedItem[]): ActivityFeedItem[] => {
+    switch (filter) {
+      case 'trades':
+        return activities.filter(a => ['buy', 'sell'].includes(a.type));
+      case 'bets':
+        return activities.filter(a => a.type.includes('bet'));
+      case 'shorts':
+        return activities.filter(a => a.type.includes('short'));
+      case 'generates':
+        return activities.filter(a => ['generate', 'earn'].includes(a.type));
       default:
-        return '\ud83d\udcca';
+        return activities;
     }
-  };
+  }, [filter]);
 
-  const getActivityIconClass = (type: string): string => {
-    switch (type) {
-      case 'buy': return styles.buyIcon;
-      case 'sell': return styles.sellIcon;
-      case 'bet':
-      case 'bet_place': return styles.betIcon;
-      case 'bet_win': return styles.winIcon;
-      case 'bet_loss': return styles.lossIcon;
-      case 'earn':
-      case 'generate': return styles.earnIcon;
-      case 'short_place': return styles.shortIcon;
-      case 'short_win': return styles.shortWinIcon;
-      case 'short_loss': return styles.shortLossIcon;
-      default: return styles.defaultIcon;
+  const getFilterCount = useCallback((filterType: string): number => {
+    switch (filterType) {
+      case 'all':
+        return activityFeed.length;
+      case 'trades':
+        return activityFeed.filter(a => ['buy', 'sell'].includes(a.type)).length;
+      case 'bets':
+        return activityFeed.filter(a => a.type.includes('bet')).length;
+      case 'shorts':
+        return activityFeed.filter(a => a.type.includes('short')).length;
+      case 'generates':
+        return activityFeed.filter(a => ['generate', 'earn'].includes(a.type)).length;
+      default:
+        return 0;
     }
-  };
+  }, [activityFeed]);
 
-  const getAmountClass = (amount: number): string => {
-    return amount >= 0 ? styles.positiveAmount : styles.negativeAmount;
-  };
-
-  const formatActivityDescription = (activity: ActivityFeedItem): string => {
+  // Format activity description
+  const formatActivityDescription = useCallback((activity: ActivityFeedItem): string => {
     const { type, username, opinionText, targetUser, betType, targetPercentage, isBot, quantity } = activity;
     const userPrefix = isBot ? 'Bot' : 'User';
     
@@ -2552,8 +1977,6 @@ export default function FeedPage() {
         return `${userPrefix} ${username} won short bet on "${opinionText?.slice(0, 40)}..."`;
       case 'short_loss':
         return `${userPrefix} ${username} lost short bet on "${opinionText?.slice(0, 40)}..."`;
-      case 'bet':
-        return `${userPrefix} ${username} placed a bet`;
       case 'bet_place':
         return `${userPrefix} ${username} bet ${targetUser} portfolio will ${betType} by ${targetPercentage}%`;
       case 'bet_win':
@@ -2563,1143 +1986,116 @@ export default function FeedPage() {
       default:
         return `${userPrefix} ${username} performed ${type}`;
     }
-  };
-
-  // Activity filtering functions
-  const filterActivities = (activities: ActivityFeedItem[]): ActivityFeedItem[] => {
-    switch (filter) {
-      case 'trades':
-        return activities.filter(a => ['buy', 'sell'].includes(a.type));
-      case 'bets':
-        return activities.filter(a => a.type.includes('bet'));
-      case 'shorts':
-        return activities.filter(a => a.type.includes('short'));
-      case 'generates':
-        return activities.filter(a => ['generate', 'earn'].includes(a.type));
-      default:
-        return activities;
-    }
-  };
-
-  const getFilterCount = (filterType: string): number => {
-    switch (filterType) {
-      case 'all':
-        return activityFeed.length;
-      case 'trades':
-        return activityFeed.filter(a => ['buy', 'sell'].includes(a.type)).length;
-      case 'bets':
-        return activityFeed.filter(a => a.type.includes('bet')).length;
-      case 'shorts':
-        return activityFeed.filter(a => a.type.includes('short')).length;
-      case 'generates':
-        return activityFeed.filter(a => ['generate', 'earn'].includes(a.type)).length;
-      default:
-        return 0;
-    }
-  };
+  }, []);
 
   // Event handlers
-  const handleActivityClick = (activity: ActivityFeedItem, event: React.MouseEvent) => {
-    // Don't open modal if username was clicked
+  const handleActivityClick = useCallback((activity: ActivityFeedItem, event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest('.clickableUsername')) {
       return;
     }
-    
     setSelectedActivity(activity);
     setShowActivityDetailModal(true);
-  };
+  }, []);
 
-  const handleUsernameClick = (username: string, event: React.MouseEvent) => {
+  const handleUsernameClick = useCallback((username: string, event: React.MouseEvent) => {
     event.stopPropagation();
     router.push(`/users/${username}`);
-  };
+  }, [router]);
 
-  const handleTransactionClick = (activity: ActivityFeedItem) => {
-    // Convert activity to transaction detail format
-    const transaction: TransactionDetail = {
-      ...activity,
-      fullDescription: formatActivityDescription(activity)
-    };
-    setSelectedTransaction(transaction);
-    setShowTransactionModal(true);
-  };
-
-  // FIREBASE HELPERS: Functions for combining Firebase and local data
-  const getLocalBotActivities = (): ActivityFeedItem[] => {
-    if (!isClient) return [];
-    
-    try {
-      // Get bot transactions from localStorage as fallback
-      const botTransactions = safeGetFromStorage('botTransactions', []);
-      const botMap = getBotUsernames();
-      const activities: ActivityFeedItem[] = [];
-      
-      botTransactions.forEach((transaction: any, index: number) => {
-        try {
-          const uniqueId = transaction.id || `local_bot_${Date.now()}_${index}`;
-          let botName = 'Unknown Bot';
-          
-          if (transaction.botId && botMap[transaction.botId]) {
-            botName = botMap[transaction.botId];
-          } else if (transaction.botId) {
-            botName = `Bot_${transaction.botId.slice(-6)}`;
-          }
-
-          let timestamp: string;
-          try {
-            const parsedDate = new Date(transaction.date || new Date());
-            timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
-          } catch {
-            timestamp = new Date().toISOString();
-          }
-
-          activities.push({
-            id: uniqueId,
-            type: transaction.type,
-            username: botName,
-            opinionText: transaction.opinionText,
-            opinionId: transaction.opinionId,
-            amount: parseFloat(transaction.amount) || 0,
-            price: transaction.metadata?.purchasePricePerShare || transaction.metadata?.price,
-            quantity: transaction.metadata?.quantity || 1,
-            timestamp: timestamp,
-            relativeTime: getRelativeTime(timestamp),
-            isBot: true
-          });
-        } catch (error) {
-          console.error('Error processing local bot transaction:', error);
-        }
-      });
-      
-      return activities;
-    } catch (error) {
-      console.error('Error getting local bot activities:', error);
-      return [];
-    }
-  };
-
-  const combineActivities = (firebaseActivities: LocalActivityItem[], localBotActivities: ActivityFeedItem[]): ActivityFeedItem[] => {
-    // Convert Firebase activities to ActivityFeedItem format
-    const firebaseAsActivityItems: ActivityFeedItem[] = firebaseActivities.map(activity => ({
-      id: activity.id,
-      type: activity.type,
-      username: activity.username,
-      opinionText: activity.opinionText,
-      opinionId: activity.opinionId,
-      amount: activity.amount,
-      price: activity.price,
-      quantity: activity.quantity,
-      targetUser: activity.targetUser,
-      betType: activity.betType,
-      targetPercentage: activity.targetPercentage,
-      timeframe: activity.timeframe,
-      timestamp: activity.timestamp,
-      relativeTime: activity.relativeTime,
-      isBot: activity.isBot
-    }));
-
-    // FIXED: Also get local user transactions
-    const localUserTransactions = safeGetFromStorage('transactions', []);
-    const localUserActivities: ActivityFeedItem[] = localUserTransactions.map((t: any, index: number) => {
-      const uniqueId = t.id || `local_user_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      let timestamp: string;
-      try {
-        const parsedDate = new Date(t.timestamp || t.date || new Date());
-        timestamp = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : new Date().toISOString();
-      } catch {
-        timestamp = new Date().toISOString();
-      }
-
-      return {
-        id: uniqueId,
-        type: t.type,
-        username: t.username || currentUser.username,
-        opinionText: t.opinionText || t.description?.replace(/^(Bought|Sold|Generated) /, ''),
-        opinionId: t.opinionId,
-        amount: parseFloat(t.amount) || 0,
-        price: t.price ? Math.round(t.price * 100) / 100 : undefined,
-        quantity: t.quantity,
-        targetUser: t.targetUser,
-        betType: t.betType,
-        targetPercentage: t.targetPercentage,
-        timeframe: t.timeframe,
-        timestamp: timestamp,
-        relativeTime: getRelativeTime(timestamp),
-        isBot: false // Local user transactions are always from the user, not bots
-      };
-    });
-
-    // Combine all activities: Firebase + local bots + local user
-    const combined = [...firebaseAsActivityItems, ...localBotActivities, ...localUserActivities];
-    const seenIds = new Set<string>();
-    const seenFingerprints = new Set<string>();
-    
-    // ENHANCED: Create fingerprint for semantic duplicate detection
-    const createFingerprint = (activity: ActivityFeedItem): string => {
-      const opinionKey = activity.opinionText?.substring(0, 50) || 'no_opinion';
-      const timeWindow = Math.floor(new Date(activity.timestamp).getTime() / 30000); // 30-second windows
-      return `${activity.username}_${activity.type}_${Math.round(activity.amount * 100)}_${opinionKey}_${timeWindow}`;
-    };
-    
-    const deduplicated = combined.filter(activity => {
-      // Strategy 1: Skip exact ID duplicates
-      if (seenIds.has(activity.id)) {
-        console.log(`🔍 Skipping duplicate ID: ${activity.id}`);
-        return false;
-      }
-      
-      // Strategy 2: Skip semantic duplicates using fingerprints
-      const fingerprint = createFingerprint(activity);
-      if (seenFingerprints.has(fingerprint)) {
-        console.log(`🔍 Skipping semantic duplicate: ${fingerprint}`);
-        return false;
-      }
-      
-      // Strategy 3: Advanced near-duplicate detection
-      const hasNearDuplicate = combined.some(other => {
-        if (other.id === activity.id) return false;
-        
-        const sameUser = other.username === activity.username;
-        const sameType = other.type === activity.type;
-        const sameAmount = Math.abs(other.amount - activity.amount) < 0.01;
-        const sameOpinion = other.opinionText === activity.opinionText || 
-                           (!other.opinionText && !activity.opinionText);
-        const similarTime = Math.abs(new Date(other.timestamp).getTime() - new Date(activity.timestamp).getTime()) < 5000;
-        
-        return sameUser && sameType && sameAmount && sameOpinion && similarTime;
-      });
-      
-      if (hasNearDuplicate) {
-        // Keep the one with more complete data or prefer Firebase over local
-        const betterDuplicate = combined.find(other => {
-          if (other.id === activity.id) return false;
-          
-          const sameUser = other.username === activity.username;
-          const sameType = other.type === activity.type;
-          const sameAmount = Math.abs(other.amount - activity.amount) < 0.01;
-          const sameOpinion = other.opinionText === activity.opinionText || 
-                             (!other.opinionText && !activity.opinionText);
-          const similarTime = Math.abs(new Date(other.timestamp).getTime() - new Date(activity.timestamp).getTime()) < 5000;
-          
-          if (sameUser && sameType && sameAmount && sameOpinion && similarTime) {
-            // Prefer Firebase data over local data
-            const otherIsFirebase = !other.id.startsWith('local_') && !other.id.startsWith('bot_');
-            const activityIsFirebase = !activity.id.startsWith('local_') && !activity.id.startsWith('bot_');
-            
-            if (otherIsFirebase && !activityIsFirebase) return true;
-            if (!otherIsFirebase && activityIsFirebase) return false;
-            
-            // If both are same source, prefer one with more complete data
-            const otherHasMoreData = (other.price !== undefined ? 1 : 0) + 
-                                    (other.quantity !== undefined ? 1 : 0) + 
-                                    (other.opinionText ? 1 : 0);
-            const activityHasMoreData = (activity.price !== undefined ? 1 : 0) + 
-                                       (activity.quantity !== undefined ? 1 : 0) + 
-                                       (activity.opinionText ? 1 : 0);
-            
-            return otherHasMoreData > activityHasMoreData;
-          }
-          
-          return false;
-        });
-        
-        if (betterDuplicate) {
-          console.log(`🔍 Skipping near-duplicate (better version exists): ${activity.username} ${activity.type}`);
-          return false;
-        }
-      }
-      
-      // Activity passed all deduplication checks
-      seenIds.add(activity.id);
-      seenFingerprints.add(fingerprint);
-      return true;
-    });
-
-    console.log(`🔗 COMBINED: ${firebaseAsActivityItems.length} Firebase + ${localBotActivities.length} bots + ${localUserActivities.length} user = ${deduplicated.length} total`);
-
-    // Sort by timestamp (newest first) with enhanced error handling
-    return deduplicated.sort((a, b) => {
-      try {
-        const timeA = new Date(a.timestamp).getTime();
-        const timeB = new Date(b.timestamp).getTime();
-        
-        // Handle invalid timestamps
-        if (isNaN(timeA) && isNaN(timeB)) return 0;
-        if (isNaN(timeA)) return 1; // Move invalid timestamps to end
-        if (isNaN(timeB)) return -1; // Move invalid timestamps to end
-        
-        return timeB - timeA; // Newest first
-      } catch (error) {
-        console.error('Error sorting activities by timestamp:', error);
-        return 0;
-      }
-    });
-  };
-
-  // REAL-TIME FEED: Instant activity pushing
-  const addToGlobalFeed = async (activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) => {
-    if (!isClient) return;
-    
-    console.log(`🔴 LIVE FEED: Adding new activity to real-time feed: ${activity.username} - ${activity.type}`);
-    
-    // 1. IMMEDIATELY push to real-time feed manager for instant UI update
-    if (realTimeFeedManager.current) {
-      realTimeFeedManager.current.pushActivity(activity);
-    }
-    
-    // 2. Add to localStorage for persistence and bot system integration
-    const existingFeed = safeGetFromStorage('globalActivityFeed', []);
-    const newActivity: ActivityFeedItem = {
-      ...activity,
-      id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      relativeTime: getRelativeTime(activity.timestamp)
-    };
-    const updatedFeed = [newActivity, ...existingFeed].slice(0, 200);
-    safeSetToStorage('globalActivityFeed', updatedFeed);
-    
-    // 3. Dispatch custom events for cross-system communication
-    window.dispatchEvent(new CustomEvent('globalActivityUpdate', {
-      detail: { activity: newActivity, totalCount: updatedFeed.length }
-    }));
-    
-    window.dispatchEvent(new CustomEvent('newTransaction', {
-      detail: newActivity
-    }));
-    
-    // 4. Also add to Firebase for persistence (non-blocking)
-    try {
-      await firebaseActivityService.addActivity({
-        type: activity.type,
-        username: activity.username,
-        userId: activity.isBot ? undefined : user?.uid,
-        opinionText: activity.opinionText,
-        opinionId: activity.opinionId,
-        amount: activity.amount,
-        price: activity.price,
-        quantity: activity.quantity,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        timeframe: activity.timeframe,
-        isBot: activity.isBot,
-        botId: activity.isBot ? (activity as any).botId : undefined,
-        metadata: {
-          source: activity.isBot ? 'bot_system' : 'web_app',
-          userAgent: navigator.userAgent,
-          timestamp: activity.timestamp
-        }
-      });
-      
-      console.log('✅ Activity also saved to Firebase');
-    } catch (error) {
-      console.error('❌ Failed to save activity to Firebase (but still showing in real-time):', error);
-    }
-  };
-
-  const forceRefreshFeed = () => {
-    console.log('🔄 Force refresh requested - loading fresh activities...');
-    setLastRefresh(Date.now());
-    const newActivity = unifiedTransactionProcessor();
-    setActivityFeed(newActivity);
-  };
-
-  // REAL-TIME FEED: Force live activity generation for testing
-  const forceLiveActivity = () => {
-    console.log('🔴 LIVE FEED: Forcing immediate live activity generation...');
-    
-    // Generate test activities that will appear instantly
-    const testActivities = [
-      {
-        type: 'buy' as const,
-        username: 'LiveTrader_' + Math.random().toString(36).substr(2, 4),
-        opinionText: 'Hot opinion being traded right now!',
-        amount: -(Math.random() * 100 + 50),
-        price: Math.random() * 20 + 10,
-        quantity: Math.floor(Math.random() * 10) + 1,
-        timestamp: new Date().toISOString(),
-        isBot: Math.random() > 0.5
-      },
-      {
-        type: 'sell' as const,
-        username: 'QuickSeller_' + Math.random().toString(36).substr(2, 4),
-        opinionText: 'Cashing out on this trending opinion',
-        amount: Math.random() * 80 + 40,
-        price: Math.random() * 15 + 8,
-        quantity: Math.floor(Math.random() * 5) + 1,
-        timestamp: new Date(Date.now() + 1000).toISOString(),
-        isBot: Math.random() > 0.3
-      },
-      {
-        type: 'generate' as const,
-        username: 'ContentCreator_' + Math.random().toString(36).substr(2, 4),
-        opinionText: 'Fresh opinion just generated: ' + ['The market is volatile', 'Tech stocks are overvalued', 'Green energy is the future'][Math.floor(Math.random() * 3)],
-        amount: 0,
-        timestamp: new Date(Date.now() + 2000).toISOString(),
-        isBot: Math.random() > 0.7
-      }
-    ];
-    
-    // Push activities using the proper addToGlobalFeed function for full integration
-    testActivities.forEach((activity, index) => {
-      setTimeout(() => {
-        addToGlobalFeed(activity);
-      }, index * 500);
-    });
-    
-    // Also force bot activity
-    if (typeof window !== 'undefined' && (window as any).forceBotActivity) {
-      setTimeout(() => {
-        (window as any).forceBotActivity(3);
-      }, 1500);
-    }
-    
-    console.log('🔴 LIVE FEED: Test activities added - you should see them appear instantly!');
-  };
-  
-  // REAL-TIME TEST: Simple test to verify feed updates without refresh
-  const testRealTimeFeed = () => {
-    console.log('🧪 TESTING REAL-TIME FEED: Adding test activity...');
-    
-    const testActivity = {
-      type: 'generate' as const,
-      username: 'RealTimeTest_' + Math.random().toString(36).substr(2, 4),
-      opinionText: 'This is a real-time test - no refresh needed!',
-      amount: 0,
-      timestamp: new Date().toISOString(),
-      isBot: false
-    };
-    
-    // This should appear instantly without any page refresh
-    addToGlobalFeed(testActivity);
-    
-    alert('🧪 Real-time test activity added!\n\nIf working correctly, you should see the new activity appear at the top of the feed WITHOUT refreshing the page.\n\nLook for: "RealTimeTest_..."');
-  };
-
-  const ensureBotsRunning = () => {
-    if (typeof window !== 'undefined' && (window as any).botSystem) {
-      const botSystem = (window as any).botSystem;
-      if (!botSystem.isSystemRunning()) {
-        console.log('🤖 Starting bot system...');
-        botSystem.startBots();
-      }
-    }
-  };
-
-  // SIMPLE: Check what's actually in localStorage
-  const checkLocalStorageData = () => {
-    console.log('🔍 SIMPLE CHECK: Raw localStorage data...');
-    
-    // Check all localStorage keys
-    const keys = Object.keys(localStorage);
-    console.log('🔑 All localStorage keys:', keys);
-    
-    // Check specific keys
-    const checks = [
-      'autonomousBots',
-      'botTransactions', 
-      'transactions',
-      'globalActivityFeed',
-      'userProfile'
-    ];
-    
-    checks.forEach(key => {
-      try {
-        const raw = localStorage.getItem(key);
-        const parsed = raw ? JSON.parse(raw) : null;
-        console.log(`📦 ${key}:`, {
-          exists: !!raw,
-          length: Array.isArray(parsed) ? parsed.length : 'not array',
-          sample: Array.isArray(parsed) ? parsed.slice(0, 2) : parsed
-        });
-      } catch (error) {
-        console.log(`❌ ${key}: Error parsing -`, error);
-      }
-    });
-    
-    // Special focus on user transactions
-    const userTransactions = safeGetFromStorage('transactions', []);
-    console.log('👤 USER TRANSACTIONS DETAIL:');
-    console.log(`   Count: ${userTransactions.length}`);
-    console.log(`   Current username: ${currentUser.username}`);
-    if (userTransactions.length > 0) {
-      console.log('   Recent transactions:', userTransactions.slice(0, 5));
-      const usernames = [...new Set(userTransactions.map((t: any) => t.username))];
-      console.log('   Transaction usernames:', usernames);
-    }
-  };
-
-  // Fix chronological ordering issues
-  const fixChronologicalOrder = () => {
-    console.log('🔧 FIXING CHRONOLOGICAL ORDER...');
-    
-    // Clear all activity data to force fresh start with proper timestamps
-    localStorage.removeItem('botTransactions');
-    localStorage.removeItem('globalActivityFeed');
-    localStorage.removeItem('opinions');
-    localStorage.removeItem('opinionMarketData');
-    
-    console.log('✅ Cleared all activity data');
-    
-    // Restart bot system with fresh data
-    if (typeof window !== 'undefined' && (window as any).botSystem) {
-      (window as any).botSystem.stopBots();
-      setTimeout(() => {
-        (window as any).botSystem.startBots();
-        setTimeout(() => {
-          (window as any).forceBotActivity(15);
-        }, 2000);
-      }, 1000);
-    }
-    
-    // Refresh feed
-    setTimeout(() => {
-      forceRefreshFeed();
-    }, 5000);
-    
-    console.log('🔄 System reset complete - timestamps should now be in proper order');
-  };
-
-  // DEBUG: Enhanced diagnostic function to check all data sources
-  const debugBotSystem = () => {
-    console.log('🔍 DIAGNOSTIC: Checking bot system status...');
-    
-    // First check raw localStorage
-    checkLocalStorageData();
-    
-    // Check localStorage data
-    const botsData = safeGetFromStorage('autonomousBots', []);
-    const botTransactions = safeGetFromStorage('botTransactions', []);
-    const userTransactions = safeGetFromStorage('transactions', []);
-    const globalFeed = safeGetFromStorage('globalActivityFeed', []);
-    
-    console.log('📊 Complete System Status:');
-    console.log(`  - Bots in localStorage: ${botsData.length}`);
-    console.log(`  - Bot transactions: ${botTransactions.length}`);
-    console.log(`  - User transactions: ${userTransactions.length}`);
-    console.log(`  - Global activity feed: ${globalFeed.length}`);
-    console.log(`  - Sample bot usernames:`, botsData.slice(0, 5).map((b: any) => b.username));
-    
-    // Check global bot system
-    if (typeof window !== 'undefined' && (window as any).botSystem) {
-      console.log(`  - Bot system running: ${(window as any).botSystem.isSystemRunning()}`);
-      console.log(`  - Bot count: ${(window as any).botSystem.getBots().length}`);
-    }
-    
-    // Check global feed content
-    if (globalFeed.length > 0) {
-      const globalUsernames = [...new Set(globalFeed.map((a: any) => a.username))];
-      console.log(`  - Global feed usernames:`, globalUsernames.slice(0, 10));
-    }
-    
-    // Check if addToGlobalFeed is working
-    console.log('🧪 Testing addToGlobalFeed...');
-    if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
-      (window as any).addToGlobalFeed({
-        type: 'generate',
-        username: 'TestUser',
-        opinionText: 'Test opinion for debugging',
-        amount: 0,
-        timestamp: new Date().toISOString(),
-        isBot: false
-      });
-      console.log('✅ Test activity added to global feed');
-    } else {
-      console.log('❌ addToGlobalFeed not found');
-    }
-    
-    // Force refresh feed
-    console.log('🔄 Forcing feed refresh...');
-    forceRefreshFeed();
-  };
-
-  // FORCE RESET: Reset bot system and regenerate activity
-  const forceResetBotSystem = () => {
-    console.log('🔄 FORCE RESET: Resetting entire bot system...');
-    
-    if (typeof window !== 'undefined' && (window as any).botSystem) {
-      // Stop current bot system
-      (window as any).botSystem.stopBots();
-      
-      // Clear localStorage data
-      localStorage.removeItem('autonomousBots');
-      localStorage.removeItem('botTransactions');
-      
-      // Restart bot system
-      console.log('🚀 Restarting bot system with fresh data...');
-      (window as any).botSystem.manualStart();
-      
-      // Force some immediate activity
-      setTimeout(() => {
-        console.log('⚡ Forcing immediate bot activity...');
-        (window as any).forceBotActivity(20);
-      }, 3000);
-      
-      // Refresh feed
-      setTimeout(() => {
-        console.log('🔄 Refreshing feed with new bot data...');
-        forceRefreshFeed();
-      }, 5000);
-    }
-  };
-
-  // ENHANCED: Complete data reconciliation using the new service
-  const reconcileAllData = async () => {
-    if (!user?.uid) {
-      console.error('❌ User not authenticated, cannot reconcile data');
-      return;
-    }
-    
-    console.log('🔄 RECONCILIATION: Starting complete data reconciliation...');
-    
-    try {
-      const results = await dataReconciliationService.completeReconciliation(user.uid);
-      
-      console.log('✅ Reconciliation completed!', results);
-      
-      // Show user-friendly summary
-      const totalMigrated = results.activities.migrated + results.marketData.migrated;
-      const totalConflicts = results.activities.conflicts.length + 
-                           results.profile.conflicts.length + 
-                           results.marketData.conflicts.length;
-      
-      console.log(`📊 RECONCILIATION SUMMARY:
-        - Activities migrated: ${results.activities.migrated}
-        - Activities skipped: ${results.activities.skipped}
-        - Profile updated: ${results.profile.updated}
-        - Market data migrated: ${results.marketData.migrated}
-        - Total conflicts: ${totalConflicts}`);
-      
-      // Force refresh the feed after reconciliation
-      forceRefreshFeed();
-      
-      return results;
-    } catch (error) {
-      console.error('❌ Complete reconciliation failed:', error);
-      throw error;
-    }
-  };
-
-  // Get reconciliation status
-  const getReconciliationStatus = async () => {
-    if (!user?.uid) {
-      console.error('❌ User not authenticated, cannot check reconciliation status');
-      return null;
-    }
-    
-    try {
-      const summary = await dataReconciliationService.getReconciliationSummary(user.uid);
-      console.log('📊 Reconciliation status:', summary);
-      return summary;
-    } catch (error) {
-      console.error('❌ Failed to get reconciliation status:', error);
-      return null;
-    }
-  };
-
-  // LEGACY: Migrate localStorage activity to Firebase (kept for backward compatibility)
-  const migrateLocalStorageToFirebase = async () => {
-    console.log('🔄 MIGRATION: Starting localStorage to Firebase migration...');
-    
-    try {
-      // Get existing localStorage activities
-      const localActivities = unifiedTransactionProcessor();
-      
-      if (localActivities.length === 0) {
-        console.log('⚠️ No local activities found to migrate');
-        return;
-      }
-      
-      console.log(`📦 Found ${localActivities.length} local activities to migrate`);
-      
-      // Convert to Firebase format and add to Firebase
-      const firebaseActivities = localActivities.map(activity => ({
-        type: activity.type,
-        username: activity.username,
-        userId: activity.username === currentUser.username ? user?.uid : undefined,
-        opinionText: activity.opinionText,
-        opinionId: activity.opinionId,
-        amount: activity.amount,
-        price: activity.price,
-        quantity: activity.quantity,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        timeframe: activity.timeframe,
-        isBot: activity.isBot,
-        metadata: {
-          source: 'migration',
-          originalTimestamp: activity.timestamp,
-          migrationDate: new Date().toISOString()
-        }
-      }));
-      
-      await firebaseActivityService.addActivitiesBatch(firebaseActivities);
-      console.log('✅ Migration completed successfully!');
-      
-    } catch (error) {
-      console.error('❌ Migration failed:', error);
-    }
-  };
-
-  // FIREBASE TEST: Add test activities to Firebase
-  const addTestActivitiesToFirebase = async () => {
-    console.log('🧪 TEST: Adding test activities to Firebase...');
-    
-    const testActivities = [
-      {
-        type: 'buy' as const,
-        username: currentUser.username,
-        userId: user?.uid,
-        opinionText: 'Test opinion for Firebase integration',
-        amount: -50,
-        price: 10,
-        quantity: 5,
-        isBot: false,
-        metadata: { source: 'test' }
-      },
-      {
-        type: 'generate' as const,
-        username: 'TestBot',
-        opinionText: 'Bot-generated test opinion for Firebase',
-        amount: 100,
-        isBot: true,
-        metadata: { source: 'test' }
-      },
-      {
-        type: 'sell' as const,
-        username: currentUser.username,
-        userId: user?.uid,
-        opinionText: 'Another test opinion',
-        amount: 45,
-        price: 9,
-        quantity: 5,
-        isBot: false,
-        metadata: { source: 'test' }
-      }
-    ];
-    
-    try {
-      await firebaseActivityService.addActivitiesBatch(testActivities);
-      console.log('✅ Test activities added to Firebase successfully!');
-    } catch (error) {
-      console.error('❌ Failed to add test activities:', error);
-    }
-  };
-
-  // Client-side hydration
+  // Initialize client-side state
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Scroll detection for feed container
-  useEffect(() => {
-    if (!feedContainerRef.current) return;
-    
-    const handleScroll = () => {
-      if (feedContainerRef.current) {
-        const { scrollTop } = feedContainerRef.current;
-        setIsAtTop(scrollTop < 50); // Consider "at top" if within 50px
-      }
-    };
-    
-    const container = feedContainerRef.current;
-    container.addEventListener('scroll', handleScroll);
-    
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-    };
-  }, [feedContainerRef.current]);
-
-  // Make functions available globally
+  // Load Firebase data
   useEffect(() => {
     if (!isClient) return;
     
-    (window as any).addToGlobalFeed = addToGlobalFeed;
-    (window as any).forceRefreshFeed = forceRefreshFeed;
-    (window as any).forceLiveActivity = forceLiveActivity;
-    (window as any).testRealTimeFeed = testRealTimeFeed;
-    (window as any).debugBotSystem = debugBotSystem;
-    (window as any).forceResetBotSystem = forceResetBotSystem;
-    (window as any).migrateLocalStorageToFirebase = migrateLocalStorageToFirebase;
-    (window as any).addTestActivitiesToFirebase = addTestActivitiesToFirebase;
-    (window as any).firebaseActivityService = firebaseActivityService;
-    (window as any).fixChronologicalOrder = fixChronologicalOrder;
-    (window as any).realTimeFeedManager = realTimeFeedManager.current;
-    
-    // NEW: Enhanced reconciliation functions
-    (window as any).reconcileAllData = reconcileAllData;
-    (window as any).getReconciliationStatus = getReconciliationStatus;
-    (window as any).dataReconciliationService = dataReconciliationService;
-    
-    // TEST: Realistic behavior verification
-    (window as any).testRealisticBehavior = testRealisticBehavior;
-    
-    return () => {
-      delete (window as any).addToGlobalFeed;
-      delete (window as any).forceRefreshFeed;
-      delete (window as any).forceLiveActivity;
-      delete (window as any).testRealTimeFeed;
-      delete (window as any).debugBotSystem;
-      delete (window as any).forceResetBotSystem;
-      delete (window as any).migrateLocalStorageToFirebase;
-      delete (window as any).addTestActivitiesToFirebase;
-      delete (window as any).firebaseActivityService;
-      delete (window as any).fixChronologicalOrder;
-      delete (window as any).realTimeFeedManager;
-      delete (window as any).reconcileAllData;
-      delete (window as any).getReconciliationStatus;
-      delete (window as any).dataReconciliationService;
-      delete (window as any).testRealisticBehavior;
-    };
-  }, [isClient]);
-
-  // Initialize data
-  useEffect(() => {
-    if (!isClient) return;
-    
-    // Load opinions
-    const stored = safeGetFromStorage('opinions', null);
-    if (stored) {
-      const parsed = stored;
-      const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
-      setOpinions(validOpinions.map((text: string, i: number) => ({ id: i.toString(), text })));
-    }
-
-    // Load user profile
-    const storedProfile = safeGetFromStorage('userProfile', null);
-    if (storedProfile) {
-      setCurrentUser(storedProfile);
-    }
-
-    // Ensure bots are running
-    ensureBotsRunning();
-    
-    // CRITICAL: Sync existing bot transactions to global feed
-    if (typeof window !== 'undefined' && (window as any).syncBotTransactionsToGlobalFeed) {
-      console.log('🔄 Auto-syncing bot transactions to global feed...');
-      setTimeout(() => {
-        (window as any).syncBotTransactionsToGlobalFeed();
-      }, 2000); // Wait 2 seconds for systems to initialize
-    }
-  }, [isClient]);
-
-  // REAL-TIME FEED: Instant activity streaming without refreshes
-  const handleNewActivity = useCallback((newActivity: ActivityFeedItem) => {
-    console.log(`🔴 LIVE FEED: Received instant activity: ${newActivity.username} - ${newActivity.type} - ${newActivity.opinionText?.slice(0, 30)}...`);
-    
-    setActivityFeed(prevFeed => {
-      // Check for duplicates
-      const existingActivity = prevFeed.find(activity => 
-        activity.id === newActivity.id ||
-        (activity.username === newActivity.username && 
-         activity.type === newActivity.type &&
-         Math.abs(new Date(activity.timestamp).getTime() - new Date(newActivity.timestamp).getTime()) < 2000)
-      );
+    // Only load Firebase data if user is authenticated
+    if (user) {
+      loadFirebaseData();
       
-      if (existingActivity) {
-        console.log(`🔴 LIVE FEED: Duplicate activity detected, skipping`);
-        return prevFeed;
-      }
-      
-      // Add new activity to the top
-      const updatedFeed = [newActivity, ...prevFeed].slice(0, 200); // Keep only latest 200
-      console.log(`✅ REAL-TIME UPDATE: Activity added to feed! ${newActivity.username} ${newActivity.type} appears instantly (no refresh needed)`);
-      console.log(`📊 LIVE FEED: Feed now has ${updatedFeed.length} activities`);
-      return updatedFeed;
-    });
-    
-    // Update counters
-    setNewActivityCount(prev => prev + 1);
-    setLastRefresh(Date.now());
-    
-    // Auto-scroll to top if user is already at top
-    if (isAtTop && feedContainerRef.current) {
-      setTimeout(() => {
-        feedContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      }, 100);
-    }
-  }, [isAtTop]);
-
-  // Initialize real-time feed system
-  useEffect(() => {
-    if (!isClient) return;
-    
-    console.log('🔴 LIVE FEED: Initializing real-time feed system...');
-    setLiveConnectionStatus('connecting');
-    
-    // Get the global real-time feed manager
-    realTimeFeedManager.current = RealTimeFeedManager.getInstance();
-    
-    // Subscribe to instant activity updates
-    const unsubscribe = realTimeFeedManager.current.subscribe(handleNewActivity);
-    
-    // Load initial feed data
-    setTimeout(() => {
-      console.log('🔴 LIVE FEED: Loading initial feed data...');
-      const initialActivity = unifiedTransactionProcessor();
-      setActivityFeed(initialActivity);
-      setLiveConnectionStatus('connected');
-      setLastRefresh(Date.now());
-      
-      // Start bot system for continuous activity
-      if (typeof window !== 'undefined' && (window as any).botSystem) {
-        const botSystem = (window as any).botSystem;
-        if (!botSystem.isSystemRunning()) {
-          botSystem.startBots();
-        }
-        // Generate some initial activity
-        setTimeout(() => {
-          if (typeof window !== 'undefined' && (window as any).forceBotActivity) {
-            (window as any).forceBotActivity(5);
-          }
-        }, 2000);
-      }
-    }, 500);
-    
-    // CRITICAL: Listen for localStorage changes to trigger real-time updates
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'botTransactions' || e.key === 'globalActivityFeed' || e.key === 'transactions') {
-        console.log(`🔴 LIVE FEED: Storage changed for ${e.key}, triggering real-time update...`);
-        
-        // Small delay to ensure data is written
-        setTimeout(() => {
-          const latestActivity = unifiedTransactionProcessor();
-          const currentFeedIds = new Set(activityFeed.map(a => a.id));
+      // Set up real-time subscription for opinions
+      const setupOpinionsSubscription = async (): Promise<() => void> => {
+        try {
+          const firebaseDataService = (await import('../lib/firebase-data-service')).FirebaseDataService.getInstance();
           
-          // Find new activities
-          const newActivities = latestActivity.filter(activity => !currentFeedIds.has(activity.id));
-          
-          if (newActivities.length > 0) {
-            console.log(`🔴 LIVE FEED: Found ${newActivities.length} new activities from storage change`);
-            newActivities.forEach(activity => {
-              if (realTimeFeedManager.current) {
-                realTimeFeedManager.current.pushActivity(activity);
+          // Subscribe to opinion updates via market data
+          const subscriptionId = firebaseDataService.subscribeToMarketData((marketData) => {
+            console.log('💭 Real-time market data update:', marketData.length);
+            // Extract unique opinions from market data
+            const uniqueOpinions = marketData.reduce((acc: { id: string; text: string }[], data) => {
+              if (!acc.find(op => op.text === data.opinionText)) {
+                acc.push({
+                  id: data.id,
+                  text: data.opinionText
+                });
               }
-            });
-          }
-        }, 100);
-      }
-    };
-    
-    // CRITICAL: Listen for custom events from bot system and global activity tracker
-    const handleGlobalActivityUpdate = (e: CustomEvent) => {
-      console.log('🔴 LIVE FEED: Received global activity update event:', e.detail);
-      if (e.detail?.activity && realTimeFeedManager.current) {
-        realTimeFeedManager.current.pushActivity(e.detail.activity);
-      }
-    };
-    
-    const handleNewTransaction = (e: CustomEvent) => {
-      console.log('🔴 LIVE FEED: Received new transaction event:', e.detail);
-      if (e.detail && realTimeFeedManager.current) {
-        realTimeFeedManager.current.pushActivity(e.detail);
-      }
-    };
-    
-    // Add event listeners
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('globalActivityUpdate', handleGlobalActivityUpdate as EventListener);
-    window.addEventListener('newTransaction', handleNewTransaction as EventListener);
-    
-    // FALLBACK: Periodic check for new activities (as backup to real-time system)
-    const periodicCheck = setInterval(() => {
-      const latestActivity = unifiedTransactionProcessor();
-      
-      // Get current feed state at check time
-      setActivityFeed(currentFeed => {
-        const currentFeedIds = new Set(currentFeed.map(a => a.id));
-        
-        // Find new activities
-        const newActivities = latestActivity.filter(activity => 
-          !currentFeedIds.has(activity.id) && 
-          new Date(activity.timestamp).getTime() > (Date.now() - 10000) // Only activities from last 10 seconds
-        );
-        
-        if (newActivities.length > 0) {
-          console.log(`🔴 LIVE FEED: Periodic check found ${newActivities.length} new activities`);
-          newActivities.forEach(activity => {
-            if (realTimeFeedManager.current) {
-              realTimeFeedManager.current.pushActivity(activity);
-            }
+              return acc;
+            }, []);
+            
+            console.log('💭 Extracted unique opinions:', uniqueOpinions.length);
+            setOpinions(uniqueOpinions);
           });
-        }
-        
-        // Return current feed unchanged (real-time manager handles updates)
-        return currentFeed;
-      });
-    }, 3000); // Check every 3 seconds
-
-    // Firebase real-time integration with error handling
-    const firebaseUnsubscribe = firebaseActivityService.subscribeToActivities(
-      (firebaseActivities) => {
-        console.log(`🔥 Firebase: Received ${firebaseActivities.length} activities`);
-        setFirebaseActivities(firebaseActivities);
-        setIsLoadingFirebase(false);
-        setFirebaseError(null);
-        
-        // Convert Firebase activities and push to real-time feed
-        firebaseActivities.forEach(activity => {
-          const activityItem: ActivityFeedItem = {
-            id: activity.id,
-            type: activity.type,
-            username: activity.username,
-            opinionText: activity.opinionText,
-            opinionId: activity.opinionId,
-            amount: activity.amount,
-            price: activity.price,
-            quantity: activity.quantity,
-            targetUser: activity.targetUser,
-            betType: activity.betType,
-            targetPercentage: activity.targetPercentage,
-            timeframe: activity.timeframe,
-            timestamp: activity.timestamp,
-            relativeTime: activity.relativeTime,
-            isBot: activity.isBot
-          };
           
-          // Only push new activities (not initial load)
-          const isNew = new Date(activity.timestamp).getTime() > (Date.now() - 10000);
-          if (isNew && realTimeFeedManager.current) {
-            realTimeFeedManager.current.pushActivity(activityItem);
-          }
-        });
-      },
-      200,
-      // Error handler for Firebase permissions issues
-      (error: Error) => {
-        console.error('🔥 Firebase subscription error:', error);
-        const errorMessage = error.message || 'Firebase connection error';
-        setFirebaseError(errorMessage);
-        setIsLoadingFirebase(false);
-        
-        // Check if it's a permissions error
-        if (errorMessage.includes('permission') || errorMessage.includes('Missing or insufficient permissions')) {
-          console.error('🔒 Firebase permissions issue detected - falling back to localStorage mode');
-          setLiveConnectionStatus('disconnected');
-        } else {
-          setLiveConnectionStatus('disconnected');
+          return () => {
+            firebaseDataService.unsubscribe(subscriptionId);
+          };
+        } catch (error) {
+          console.error('Error setting up opinions subscription:', error);
+          return () => {};
         }
-        
-        // Fallback to localStorage-only mode
-        console.log('⚠️ Falling back to localStorage-only mode due to Firebase error...');
-        const localActivity = unifiedTransactionProcessor();
-        setActivityFeed(localActivity);
-        
-        // Still show as "connected" for local data, but with Firebase error indicator
-        if (!errorMessage.includes('permission')) {
-          setLiveConnectionStatus('connected'); // Still connected to local data
-        }
-      }
-    );
-
-    // Relative time updates (less frequent, since we show "just now" for new items)
-    const relativeTimeInterval = setInterval(() => {
-      setActivityFeed(prevFeed => 
-        prevFeed.map(activity => ({
-          ...activity,
-          relativeTime: getRelativeTime(activity.timestamp)
-        }))
-      );
-    }, 30000); // Update every 30 seconds
-
-    // Connection heartbeat
-    const heartbeatInterval = setInterval(() => {
-      const subscriberCount = realTimeFeedManager.current?.getSubscriberCount() || 0;
-      console.log(`💓 LIVE FEED: Heartbeat - ${subscriberCount} subscribers, ${activityFeed.length} activities`);
+      };
       
-      if (subscriberCount === 0) {
-        setLiveConnectionStatus('disconnected');
-      } else {
-        setLiveConnectionStatus('connected');
-      }
-    }, 10000);
+      let opinionsUnsubscribe: (() => void) | undefined;
+      setupOpinionsSubscription().then(unsubscribe => {
+        opinionsUnsubscribe = unsubscribe;
+      });
+      
+      return () => {
+        if (opinionsUnsubscribe) {
+          opinionsUnsubscribe();
+        }
+      };
+    } else {
+      console.log('🔐 User not authenticated - Firebase data will load after sign in');
+      setIsLoadingFirebase(false);
+      setFirebaseError('Please sign in to view activity feed');
+    }
+  }, [isClient, user, loadFirebaseData]);
 
+  // Real-time feed setup
+  useEffect(() => {
+    if (!isClient) return;
+    
+    realTimeFeedManager.current = RealTimeFeedManager.getInstance();
+    setLiveConnectionStatus('connected');
+    
     return () => {
-      console.log('🔴 LIVE FEED: Cleaning up real-time feed system...');
-      unsubscribe();
-      firebaseUnsubscribe();
-      clearInterval(relativeTimeInterval);
-      clearInterval(heartbeatInterval);
-      clearInterval(periodicCheck);
-      
-      // Remove event listeners
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('globalActivityUpdate', handleGlobalActivityUpdate as EventListener);
-      window.removeEventListener('newTransaction', handleNewTransaction as EventListener);
-      
       setLiveConnectionStatus('disconnected');
     };
-  }, [isClient, handleNewActivity]);
+  }, [isClient]);
 
-  // Don't render until client-side hydration is complete
   if (!isClient) {
-    return <div>Loading...</div>;
+    return (
+      <div className="page-container" style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        backgroundColor: '#F1F0EC'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚡</div>
+          <div style={{ fontSize: '18px', fontWeight: '600' }}>Loading Idea Auction...</div>
+        </div>
+      </div>
+    );
   }
 
   const filteredActivities = filterActivities(activityFeed);
   const botActivityCount = activityFeed.filter(a => a.isBot).length;
   const humanActivityCount = activityFeed.filter(a => !a.isBot).length;
-  const shortActivityCount = activityFeed.filter(a => a.type.includes('short')).length;
-
-  // TEST: Verify realistic activity behavior
-  const testRealisticBehavior = () => {
-    console.log('🧪 TESTING REALISTIC BEHAVIOR...');
-    
-    // Test generate activity
-    const testGenerateActivity = {
-      type: 'generate' as const,
-      username: 'TestUser',
-      opinionText: 'Test generated opinion',
-      amount: 100, // This should be normalized to 0
-      timestamp: new Date().toISOString(),
-      isBot: false
-    };
-    
-    // Add to feed and check if amount is normalized
-    if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
-      (window as any).addToGlobalFeed(testGenerateActivity);
-    }
-    
-    // Test the transaction processor
-    const testBotTransaction = {
-      type: 'generate',
-      botId: 'test_bot',
-      opinionText: 'Test bot generated opinion',
-      amount: 150,
-      date: new Date().toISOString()
-    };
-    
-    // Mock process this transaction
-    const processedAmount = testBotTransaction.type === 'generate' ? 0 : testBotTransaction.amount;
-    
-    console.log('✅ TEST RESULTS:');
-    console.log(`  Generate activity amount: $${processedAmount.toFixed(2)} (should be $0.00)`);
-    console.log(`  Generate description: "${formatActivityDescription({
-      id: 'test',
-      type: 'generate',
-      username: 'TestUser',
-      opinionText: 'Test opinion',
-      amount: 0,
-      timestamp: new Date().toISOString(),
-      relativeTime: 'now',
-      isBot: false
-    })}"`);
-    
-    // Verify buy/sell still work normally
-    console.log(`  Buy description: "${formatActivityDescription({
-      id: 'test',
-      type: 'buy',
-      username: 'TestUser',
-      opinionText: 'Test opinion',
-      amount: -50,
-      timestamp: new Date().toISOString(),
-      relativeTime: 'now',
-      isBot: false
-    })}"`);
-    
-    console.log('🎯 Generate activities should now show $0.00 and correct descriptions!');
-  };
 
   return (
     <div className="page-container" style={{
@@ -3778,91 +2174,54 @@ export default function FeedPage() {
           </div>
         </div>
 
-
-
-                  {/* Firebase Status Indicator */}
+        {/* Loading Status */}
+        {isLoadingFirebase && (
           <div style={{
-            marginTop: '12px',
-            marginBottom: '8px',
+            marginBottom: '16px',
+            padding: '12px 16px',
+            backgroundColor: '#fef3c7',
+            border: '1px solid #fde68a',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: '600',
+            color: '#92400e',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <div style={{
+              width: '16px',
+              height: '16px',
+              border: '2px solid #92400e',
+              borderTop: '2px solid transparent',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            Loading Firebase data...
+          </div>
+        )}
+
+        {/* Firebase Status */}
+        {firebaseError && (
+          <div style={{
+            marginBottom: '16px',
             padding: '8px 12px',
-            backgroundColor: isLoadingFirebase ? '#fef3c7' : firebaseError ? '#fef2f2' : '#f0fdf4',
-            border: `1px solid ${isLoadingFirebase ? '#fde68a' : firebaseError ? '#fecaca' : '#bbf7d0'}`,
+            backgroundColor: '#fef2f2',
+            border: '1px solid #fecaca',
             borderRadius: '6px',
             fontSize: '13px',
             fontWeight: '600',
-            color: isLoadingFirebase ? '#92400e' : firebaseError ? '#dc2626' : '#166534',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px'
+            color: '#dc2626'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {isLoadingFirebase ? (
-                <>🔥 Connecting to Firebase...</>
-              ) : firebaseError ? (
-                <>❌ Firebase Error: {firebaseError} (using localStorage fallback)</>
-              ) : (
-                <>✅ Firebase Connected • {firebaseActivities.length} activities • Real-time updates active</>
-              )}
-            </div>
-            
-            {/* Firebase Help Button for Permissions Issues */}
-            {firebaseError && firebaseError.includes('permission') && (
-              <button
-                onClick={() => {
-                  const helpText = `🔒 FIREBASE PERMISSIONS FIX:
-
-1. Go to Firebase Console: https://console.firebase.google.com
-2. Select your project: "idea-auction"
-3. Click "Firestore Database" in sidebar
-4. Click "Rules" tab
-5. Replace the rules with:
-
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Allow read/write for authenticated users
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-    
-    // Temporary: Allow read access to activity-feed for development
-    match /activity-feed/{document} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-  }
-}
-
-6. Click "Publish"
-7. Refresh this page
-
-The app is working in localStorage mode for now.`;
-                  alert(helpText);
-                }}
-                style={{
-                  padding: '4px 8px',
-                  backgroundColor: '#dc2626',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: '600'
-                }}
-              >
-                🛠️ Fix Firebase
-              </button>
-            )}
+            ❌ Firebase Error: {firebaseError} (using localStorage fallback)
           </div>
+        )}
 
-          {/* Filter Controls */}
-        <div className={styles.filterControls} style={{ 
+        {/* Filter Controls */}
+        <div style={{ 
           marginTop: '8px',
           marginBottom: '16px', 
           display: 'flex',
-          visibility: 'visible',
-          zIndex: 1,
           gap: '8px',
           padding: '1rem',
           backgroundColor: '#F1F0EC',
@@ -3870,7 +2229,7 @@ The app is working in localStorage mode for now.`;
           border: '1px solid #000000',
           alignItems: 'center'
         }}>
-          <span className={styles.filterLabel} style={{
+          <span style={{
             marginRight: '1rem',
             fontWeight: '700',
             color: '#555555',
@@ -3882,7 +2241,6 @@ The app is working in localStorage mode for now.`;
             <button
               key={filterType}
               onClick={() => setFilter(filterType)}
-              className={`${styles.filterButton} ${filter === filterType ? styles.active : ''}`}
               style={{
                 padding: '8px 16px',
                 border: filter === filterType ? '2px solid #3b82f6' : '2px solid #63b3ed',
@@ -3907,15 +2265,15 @@ The app is working in localStorage mode for now.`;
         </div>
 
         {/* Activity Feed */}
-        <div className={styles.feedContainer} style={{
+        <div style={{
           backgroundColor: '#ffffff',
           borderRadius: '20px',
           border: '1px solid #000000',
           overflow: 'hidden',
           boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
         }}>
-          {/* Real-Time Feed Header with Live Connection Status */}
-          <div className={styles.feedHeader} style={{
+          {/* Feed Header */}
+          <div style={{
             padding: '1rem 1.5rem',
             backgroundColor: '#F1F0EC',
             borderBottom: '1px solid #000000',
@@ -3927,22 +2285,17 @@ The app is working in localStorage mode for now.`;
             fontSize: '12px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div className={styles.liveIndicator} style={{
+              <div style={{
                 width: '8px',
                 height: '8px',
-                backgroundColor: liveConnectionStatus === 'connected' ? '#10b981' : 
-                                liveConnectionStatus === 'connecting' ? '#f59e0b' : '#ef4444',
-                borderRadius: '50%',
-                animation: liveConnectionStatus === 'connected' ? 'pulse 1s infinite' : 
-                          liveConnectionStatus === 'connecting' ? 'pulse 0.5s infinite' : 'none'
+                backgroundColor: liveConnectionStatus === 'connected' ? '#10b981' : '#ef4444',
+                borderRadius: '50%'
               }}></div>
               <span style={{ 
-                color: liveConnectionStatus === 'connected' ? '#10b981' : 
-                       liveConnectionStatus === 'connecting' ? '#f59e0b' : '#ef4444',
+                color: liveConnectionStatus === 'connected' ? '#10b981' : '#ef4444',
                 fontWeight: '800' 
               }}>
-                {liveConnectionStatus === 'connected' ? 'LIVE' : 
-                 liveConnectionStatus === 'connecting' ? 'CONNECTING' : 'DISCONNECTED'}
+                {liveConnectionStatus === 'connected' ? 'LIVE' : 'OFFLINE'}
               </span>
               <span style={{ color: '#666' }}>•</span>
               <span>{filteredActivities.length} Activities</span>
@@ -3950,55 +2303,12 @@ The app is working in localStorage mode for now.`;
               <span style={{ color: '#10b981' }}>🤖 {botActivityCount} bots</span>
               <span style={{ color: '#666' }}>•</span>
               <span style={{ color: '#3b82f6' }}>👤 {humanActivityCount} users</span>
-              {newActivityCount > 0 && (
-                <>
-                  <span style={{ color: '#666' }}>•</span>
-                  <span style={{ 
-                    backgroundColor: '#10b981', 
-                    color: 'white', 
-                    padding: '2px 6px', 
-                    borderRadius: '4px',
-                    fontSize: '10px',
-                    animation: 'pulse 1s infinite'
-                  }}>
-                    +{newActivityCount} NEW
-                  </span>
-                </>
-              )}
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '6px',
-                height: '6px',
-                backgroundColor: liveConnectionStatus === 'connected' ? '#10b981' : '#ef4444',
-                borderRadius: '50%',
-                animation: liveConnectionStatus === 'connected' ? 'pulse 0.5s infinite' : 'none'
-              }}></div>
-              <span style={{ 
-                color: liveConnectionStatus === 'connected' ? '#10b981' : '#ef4444',
-                fontSize: '11px' 
-              }}>
-                {liveConnectionStatus === 'connected' ? 'Real-time streaming' : 
-                 liveConnectionStatus === 'connecting' ? 'Connecting...' : 'Connection lost'}
-              </span>
-              <span style={{ 
-                backgroundColor: liveConnectionStatus === 'connected' ? '#10b981' : '#ef4444',
-                color: 'white', 
-                padding: '2px 6px', 
-                borderRadius: '4px',
-                fontSize: '10px'
-              }}>
-                {liveConnectionStatus === 'connected' ? 'LIVE' : 
-                 liveConnectionStatus === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
-              </span>
             </div>
           </div>
 
           {/* Feed Content */}
           <div 
             ref={feedContainerRef}
-            className={styles.feedContent} 
             style={{
               maxHeight: '70vh',
               overflowY: 'auto',
@@ -4006,422 +2316,87 @@ The app is working in localStorage mode for now.`;
               backgroundColor: '#ffffff'
             }}
           >
-            {/* Scroll to top button */}
-            {!isAtTop && (
-              <div style={{
-                position: 'absolute',
-                top: '10px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 10,
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                padding: '8px 16px',
-                borderRadius: '20px',
-                fontSize: '12px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                animation: 'fadeIn 0.3s ease-in-out'
-              }}
-              onClick={() => {
-                feedContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                setNewActivityCount(0);
-              }}
-              >
-                ↑ {newActivityCount > 0 ? `${newActivityCount} new activities` : 'Back to top'}
-              </div>
-            )}
             {filteredActivities.length === 0 ? (
-              <div className={styles.emptyFeed}>
-                <p>📭</p>
-                <p>No activity found matching your filter.</p>
-                <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>
-                  🤖 Bot system may be starting up. Click "Start Bots" to begin automated trading.
-                </p>
-                <div style={{ marginTop: '15px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <button 
-                    onClick={() => {
-                      ensureBotsRunning();
-                      setTimeout(forceRefreshFeed, 2000);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#10b981',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🤖 Start Bot System
-                  </button>
-                  <button 
-                    onClick={forceRefreshFeed}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔄 Refresh Feed
-                  </button>
-                  <button 
-                    onClick={() => {
-                      if (typeof window !== 'undefined' && (window as any).forceBotActivity) {
-                        (window as any).forceBotActivity(10);
-                        setTimeout(forceRefreshFeed, 3000);
-                      }
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#f59e0b',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🚀 Force Bot Activity
-                  </button>
-                  <button 
-                    onClick={debugBotSystem}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#8b5cf6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔍 Debug System
-                  </button>
-                  <button 
-                    onClick={checkLocalStorageData}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    📦 Check Storage
-                  </button>
-                  <button 
-                    onClick={fixChronologicalOrder}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#dc2626',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔧 Fix Timestamps
-                  </button>
-                  <button 
-                    onClick={() => {
-                      console.log('👤 CHECKING USER ACTIVITIES...');
-                      const userTransactions = safeGetFromStorage('transactions', []);
-                      console.log(`Found ${userTransactions.length} user transactions:`, userTransactions);
-                      
-                      // Force include user activities in current feed
-                      const currentFeed = [...activityFeed];
-                      const userActivities = userTransactions.map((t: any, index: number) => ({
-                        id: `debug_${Date.now()}_${index}`,
-                        type: t.type,
-                        username: t.username || currentUser.username,
-                        opinionText: t.opinionText,
-                        opinionId: t.opinionId,
-                        amount: parseFloat(t.amount) || 0,
-                        price: t.price,
-                        quantity: t.quantity,
-                        timestamp: t.timestamp || t.date || new Date().toISOString(),
-                        relativeTime: getRelativeTime(t.timestamp || t.date || new Date().toISOString()),
-                        isBot: false
-                      }));
-                      
-                      const combinedFeed = [...userActivities, ...currentFeed];
-                      setActivityFeed(combinedFeed);
-                      console.log(`✅ Added ${userActivities.length} user activities to feed`);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#9333ea',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    👤 Show My Activities
-                  </button>
-                  <button 
-                    onClick={() => {
-                      console.log('🔄 SYNCING BOT TRANSACTIONS...');
-                      if (typeof window !== 'undefined' && (window as any).syncBotTransactionsToGlobalFeed) {
-                        (window as any).syncBotTransactionsToGlobalFeed();
-                        setTimeout(forceRefreshFeed, 1000);
-                      } else {
-                        console.log('❌ Sync function not available');
-                      }
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#f59e0b',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔄 Sync Bot Transactions
-                  </button>
-                </div>
-                
-                {/* Firebase-specific buttons */}
-                <div style={{ marginTop: '10px', display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <button 
-                    onClick={migrateLocalStorageToFirebase}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#059669',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🔥 Migrate to Firebase
-                  </button>
-                  <button 
-                    onClick={addTestActivitiesToFirebase}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#7c3aed',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🧪 Add Test Activities
-                  </button>
-                  <button 
-                    onClick={testRealisticBehavior}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#22c55e',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ✅ Test Realistic Behavior
-                  </button>
-                  <button 
-                    onClick={forceLiveActivity}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#dc2626',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontWeight: '700'
-                    }}
-                  >
-                    🔴 FORCE LIVE ACTIVITY
-                  </button>
-                  <button 
-                    onClick={testRealTimeFeed}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#22c55e',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontWeight: '700'
-                    }}
-                  >
-                    ⚡ TEST REAL-TIME FEED
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      console.log('🧪 Testing Firebase connection...');
-                      try {
-                        // Test Firebase read permissions
-                        const testActivities = await firebaseActivityService.getRecentActivities(5);
-                        console.log('✅ Firebase read test successful:', testActivities.length, 'activities');
-                        
-                        // Test Firebase write permissions (if authenticated)
-                        if (user?.uid) {
-                          await firebaseActivityService.addActivity({
-                            type: 'generate',
-                            username: currentUser.username,
-                            userId: user.uid,
-                            opinionText: 'Firebase connection test - this can be ignored',
-                            amount: 0,
-                            isBot: false,
-                            metadata: { source: 'connection_test' }
-                          });
-                          console.log('✅ Firebase write test successful');
-                          alert('🎉 Firebase connection test PASSED!\n\n✅ Read permissions: Working\n✅ Write permissions: Working\n\nYour Firebase setup is correct!');
-                        } else {
-                          alert('✅ Firebase read test PASSED!\n\n⚠️ Write test skipped: Not authenticated\n\nFirebase is working! Sign in to test write permissions.');
-                        }
-                      } catch (error) {
-                        console.error('❌ Firebase connection test failed:', error);
-                        const errorMsg = (error as Error).message || 'Unknown error';
-                        if (errorMsg.includes('permission')) {
-                          alert('❌ Firebase permissions test FAILED!\n\n🔒 Issue: Missing or insufficient permissions\n\n🛠️ Fix:\n1. Go to Firebase Console\n2. Update Firestore security rules\n3. Use the firestore.rules file provided\n4. Click "Publish"\n\nSee FIREBASE_PERMISSIONS_FIX.md for detailed instructions.');
-                        } else {
-                          alert(`❌ Firebase test FAILED!\n\nError: ${errorMsg}\n\nCheck the browser console for more details.`);
-                        }
-                      }
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#0ea5e9',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontWeight: '700'
-                    }}
-                  >
-                    🧪 Test Firebase Connection
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      try {
-                        console.log('🔍 Testing Firebase bot activity write...');
-                        await firebaseActivityService.addActivity({
-                          type: 'buy',
-                          username: 'TestBot_' + Math.random().toString(36).substr(2, 4),
-                          opinionText: 'Test Firebase bot connection',
-                          amount: 50,
-                          price: 15,
-                          quantity: 1,
-                          isBot: true,
-                          botId: 'test-bot-' + Date.now(),
-                          metadata: {
-                            source: 'bot_system',
-                            test: true,
-                            timestamp: new Date().toISOString()
-                          }
-                        });
-                        console.log('✅ Firebase bot test successful!');
-                        alert('✅ Firebase bot test successful!\n\nBot activities can now sync to Firebase.\nCheck the feed for the test bot activity.');
-                      } catch (error) {
-                        console.error('❌ Firebase bot test failed:', error);
-                        const errorMsg = (error as Error).message || 'Unknown error';
-                        alert(`❌ Firebase bot test failed!\n\nError: ${errorMsg}\n\nThis means bot activities will fall back to localStorage only.\nSee FIREBASE_PERMISSIONS_FIX.md for instructions to fix this.`);
-                      }
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      backgroundColor: '#059669',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontWeight: '700'
-                    }}
-                  >
-                    🤖 Test Bot Firebase
-                  </button>
-                </div>
+              <div style={{
+                textAlign: 'center',
+                padding: '60px 20px',
+                color: '#666'
+              }}>
+                {!user ? (
+                  <>
+                    <p style={{ fontSize: '48px', margin: '0 0 20px 0' }}>🔐</p>
+                    <p style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 10px 0' }}>
+                      Sign in to view activity feed
+                    </p>
+                    <p style={{ fontSize: '14px', margin: '0 0 20px 0' }}>
+                      Firebase data requires authentication
+                    </p>
+                    <AuthButton />
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '48px', margin: '0 0 20px 0' }}>📭</p>
+                    <p style={{ fontSize: '16px', fontWeight: '600', margin: '0 0 10px 0' }}>
+                      No activity found
+                    </p>
+                    <p style={{ fontSize: '14px', margin: '0' }}>
+                      {isLoadingFirebase ? 'Loading activities...' : 'Try a different filter or refresh the page'}
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               filteredActivities.map((activity, index) => {
                 const isUserActivity = activity.username === currentUser.username;
                 const isBotActivity = activity.isBot;
-                const isShortActivity = activity.type.includes('short');
-                const isNewActivity = activity.relativeTime === 'just now' || activity.id.startsWith('live_');
                 
                 return (
                   <div 
                     key={activity.id}
-                    className={`${styles.activityItem} ${isUserActivity ? styles.userActivity : ''} ${isBotActivity ? styles.botActivity : ''} ${isShortActivity ? styles.shortActivity : ''}`}
                     onClick={(e) => handleActivityClick(activity, e)}
                     style={{ 
                       cursor: 'pointer', 
-                      userSelect: 'none',
                       padding: '1rem 1.5rem',
                       borderBottom: '1px solid #000000',
-                      backgroundColor: isNewActivity ? '#f0fdf4' : '#ffffff',
-                      transition: 'all 200ms ease-out',
-                      animation: isNewActivity ? 'slideInFromTop 0.5s ease-out' : 'none',
-                      borderLeft: isNewActivity ? '4px solid #10b981' : 'none'
+                      backgroundColor: '#ffffff',
+                      transition: 'all 200ms ease-out'
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = isNewActivity ? '#ecfdf5' : '#f8fafc';
-                      if (!isNewActivity) {
-                        e.currentTarget.style.borderLeft = '4px solid #0F7950';
-                      }
+                      e.currentTarget.style.backgroundColor = '#f8fafc';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = isNewActivity ? '#f0fdf4' : '#ffffff';
-                      if (!isNewActivity) {
-                        e.currentTarget.style.borderLeft = 'none';
-                      }
+                      e.currentTarget.style.backgroundColor = '#ffffff';
                     }}
                   >
-                    <div className={styles.activityLayout} style={{
+                    <div style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '1rem'
                     }}>
                       {/* Activity Icon */}
-                      {(() => {
-                        if (activity.type === 'buy') {
-                          return (
-                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(92,184,92,1)' }}>
-                              <CurrencyDollar color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
-                            </div>
-                          );
-                        } else if (activity.type === 'sell') {
-                          return (
-                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(239,68,68,1)' }}>
-                              <HandPeace color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
-                            </div>
-                          );
-                                } else if (["bet", "bet_place", "bet_win", "bet_loss"].includes(activity.type)) {
-          return (
-            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(255, 118, 2, 1)' }}>
-              <DiceSix color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
-            </div>
-          );
-                        } else if (["short_place", "short_win", "short_loss"].includes(activity.type)) {
-                          return (
-                            <div style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'rgba(236,72,153,1)' }}>
-                              <ChartLineDown color="white" size={24} style={{ background: 'none', border: 'none', borderRadius: 0, boxShadow: 'none' }} />
-                            </div>
-                          );
-                        } else {
-                          return (
-                      <div className={`${styles.activityIcon} ${getActivityIconClass(activity.type)}`}>
-                        {getActivityIcon(activity.type)}
+                      <div style={{ 
+                        width: 40, 
+                        height: 40, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        borderRadius: '50%', 
+                        background: activity.type === 'buy' ? 'rgba(92,184,92,1)' :
+                                   activity.type === 'sell' ? 'rgba(239,68,68,1)' :
+                                   activity.type.includes('bet') ? 'rgba(255, 118, 2, 1)' :
+                                   activity.type.includes('short') ? 'rgba(236,72,153,1)' :
+                                   'rgba(59, 130, 246, 1)'
+                      }}>
+                        {activity.type === 'buy' ? <CurrencyDollar color="white" size={24} /> :
+                         activity.type === 'sell' ? <HandPeace color="white" size={24} /> :
+                         activity.type.includes('bet') ? <DiceSix color="white" size={24} /> :
+                         activity.type.includes('short') ? <ChartLineDown color="white" size={24} /> :
+                         <Plus size={24} />}
                       </div>
-                          );
-                        }
-                      })()}
 
                       {/* Activity Content */}
-                      <div className={styles.activityContent} style={{
-                        flex: 1
-                      }}>
-                        <div className={styles.activityDescription} style={{
+                      <div style={{ flex: 1 }}>
+                        <div style={{
                           fontSize: '14px',
                           lineHeight: '1.5',
                           color: '#1a1a1a',
@@ -4429,7 +2404,7 @@ The app is working in localStorage mode for now.`;
                         }}>
                           {formatActivityDescription(activity)}
                           {isUserActivity && (
-                            <span className={styles.userBadge} style={{
+                            <span style={{
                               backgroundColor: '#3b82f6',
                               color: 'white',
                               padding: '2px 8px',
@@ -4442,7 +2417,7 @@ The app is working in localStorage mode for now.`;
                             </span>
                           )}
                           {isBotActivity && (
-                            <span className={styles.botBadge} style={{
+                            <span style={{
                               backgroundColor: '#10b981',
                               color: 'white',
                               padding: '2px 8px',
@@ -4454,26 +2429,10 @@ The app is working in localStorage mode for now.`;
                               BOT
                             </span>
                           )}
-                          {isShortActivity && (
-                            <span className={styles.shortBadge} style={{
-                              backgroundColor: '#ec4899',
-                              color: 'white',
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                              fontSize: '10px',
-                              fontWeight: '700',
-                              marginLeft: '8px'
-                            }}>
-                              SHORT
-                            </span>
-                          )}
                           {/* Clickable username */}
                           <span 
                             className="clickableUsername"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUsernameClick(activity.username, e);
-                            }}
+                            onClick={(e) => handleUsernameClick(activity.username, e)}
                             style={{ 
                               color: isBotActivity ? '#10b981' : '#3b82f6', 
                               cursor: 'pointer',
@@ -4487,15 +2446,15 @@ The app is working in localStorage mode for now.`;
                           </span>
                         </div>
                         
-                        <div className={styles.activityMeta} style={{
+                        <div style={{
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
                           fontSize: '12px',
                           color: '#7a7a7a'
                         }}>
-                          <span className={styles.activityTime}>{activity.relativeTime}</span>
-                          <span className={`${styles.activityAmount} ${getAmountClass(activity.amount)}`} style={{
+                          <span>{activity.relativeTime}</span>
+                          <span style={{
                             fontWeight: '700',
                             color: activity.amount >= 0 ? '#0F7950' : '#BB0006'
                           }}>
@@ -4511,7 +2470,7 @@ The app is working in localStorage mode for now.`;
           </div>
         </div>
 
-        {/* NEW: Enhanced Activity Detail Modal with Portfolio Betting */}
+        {/* Activity Detail Modal */}
         {showActivityDetailModal && selectedActivity && (
           <ActivityDetailModal
             activity={selectedActivity}
@@ -4523,199 +2482,15 @@ The app is working in localStorage mode for now.`;
             onUpdateUser={setCurrentUser}
           />
         )}
-
-        {/* Transaction Details Modal - Preserved advanced implementation */}
-        {showTransactionModal && selectedTransaction && (
-          <div 
-            className={styles.modalOverlay}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowTransactionModal(false);
-                setSelectedTransaction(null);
-              }
-            }}
-          >
-            <div className={styles.transactionModal}>
-              <div className={styles.modalHeader}>
-                <h2>
-                  {getActivityIcon(selectedTransaction.type)} Transaction Details
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowTransactionModal(false);
-                    setSelectedTransaction(null);
-                  }}
-                  className={styles.closeButton}
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className={styles.modalContent}>
-                {/* Transaction Type & User */}
-                <div className={styles.transactionHeader}>
-                  <div className={styles.transactionType}>
-                    <span className={`${styles.typeTag} ${styles[selectedTransaction.type]}`}>
-                      {selectedTransaction.type.toUpperCase().replace('_', ' ')}
-                    </span>
-                    {selectedTransaction.isBot && (
-                      <span className={styles.botTag}>🤖 BOT</span>
-                    )}
-                    {selectedTransaction.type.includes('short') && (
-                      <span className={styles.shortTag}>📉 SHORT</span>
-                    )}
-                  </div>
-                  <div className={styles.transactionAmount}>
-                    <span className={getAmountClass(selectedTransaction.amount)}>
-                      {selectedTransaction.amount >= 0 ? '+' : ''}${Math.abs(selectedTransaction.amount).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Full Description */}
-                <div className={styles.transactionDescription}>
-                  <p>{selectedTransaction.fullDescription}</p>
-                </div>
-
-                {/* Transaction Details */}
-                <div className={styles.transactionDetails}>
-                  <div className={styles.detailRow}>
-                    <span className={styles.detailLabel}>User:</span>
-                    <span 
-                      className={styles.clickableUsername}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUsernameClick(selectedTransaction.username, e);
-                        setShowTransactionModal(false);
-                      }}
-                      style={{ 
-                        color: selectedTransaction.isBot ? '#10b981' : '#3b82f6', 
-                        cursor: 'pointer',
-                        textDecoration: 'underline'
-                      }}
-                    >
-                      {selectedTransaction.isBot ? '🤖 ' : '👤 '}{selectedTransaction.username}
-                    </span>
-                  </div>
-                  
-                  <div className={styles.detailRow}>
-                    <span className={styles.detailLabel}>Time:</span>
-                    <span>{new Date(selectedTransaction.timestamp).toLocaleString()}</span>
-                  </div>
-
-                  {selectedTransaction.opinionText && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Opinion:</span>
-                      <span className={styles.opinionText}>"{selectedTransaction.opinionText}"</span>
-                    </div>
-                  )}
-
-                  {selectedTransaction.opinionId && (
-                    <div className={styles.detailRow}>
-                      <span className={styles.detailLabel}>Opinion ID:</span>
-                      <span>#{selectedTransaction.opinionId}</span>
-                    </div>
-                  )}
-
-                  {/* Show price and quantity details for trades */}
-                  {(selectedTransaction.type === 'buy' || selectedTransaction.type === 'sell') && selectedTransaction.price && (
-                    <>
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Price per share:</span>
-                        <span>${selectedTransaction.price.toFixed(2)}</span>
-                      </div>
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Quantity:</span>
-                        <span>{selectedTransaction.quantity || 1} shares</span>
-                      </div>
-                      <div className={styles.detailRow}>
-                        <span className={styles.detailLabel}>Total value:</span>
-                        <span>${Math.abs(selectedTransaction.amount).toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                <div className={styles.modalActions}>
-                  {selectedTransaction.username !== currentUser.username && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUsernameClick(selectedTransaction.username, e);
-                        setShowTransactionModal(false);
-                      }}
-                      className={styles.viewUserButton}
-                    >
-                      👤 View {selectedTransaction.isBot ? 'Bot' : 'User'} Profile
-                    </button>
-                  )}
-                  
-                  {selectedTransaction.opinionId && (
-                    <button
-                      onClick={() => {
-                        router.push(`/opinion/${selectedTransaction.opinionId}`);
-                        setShowTransactionModal(false);
-                      }}
-                      className={styles.viewOpinionButton}
-                    >
-                      💬 View Opinion
-                    </button>
-                  )}
-                  
-                  <button
-                    onClick={() => {
-                      setShowTransactionModal(false);
-                      setSelectedTransaction(null);
-                    }}
-                    className={styles.closeModalButton}
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Market Stats */}
-        <div className={styles.marketStats}>
-          <div className={`${styles.statCard} ${styles.purchases}`}>
-            <div className={`${styles.statNumber} ${styles.purchases}`}>
-              {activityFeed.filter(a => a.type === 'buy').length}
-            </div>
-            <div className={styles.statLabel}>Total Purchases</div>
-          </div>
-          
-          <div className={`${styles.statCard} ${styles.sales}`}>
-            <div className={`${styles.statNumber} ${styles.sales}`}>
-              {activityFeed.filter(a => a.type === 'sell').length}
-            </div>
-            <div className={styles.statLabel}>Total Sales</div>
-          </div>
-          
-          <div className={`${styles.statCard} ${styles.bets}`}>
-            <div className={`${styles.statNumber} ${styles.bets}`}>
-              {activityFeed.filter(a => a.type.includes('bet')).length}
-            </div>
-            <div className={styles.statLabel}>Portfolio Bets</div>
-          </div>
-
-          <div className={`${styles.statCard} ${styles.shorts}`}>
-            <div className={`${styles.statNumber} ${styles.shorts}`}>
-              {shortActivityCount}
-            </div>
-            <div className={styles.statLabel}>Short Positions</div>
-          </div>
-          
-          <div className={`${styles.statCard} ${styles.volume}`}>
-            <div className={`${styles.statNumber} ${styles.volume}`}>
-              ${activityFeed.reduce((sum, a) => sum + Math.abs(a.amount), 0).toFixed(2)}
-            </div>
-            <div className={styles.statLabel}>Total Volume</div>
-          </div>
-        </div>
       </main>
+      
+      {/* Add CSS for spinner animation */}
+      <style jsx>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

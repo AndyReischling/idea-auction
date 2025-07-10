@@ -122,9 +122,9 @@ export class FirebaseActivityService {
     try {
       console.log(`🔥 Fetching ${limitCount} recent activities from Firebase...`);
       
+      // Simplified query without orderBy to avoid index requirement
       const q = query(
         this.activityCollection,
-        orderBy('timestamp', 'desc'),
         limit(limitCount)
       );
 
@@ -136,8 +136,15 @@ export class FirebaseActivityService {
         activities.push(this.convertToLocalActivity(doc.id, data));
       });
 
+      // Sort manually by timestamp (newest first)
+      activities.sort((a, b) => {
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
+        return timeB - timeA; // Descending order (newest first)
+      });
+
       console.log(`✅ Fetched ${activities.length} activities from Firebase`);
-      return activities;
+      return activities.slice(0, limitCount); // Apply limit after sorting
     } catch (error) {
       console.error('❌ Error fetching activities from Firebase:', error);
       throw error;
@@ -152,9 +159,9 @@ export class FirebaseActivityService {
   ): () => void {
     console.log(`🔥 Subscribing to real-time activity updates (limit: ${limitCount})`);
     
+    // Simplified query without orderBy to avoid index requirement
     const q = query(
       this.activityCollection,
-      orderBy('timestamp', 'desc'),
       limit(limitCount)
     );
 
@@ -167,8 +174,15 @@ export class FirebaseActivityService {
           activities.push(this.convertToLocalActivity(doc.id, data));
         });
 
+        // Sort manually by timestamp (newest first)
+        activities.sort((a, b) => {
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeB - timeA; // Descending order (newest first)
+        });
+
         console.log(`🔄 Real-time update: ${activities.length} activities received`);
-        callback(activities);
+        callback(activities.slice(0, limitCount)); // Apply limit after sorting
       },
       (error) => {
         console.error('❌ Error in activity subscription:', error);

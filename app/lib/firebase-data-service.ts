@@ -9,7 +9,7 @@ import {
   query, 
   where, 
   orderBy, 
-  limit, 
+  limit as firestoreLimit, 
   getDocs, 
   writeBatch, 
   serverTimestamp, 
@@ -151,6 +151,35 @@ export class FirebaseDataService {
     return FirebaseDataService.instance;
   }
 
+  // Utility function to safely convert various date formats to Date objects
+  private safeToDate(value: any): Date {
+    if (!value) return new Date();
+    
+    // If it's already a Date object
+    if (value instanceof Date) {
+      return value;
+    }
+    
+    // If it's a Firebase Timestamp with toDate() method
+    if (value && typeof value.toDate === 'function') {
+      return value.toDate();
+    }
+    
+    // If it's a string or number that can be parsed as a date
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      return isNaN(parsed.getTime()) ? new Date() : parsed;
+    }
+    
+    // If it's an object with seconds (Firebase Timestamp-like)
+    if (value && typeof value === 'object' && value.seconds) {
+      return new Date(value.seconds * 1000);
+    }
+    
+    // Default fallback
+    return new Date();
+  }
+
   // USER PROFILE OPERATIONS
   async getUserProfile(userId: string): Promise<UserProfile | null> {
     try {
@@ -163,9 +192,9 @@ export class FirebaseDataService {
           balance: data.balance || 10000,
           totalEarnings: data.totalEarnings || 0,
           totalLosses: data.totalLosses || 0,
-          joinDate: data.joinDate?.toDate() || new Date(),
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date()
+          joinDate: this.safeToDate(data.joinDate),
+          createdAt: this.safeToDate(data.createdAt),
+          updatedAt: this.safeToDate(data.updatedAt)
         };
       }
       return null;
@@ -178,7 +207,7 @@ export class FirebaseDataService {
   async updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<void> {
     try {
       const userDocRef = doc(db, 'users', userId);
-      const updateData = {
+      const updateData: any = {
         ...updates,
         updatedAt: serverTimestamp()
       };
@@ -198,13 +227,13 @@ export class FirebaseDataService {
   async createUserProfile(userId: string, profileData: Partial<UserProfile>): Promise<void> {
     try {
       const userDocRef = doc(db, 'users', userId);
-      const newProfile = {
+      const newProfile: any = {
         uid: userId,
         username: profileData.username || 'User',
         balance: profileData.balance || 10000,
         totalEarnings: profileData.totalEarnings || 0,
         totalLosses: profileData.totalLosses || 0,
-        joinDate: profileData.joinDate || serverTimestamp(),
+        joinDate: profileData.joinDate ? Timestamp.fromDate(profileData.joinDate) : serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
@@ -217,23 +246,26 @@ export class FirebaseDataService {
   }
 
   // OPINION OPERATIONS
-  async getOpinions(limit?: number): Promise<Opinion[]> {
+  async getOpinions(limitCount?: number): Promise<Opinion[]> {
     try {
-      const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
-      if (limit) {
-        constraints.push(limit(limit));
+      const constraints: QueryConstraint[] = [];
+      if (limitCount) {
+        constraints.push(firestoreLimit(limitCount));
       }
       
       const q = query(collection(db, 'opinions'), ...constraints);
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const opinions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         text: doc.data().text,
         authorId: doc.data().authorId,
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date()
+        createdAt: this.safeToDate(doc.data().createdAt),
+        updatedAt: this.safeToDate(doc.data().updatedAt)
       }));
+      
+      // Sort manually by createdAt (newest first)
+      return opinions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } catch (error) {
       console.error('Error getting opinions:', error);
       throw error;
@@ -242,20 +274,25 @@ export class FirebaseDataService {
 
   async getUserOpinions(userId: string): Promise<Opinion[]> {
     try {
+      // Simplified query to avoid composite index requirement during migration
       const q = query(
         collection(db, 'opinions'),
-        where('authorId', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('authorId', '==', userId)
+        // Temporarily removed orderBy to avoid composite index requirement
+        // orderBy('createdAt', 'desc')
       );
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const opinions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         text: doc.data().text,
         authorId: doc.data().authorId,
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-        updatedAt: doc.data().updatedAt?.toDate() || new Date()
+        createdAt: this.safeToDate(doc.data().createdAt),
+        updatedAt: this.safeToDate(doc.data().updatedAt)
       }));
+      
+      // Sort manually to avoid composite index requirement
+      return opinions.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } catch (error) {
       console.error('Error getting user opinions:', error);
       throw error;
@@ -331,20 +368,22 @@ export class FirebaseDataService {
   }
 
   // TRANSACTION OPERATIONS
-  async getUserTransactions(userId: string, limit?: number): Promise<Transaction[]> {
+  async getUserTransactions(userId: string, limitCount?: number): Promise<Transaction[]> {
     try {
+      // Simplified query to avoid composite index requirement during migration
       const constraints: QueryConstraint[] = [
-        where('userId', '==', userId),
-        orderBy('timestamp', 'desc')
+        where('userId', '==', userId)
+        // Temporarily removed orderBy to avoid composite index requirement
+        // orderBy('timestamp', 'desc')
       ];
-      if (limit) {
-        constraints.push(limit(limit));
+      if (limitCount) {
+        constraints.push(firestoreLimit(limitCount));
       }
       
       const q = query(collection(db, 'transactions'), ...constraints);
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const transactions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         type: doc.data().type,
@@ -352,9 +391,12 @@ export class FirebaseDataService {
         amount: doc.data().amount,
         price: doc.data().price,
         quantity: doc.data().quantity || 1,
-        timestamp: doc.data().timestamp?.toDate() || new Date(),
-        date: doc.data().date?.toDate() || new Date()
+        timestamp: this.safeToDate(doc.data().timestamp),
+        date: this.safeToDate(doc.data().date)
       }));
+      
+      // Sort manually to avoid composite index requirement
+      return transactions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     } catch (error) {
       console.error('Error getting user transactions:', error);
       throw error;
@@ -364,13 +406,13 @@ export class FirebaseDataService {
   async createTransaction(transactionData: Omit<Transaction, 'id'>): Promise<string> {
     try {
       const transactionRef = doc(collection(db, 'transactions'));
-      const data = {
+      const newTransaction = {
         ...transactionData,
         timestamp: serverTimestamp(),
         date: serverTimestamp()
       };
       
-      await setDoc(transactionRef, data);
+      await setDoc(transactionRef, newTransaction);
       return transactionRef.id;
     } catch (error) {
       console.error('Error creating transaction:', error);
@@ -379,20 +421,22 @@ export class FirebaseDataService {
   }
 
   // BOT TRANSACTION OPERATIONS
-  async getBotTransactions(userId: string, limit?: number): Promise<BotTransaction[]> {
+  async getBotTransactions(userId: string, limitCount?: number): Promise<BotTransaction[]> {
     try {
+      // Simplified query to avoid composite index requirement during migration
       const constraints: QueryConstraint[] = [
-        where('userId', '==', userId),
-        orderBy('timestamp', 'desc')
+        where('userId', '==', userId)
+        // Temporarily removed orderBy to avoid composite index requirement
+        // orderBy('timestamp', 'desc')
       ];
-      if (limit) {
-        constraints.push(limit(limit));
+      if (limitCount) {
+        constraints.push(firestoreLimit(limitCount));
       }
       
       const q = query(collection(db, 'bot-transactions'), ...constraints);
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const transactions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         botId: doc.data().botId,
@@ -401,9 +445,12 @@ export class FirebaseDataService {
         amount: doc.data().amount,
         price: doc.data().price,
         quantity: doc.data().quantity || 1,
-        timestamp: doc.data().timestamp?.toDate() || new Date(),
-        date: doc.data().date?.toDate() || new Date()
+        timestamp: this.safeToDate(doc.data().timestamp),
+        date: this.safeToDate(doc.data().date)
       }));
+      
+      // Sort manually to avoid composite index requirement
+      return transactions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     } catch (error) {
       console.error('Error getting bot transactions:', error);
       throw error;
@@ -430,14 +477,16 @@ export class FirebaseDataService {
   // ADVANCED BETS OPERATIONS
   async getUserAdvancedBets(userId: string): Promise<AdvancedBet[]> {
     try {
+      // Simplified query to avoid composite index requirement
       const q = query(
         collection(db, 'advanced-bets'),
-        where('userId', '==', userId),
-        orderBy('placedDate', 'desc')
+        where('userId', '==', userId)
+        // Temporarily removed orderBy to avoid composite index requirement
+        // orderBy('placedDate', 'desc')
       );
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const advancedBets = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         targetUser: doc.data().targetUser,
@@ -445,10 +494,13 @@ export class FirebaseDataService {
         targetPercentage: doc.data().targetPercentage,
         betAmount: doc.data().betAmount,
         potentialWinnings: doc.data().potentialWinnings,
-        placedDate: doc.data().placedDate?.toDate() || new Date(),
-        expiryDate: doc.data().expiryDate?.toDate() || new Date(),
+        placedDate: this.safeToDate(doc.data().placedDate),
+        expiryDate: this.safeToDate(doc.data().expiryDate),
         status: doc.data().status
       }));
+      
+      // Sort manually to avoid composite index requirement
+      return advancedBets.sort((a, b) => b.placedDate.getTime() - a.placedDate.getTime());
     } catch (error) {
       console.error('Error getting user advanced bets:', error);
       throw error;
@@ -481,7 +533,7 @@ export class FirebaseDataService {
       };
       
       if (updates.expiryDate) {
-        updateData.expiryDate = Timestamp.fromDate(updates.expiryDate);
+        updateData.expiryDate = updates.expiryDate;
       }
       
       await updateDoc(betDocRef, updateData);
@@ -494,14 +546,16 @@ export class FirebaseDataService {
   // SHORT POSITIONS OPERATIONS
   async getUserShortPositions(userId: string): Promise<ShortPosition[]> {
     try {
+      // Simplified query to avoid composite index requirement
       const q = query(
         collection(db, 'short-positions'),
-        where('userId', '==', userId),
-        orderBy('createdDate', 'desc')
+        where('userId', '==', userId)
+        // Temporarily removed orderBy to avoid composite index requirement
+        // orderBy('createdDate', 'desc')
       );
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const shortPositions = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         opinionId: doc.data().opinionId,
@@ -511,10 +565,13 @@ export class FirebaseDataService {
         potentialWinnings: doc.data().potentialWinnings,
         startingPrice: doc.data().startingPrice,
         targetPrice: doc.data().targetPrice,
-        createdDate: doc.data().createdDate?.toDate() || new Date(),
-        expirationDate: doc.data().expirationDate?.toDate() || new Date(),
+        createdDate: this.safeToDate(doc.data().createdDate),
+        expirationDate: this.safeToDate(doc.data().expirationDate),
         status: doc.data().status
       }));
+      
+      // Sort manually to avoid composite index requirement
+      return shortPositions.sort((a, b) => b.createdDate.getTime() - a.createdDate.getTime());
     } catch (error) {
       console.error('Error getting user short positions:', error);
       throw error;
@@ -526,8 +583,8 @@ export class FirebaseDataService {
       const shortRef = doc(collection(db, 'short-positions'));
       const data = {
         ...shortData,
-        createdDate: serverTimestamp(),
-        expirationDate: Timestamp.fromDate(shortData.expirationDate)
+        createdDate: new Date(),
+        expirationDate: shortData.expirationDate
       };
       
       await setDoc(shortRef, data);
@@ -547,7 +604,7 @@ export class FirebaseDataService {
       };
       
       if (updates.expirationDate) {
-        updateData.expirationDate = Timestamp.fromDate(updates.expirationDate);
+        updateData.expirationDate = updates.expirationDate;
       }
       
       await updateDoc(shortDocRef, updateData);
@@ -558,17 +615,17 @@ export class FirebaseDataService {
   }
 
   // ACTIVITY FEED OPERATIONS
-  async getGlobalActivityFeed(limit?: number): Promise<ActivityFeedItem[]> {
+  async getGlobalActivityFeed(limitCount?: number): Promise<ActivityFeedItem[]> {
     try {
-      const constraints: QueryConstraint[] = [orderBy('timestamp', 'desc')];
-      if (limit) {
-        constraints.push(limit(limit));
+      const constraints: QueryConstraint[] = [];
+      if (limitCount) {
+        constraints.push(firestoreLimit(limitCount));
       }
       
       const q = query(collection(db, 'global-activity-feed'), ...constraints);
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const activities = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         type: doc.data().type,
@@ -579,29 +636,31 @@ export class FirebaseDataService {
         targetPercentage: doc.data().targetPercentage,
         amount: doc.data().amount,
         quantity: doc.data().quantity,
-        timestamp: doc.data().timestamp?.toDate() || new Date(),
+        timestamp: this.safeToDate(doc.data().timestamp),
         isBot: doc.data().isBot || false
       }));
+      
+      // Sort manually by timestamp (newest first)
+      return activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     } catch (error) {
       console.error('Error getting global activity feed:', error);
       throw error;
     }
   }
 
-  async getUserActivityFeed(userId: string, limit?: number): Promise<ActivityFeedItem[]> {
+  async getUserActivityFeed(userId: string, limitCount?: number): Promise<ActivityFeedItem[]> {
     try {
       const constraints: QueryConstraint[] = [
-        where('userId', '==', userId),
-        orderBy('timestamp', 'desc')
+        where('userId', '==', userId)
       ];
-      if (limit) {
-        constraints.push(limit(limit));
+      if (limitCount) {
+        constraints.push(firestoreLimit(limitCount));
       }
       
       const q = query(collection(db, 'user-activity-feeds'), ...constraints);
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const activities = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         type: doc.data().type,
@@ -612,9 +671,12 @@ export class FirebaseDataService {
         targetPercentage: doc.data().targetPercentage,
         amount: doc.data().amount,
         quantity: doc.data().quantity,
-        timestamp: doc.data().timestamp?.toDate() || new Date(),
+        timestamp: this.safeToDate(doc.data().timestamp),
         isBot: doc.data().isBot || false
       }));
+      
+      // Sort manually by timestamp (newest first)
+      return activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     } catch (error) {
       console.error('Error getting user activity feed:', error);
       throw error;
@@ -688,12 +750,11 @@ export class FirebaseDataService {
     try {
       const q = query(
         collection(db, 'autonomous-bots'),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('userId', '==', userId)
       );
       const querySnapshot = await getDocs(q);
       
-      return querySnapshot.docs.map(doc => ({
+      const bots = querySnapshot.docs.map(doc => ({
         id: doc.id,
         userId: doc.data().userId,
         name: doc.data().name,
@@ -701,6 +762,9 @@ export class FirebaseDataService {
         createdAt: doc.data().createdAt?.toDate() || new Date(),
         updatedAt: doc.data().updatedAt?.toDate() || new Date()
       }));
+      
+      // Sort manually by createdAt (newest first)
+      return bots.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } catch (error) {
       console.error('Error getting user autonomous bots:', error);
       throw error;
@@ -833,17 +897,17 @@ export class FirebaseDataService {
     return subscriptionId;
   }
 
-  subscribeToGlobalActivityFeed(callback: (activities: ActivityFeedItem[]) => void, limit: number = 50): string {
-    const subscriptionId = `global-activity-${Date.now()}`;
-    
-    const unsubscribe = onSnapshot(
-      query(
-        collection(db, 'global-activity-feed'),
-        orderBy('timestamp', 'desc'),
-        limit(limit)
-      ),
-      (snapshot) => {
-        const activities = snapshot.docs.map(doc => ({
+  subscribeToGlobalActivityFeed(callback: (activities: ActivityFeedItem[]) => void, limitCount: number = 50): string {
+    try {
+      const constraints: QueryConstraint[] = [
+        firestoreLimit(limitCount)
+      ];
+      
+      const q = query(collection(db, 'global-activity-feed'), ...constraints);
+      
+      const subscriptionId = `global-activity-${Date.now()}`;
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const activities = querySnapshot.docs.map(doc => ({
           id: doc.id,
           userId: doc.data().userId,
           type: doc.data().type,
@@ -854,19 +918,22 @@ export class FirebaseDataService {
           targetPercentage: doc.data().targetPercentage,
           amount: doc.data().amount,
           quantity: doc.data().quantity,
-          timestamp: doc.data().timestamp?.toDate() || new Date(),
+          timestamp: this.safeToDate(doc.data().timestamp),
           isBot: doc.data().isBot || false
         }));
+        
+        // Sort manually by timestamp (newest first)
+        activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        
         callback(activities);
-      },
-      (error) => {
-        console.error('Error in global activity feed subscription:', error);
-        callback([]);
-      }
-    );
-    
-    this.subscribers.set(subscriptionId, unsubscribe);
-    return subscriptionId;
+      });
+      
+      this.subscribers.set(subscriptionId, unsubscribe);
+      return subscriptionId;
+    } catch (error) {
+      console.error('Error subscribing to global activity feed:', error);
+      throw error;
+    }
   }
 
   subscribeToMarketData(callback: (marketData: MarketData[]) => void): string {

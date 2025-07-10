@@ -151,12 +151,6 @@ export class RealtimeDataService {
         if (userDoc.exists()) {
           const profile = userDoc.data();
           this.updateCache(cacheKey, profile, 'firebase');
-          
-          // Also update localStorage for backward compatibility
-          if (targetUserId === this.currentUser?.uid) {
-            this.saveToLocalStorage('userProfile', profile);
-          }
-          
           return profile;
         }
       }
@@ -164,13 +158,8 @@ export class RealtimeDataService {
       console.error('Error fetching user profile from Firebase:', error);
     }
 
-    // Fallback to localStorage
-    const localProfile = this.getFromLocalStorage('userProfile', null);
-    if (localProfile) {
-      this.updateCache(cacheKey, localProfile, 'localStorage');
-    }
-    
-    return localProfile;
+    // No localStorage fallback - Firebase only
+    return null;
   }
 
   /**
@@ -242,7 +231,7 @@ export class RealtimeDataService {
   }
 
   /**
-   * Get opinions with real-time updates
+   * Get opinions with real-time updates (user-specific)
    */
   async getOpinions(): Promise<string[]> {
     const cacheKey = 'opinions';
@@ -252,61 +241,89 @@ export class RealtimeDataService {
     }
 
     try {
-      if (this.config.useFirebase && this.isOnline) {
+      if (this.config.useFirebase && this.isOnline && this.currentUser) {
+        // FIXED: Get only the current user's opinions (removed orderBy to avoid index requirement)
         const opinionsSnapshot = await getDocs(
-          query(this.collections.opinions, orderBy('createdAt', 'desc'))
+          query(
+            this.collections.opinions, 
+            where('createdBy', '==', this.currentUser.uid)
+          )
         );
         
-        const opinions: string[] = [];
+        const opinionsWithTimestamp: {text: string, createdAt: any}[] = [];
         opinionsSnapshot.docs.forEach(doc => {
           const data = doc.data();
           if (data.text) {
-            opinions.push(data.text);
+            opinionsWithTimestamp.push({
+              text: data.text,
+              createdAt: data.createdAt || new Date()
+            });
           }
         });
         
-        this.updateCache(cacheKey, opinions, 'firebase');
-        this.saveToLocalStorage('opinions', opinions);
+        // Sort manually by createdAt (newest first)
+        opinionsWithTimestamp.sort((a, b) => {
+          const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
+          const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
+          return timeB - timeA; // Descending order (newest first)
+        });
         
+        const opinions = opinionsWithTimestamp.map(op => op.text);
+        
+        console.log(`📊 Loaded ${opinions.length} opinions from Firebase for user: ${this.currentUser.uid}`);
+        
+        this.updateCache(cacheKey, opinions, 'firebase');
         return opinions;
       }
     } catch (error) {
       console.error('Error fetching opinions from Firebase:', error);
     }
 
-    // Fallback to localStorage
-    const localOpinions = this.getFromLocalStorage('opinions', []);
-    this.updateCache(cacheKey, localOpinions, 'localStorage');
-    
-    return localOpinions;
+    // No localStorage fallback - Firebase only
+    return [];
   }
 
   /**
-   * Subscribe to opinions changes
+   * Subscribe to opinions changes (user-specific)
    */
   subscribeToOpinions(callback: (opinions: string[]) => void): string {
     const subscriptionId = 'opinions';
     
-    if (this.config.useFirebase && this.isOnline) {
+    if (this.config.useFirebase && this.isOnline && this.currentUser) {
       const unsubscribe = onSnapshot(
-        query(this.collections.opinions, orderBy('createdAt', 'desc')),
+        query(
+          this.collections.opinions, 
+          where('createdBy', '==', this.currentUser.uid)
+        ),
         (snapshot) => {
-          const opinions: string[] = [];
+          const opinionsWithTimestamp: {text: string, createdAt: any}[] = [];
           snapshot.docs.forEach(doc => {
             const data = doc.data();
             if (data.text) {
-              opinions.push(data.text);
+              opinionsWithTimestamp.push({
+                text: data.text,
+                createdAt: data.createdAt || new Date()
+              });
             }
           });
           
+          // Sort manually by createdAt (newest first)
+          opinionsWithTimestamp.sort((a, b) => {
+            const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
+            const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
+            return timeB - timeA; // Descending order (newest first)
+          });
+          
+          const opinions = opinionsWithTimestamp.map(op => op.text);
+          
+          console.log(`📊 Subscribed to ${opinions.length} opinions for user: ${this.currentUser?.uid}`);
+          
           this.updateCache('opinions', opinions, 'firebase');
-          this.saveToLocalStorage('opinions', opinions);
           callback(opinions);
         },
         (error) => {
           console.error('Opinions subscription error:', error);
-          const localOpinions = this.getFromLocalStorage('opinions', []);
-          callback(localOpinions);
+          callback([]);
         }
       );
       
@@ -318,22 +335,9 @@ export class RealtimeDataService {
         isActive: true
       });
     } else {
-      // Fallback to localStorage with polling
-      const localOpinions = this.getFromLocalStorage('opinions', []);
-      callback(localOpinions);
-      
-      const interval = setInterval(() => {
-        const currentOpinions = this.getFromLocalStorage('opinions', []);
-        callback(currentOpinions);
-      }, this.config.syncInterval);
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'opinions',
-        callback,
-        unsubscribe: () => clearInterval(interval),
-        isActive: true
-      });
+      // No localStorage fallback - Firebase only
+      console.log(`📊 Firebase unavailable, returning empty opinions for subscription`);
+      callback([]);
     }
     
     return subscriptionId;
@@ -368,19 +372,14 @@ export class RealtimeDataService {
         });
         
         this.updateCache(cacheKey, marketData, 'firebase');
-        this.saveToLocalStorage('opinionMarketData', marketData);
-        
         return marketData;
       }
     } catch (error) {
       console.error('Error fetching market data from Firebase:', error);
     }
 
-    // Fallback to localStorage
-    const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
-    this.updateCache(cacheKey, localMarketData, 'localStorage');
-    
-    return localMarketData;
+    // No localStorage fallback - Firebase only
+    return {};
   }
 
   /**
@@ -409,13 +408,11 @@ export class RealtimeDataService {
           });
           
           this.updateCache('marketData', marketData, 'firebase');
-          this.saveToLocalStorage('opinionMarketData', marketData);
           callback(marketData);
         },
         (error) => {
           console.error('Market data subscription error:', error);
-          const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
-          callback(localMarketData);
+          callback({});
         }
       );
       
@@ -497,8 +494,9 @@ export class RealtimeDataService {
     const subscriptionId = `activityFeed_${limitCount}`;
     
     if (this.config.useFirebase && this.isOnline) {
+      // Simplified query without orderBy to avoid index requirement
       const unsubscribe = onSnapshot(
-        query(this.collections.activityFeed, orderBy('timestamp', 'desc'), limit(limitCount)),
+        query(this.collections.activityFeed, limit(limitCount)),
         (snapshot) => {
           const activities: any[] = [];
           snapshot.docs.forEach(doc => {
@@ -510,14 +508,19 @@ export class RealtimeDataService {
             });
           });
           
+          // Sort manually by timestamp (newest first)
+          activities.sort((a, b) => {
+            const timeA = new Date(a.timestamp).getTime();
+            const timeB = new Date(b.timestamp).getTime();
+            return timeB - timeA; // Descending order (newest first)
+          });
+          
           this.updateCache(`activityFeed_${limitCount}`, activities, 'firebase');
-          this.saveToLocalStorage('globalActivityFeed', activities);
-          callback(activities);
+          callback(activities.slice(0, limitCount)); // Apply limit after sorting
         },
         (error) => {
           console.error('Activity feed subscription error:', error);
-          const localActivityFeed = this.getFromLocalStorage('globalActivityFeed', []);
-          callback(localActivityFeed.slice(0, limitCount));
+          callback([]);
         }
       );
       
@@ -529,22 +532,9 @@ export class RealtimeDataService {
         isActive: true
       });
     } else {
-      // Fallback to localStorage with polling
-      const localActivityFeed = this.getFromLocalStorage('globalActivityFeed', []);
-      callback(localActivityFeed.slice(0, limitCount));
-      
-      const interval = setInterval(() => {
-        const currentActivityFeed = this.getFromLocalStorage('globalActivityFeed', []);
-        callback(currentActivityFeed.slice(0, limitCount));
-      }, this.config.syncInterval);
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'activity-feed',
-        callback,
-        unsubscribe: () => clearInterval(interval),
-        isActive: true
-      });
+      // No localStorage fallback - Firebase only
+      console.log(`📊 Firebase unavailable, returning empty activity feed for subscription`);
+      callback([]);
     }
     
     return subscriptionId;
@@ -555,7 +545,7 @@ export class RealtimeDataService {
    */
   async getUserTransactions(userId?: string): Promise<any[]> {
     const targetUserId = userId || this.currentUser?.uid;
-    if (!targetUserId) return this.getFromLocalStorage('transactions', []);
+    if (!targetUserId) return [];
 
     const cacheKey = `transactions_${targetUserId}`;
     
@@ -565,8 +555,11 @@ export class RealtimeDataService {
 
     try {
       if (this.config.useFirebase && this.isOnline) {
+        // Simplified query to avoid composite index requirement
         const transactionsSnapshot = await getDocs(
-          query(this.collections.transactions, where('userId', '==', targetUserId), orderBy('timestamp', 'desc'))
+          query(this.collections.transactions, where('userId', '==', targetUserId))
+          // Removed orderBy to avoid composite index requirement
+          // orderBy('timestamp', 'desc')
         );
         
         const transactions: any[] = [];
@@ -579,24 +572,22 @@ export class RealtimeDataService {
           });
         });
         
+        // Sort manually to avoid composite index requirement
+        transactions.sort((a, b) => {
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeB - timeA; // Descending order (newest first)
+        });
+        
         this.updateCache(cacheKey, transactions, 'firebase');
-        
-        // Update localStorage for backward compatibility
-        if (targetUserId === this.currentUser?.uid) {
-          this.saveToLocalStorage('transactions', transactions);
-        }
-        
         return transactions;
       }
     } catch (error) {
       console.error('Error fetching transactions from Firebase:', error);
     }
 
-    // Fallback to localStorage
-    const localTransactions = this.getFromLocalStorage('transactions', []);
-    this.updateCache(cacheKey, localTransactions, 'localStorage');
-    
-    return localTransactions;
+    // No localStorage fallback - Firebase only
+    return [];
   }
 
   /**
@@ -606,8 +597,12 @@ export class RealtimeDataService {
     const subscriptionId = `transactions_${userId}`;
     
     if (this.config.useFirebase && this.isOnline) {
+      // Simplified query to avoid composite index requirement
       const unsubscribe = onSnapshot(
-        query(this.collections.transactions, where('userId', '==', userId), orderBy('timestamp', 'desc')),
+        query(this.collections.transactions, where('userId', '==', userId))
+        // Removed orderBy to avoid composite index requirement
+        // orderBy('timestamp', 'desc')
+        ,
         (snapshot) => {
           const transactions: any[] = [];
           snapshot.docs.forEach(doc => {
@@ -619,19 +614,19 @@ export class RealtimeDataService {
             });
           });
           
+          // Sort manually to avoid composite index requirement
+          transactions.sort((a, b) => {
+            const timeA = new Date(a.timestamp).getTime();
+            const timeB = new Date(b.timestamp).getTime();
+            return timeB - timeA; // Descending order (newest first)
+          });
+          
           this.updateCache(`transactions_${userId}`, transactions, 'firebase');
-          
-          // Update localStorage for backward compatibility
-          if (userId === this.currentUser?.uid) {
-            this.saveToLocalStorage('transactions', transactions);
-          }
-          
           callback(transactions);
         },
         (error) => {
           console.error('Transactions subscription error:', error);
-          const localTransactions = this.getFromLocalStorage('transactions', []);
-          callback(localTransactions);
+          callback([]);
         }
       );
       
@@ -644,23 +639,9 @@ export class RealtimeDataService {
         isActive: true
       });
     } else {
-      // Fallback to localStorage with polling
-      const localTransactions = this.getFromLocalStorage('transactions', []);
-      callback(localTransactions);
-      
-      const interval = setInterval(() => {
-        const currentTransactions = this.getFromLocalStorage('transactions', []);
-        callback(currentTransactions);
-      }, this.config.syncInterval);
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'transactions',
-        userId,
-        callback,
-        unsubscribe: () => clearInterval(interval),
-        isActive: true
-      });
+      // No localStorage fallback - Firebase only
+      console.log(`📊 Firebase unavailable, returning empty transactions for subscription`);
+      callback([]);
     }
     
     return subscriptionId;
@@ -695,32 +676,30 @@ export class RealtimeDataService {
   }
 
   /**
-   * Add new opinion
+   * Add new opinion (user-specific)
    */
   async addOpinion(opinion: string, userId: string): Promise<void> {
     try {
-      if (this.config.useFirebase && this.isOnline) {
+      if (this.config.useFirebase && this.isOnline && this.currentUser) {
         const opinionId = btoa(opinion).replace(/[^a-zA-Z0-9]/g, '');
         await setDoc(doc(this.collections.opinions, opinionId), {
           text: opinion,
           createdBy: userId,
           createdAt: serverTimestamp(),
-          status: 'active'
+          status: 'active',
+          metadata: {
+            source: 'user',
+            timestamp: new Date().toISOString()
+          }
         });
         
-        console.log('✅ Opinion added to Firebase');
+        console.log(`✅ Opinion added to Firebase for user: ${userId}`);
+      } else {
+        console.log(`⚠️ Firebase not available, opinion not saved`);
       }
     } catch (error) {
       console.error('Error adding opinion to Firebase:', error);
     }
-
-    // Always update localStorage for immediate UI updates
-    const currentOpinions = this.getFromLocalStorage('opinions', []);
-    const updatedOpinions = [opinion, ...currentOpinions];
-    this.saveToLocalStorage('opinions', updatedOpinions);
-    
-    // Update cache
-    this.updateCache('opinions', updatedOpinions, 'localStorage');
   }
 
   /**
@@ -736,19 +715,71 @@ export class RealtimeDataService {
         });
         
         console.log('✅ Transaction added to Firebase');
+      } else {
+        console.log(`⚠️ Firebase not available, transaction not saved`);
       }
     } catch (error) {
       console.error('Error adding transaction to Firebase:', error);
     }
+  }
 
-    // Always update localStorage for immediate UI updates
-    const currentTransactions = this.getFromLocalStorage('transactions', []);
-    const updatedTransactions = [transaction, ...currentTransactions];
-    this.saveToLocalStorage('transactions', updatedTransactions);
+  /**
+   * Get user portfolio (owned opinions) from Firebase
+   */
+  async getUserPortfolio(userId?: string): Promise<any[]> {
+    const targetUserId = userId || this.currentUser?.uid;
+    if (!targetUserId) {
+      console.log('📊 No user ID provided for portfolio, returning empty array');
+      return [];
+    }
+
+    const cacheKey = `portfolio_${targetUserId}`;
     
-    // Update cache
-    if (this.currentUser) {
-      this.updateCache(`transactions_${this.currentUser.uid}`, updatedTransactions, 'localStorage');
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
+      return this.cache[cacheKey].data;
+    }
+
+    try {
+      if (this.config.useFirebase && this.isOnline) {
+        const portfolioDoc = await getDoc(doc(this.collections.userPortfolios, targetUserId));
+        
+        if (portfolioDoc.exists()) {
+          const portfolioData = portfolioDoc.data();
+          const ownedOpinions = portfolioData.ownedOpinions || [];
+          
+                    console.log(`📊 Loaded ${ownedOpinions.length} owned opinions from Firebase for user: ${targetUserId}`);
+          
+          this.updateCache(cacheKey, ownedOpinions, 'firebase');
+          return ownedOpinions;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching portfolio from Firebase:', error);
+    }
+
+    // No localStorage fallback - Firebase only
+    return [];
+  }
+
+  /**
+   * Update user portfolio in Firebase
+   */
+  async updateUserPortfolio(userId: string, ownedOpinions: any[]): Promise<void> {
+    try {
+      if (this.config.useFirebase && this.isOnline) {
+        await setDoc(doc(this.collections.userPortfolios, userId), {
+          userId,
+          ownedOpinions,
+          lastUpdated: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+        
+        console.log(`✅ Portfolio updated in Firebase for user: ${userId}`);
+      } else {
+        console.log(`⚠️ Firebase not available, portfolio not updated`);
+      }
+    } catch (error) {
+      console.error('Error updating portfolio in Firebase:', error);
     }
   }
 

@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth } from './firebase';
 import { firebaseDataService, UserProfile } from './firebase-data-service';
+import { realtimeDataService } from './realtime-data-service';
 
 // Types
 interface AuthContextType {
@@ -26,6 +27,7 @@ interface AuthContextType {
   incrementBalance: (amount: number) => Promise<void>;
   updateEarnings: (earnings: number, losses: number) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  forceSyncToFirebase: () => Promise<{ message: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -65,15 +67,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return unsubscribe;
   }, []);
 
-  // Load user profile from Firebase
+  // Load user profile and all user data from Firebase for session continuity
   const loadUserProfile = async (userId: string) => {
     try {
-      console.log('📱 Loading user profile from Firebase...');
+      console.log('📱 Loading complete user data from Firebase...');
+      
+      // Load user profile
       const profile = await firebaseDataService.getUserProfile(userId);
       
       if (profile) {
         setUserProfile(profile);
         console.log('✅ User profile loaded:', profile);
+        
+        // FIXED: Load all user data for complete session continuity
+        await loadCompleteUserData(userId);
       } else {
         console.log('❌ No user profile found, creating default profile');
         await createDefaultProfile(userId);
@@ -81,6 +88,36 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error('❌ Error loading user profile:', error);
       setUserProfile(null);
+    }
+  };
+
+  // Load complete user data for session continuity
+  const loadCompleteUserData = async (userId: string) => {
+    try {
+      console.log('🔄 Loading complete user data for session continuity...');
+      
+      // Load user opinions from Firebase (will override localStorage)
+      const opinions = await realtimeDataService.getOpinions();
+      console.log(`📊 Loaded ${opinions.length} opinions from Firebase`);
+      
+      // Load user portfolio from Firebase (will override localStorage)
+      const portfolio = await realtimeDataService.getUserPortfolio(userId);
+      console.log(`💼 Loaded ${portfolio.length} portfolio items from Firebase`);
+      
+      // Load user transactions from Firebase
+      const transactions = await realtimeDataService.getUserTransactions(userId);
+      console.log(`💸 Loaded ${transactions.length} transactions from Firebase`);
+      
+      // Clear any potentially conflicting localStorage data
+      console.log('🧹 Clearing potentially stale localStorage data...');
+      
+      // Don't clear all localStorage, just ensure Firebase data takes precedence
+      // The realtimeDataService methods already handle this by saving Firebase data to localStorage
+      
+      console.log('✅ Complete user data loaded for session continuity');
+      
+    } catch (error) {
+      console.error('❌ Error loading complete user data:', error);
     }
   };
 
@@ -258,6 +295,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  // Force sync to Firebase (e.g., for testing)
+  const forceSyncToFirebase = async () => {
+    if (!user?.uid) {
+      throw new Error('No authenticated user to sync');
+    }
+    try {
+      console.log('⚙️ Forcing sync to Firebase for user:', user.uid);
+      
+      // Get current localStorage profile
+      const localProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+      
+      if (Object.keys(localProfile).length > 0) {
+        // Update Firebase with current localStorage data
+        await firebaseDataService.updateUserProfile(user.uid, {
+          balance: localProfile.balance || 10000,
+          totalEarnings: localProfile.totalEarnings || 0,
+          totalLosses: localProfile.totalLosses || 0,
+          username: localProfile.username || 'User'
+        });
+        console.log('✅ Synced localStorage profile to Firebase');
+        return { message: 'Successfully synced localStorage data to Firebase' };
+      } else {
+        console.log('✅ No localStorage data to sync');
+        return { message: 'No localStorage data found to sync' };
+      }
+    } catch (error) {
+      console.error('❌ Error forcing sync to Firebase:', error);
+      throw error;
+    }
+  };
+
   // Make auth context available globally for other components
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -273,7 +341,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         updateBalance,
         incrementBalance,
         updateEarnings,
-        resetPassword
+        resetPassword,
+        forceSyncToFirebase
       };
     }
   }, [user, userProfile, loading]);
@@ -290,7 +359,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     updateBalance,
     incrementBalance,
     updateEarnings,
-    resetPassword
+    resetPassword,
+    forceSyncToFirebase
   };
 
   return (

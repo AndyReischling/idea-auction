@@ -740,11 +740,20 @@ export class ConflictResolutionService {
         case 'transactions':
           const transactionSnapshot = await getDocs(
             query(collection(db, 'transactions'), where('userId', '==', userId))
+            // Removed potential orderBy to avoid composite index requirement
           );
           const transactions: any[] = [];
           transactionSnapshot.docs.forEach(doc => {
             transactions.push({ id: doc.id, ...doc.data() });
           });
+          
+          // Sort manually if needed
+          transactions.sort((a, b) => {
+            const timeA = a.timestamp ? new Date(a.timestamp.toDate ? a.timestamp.toDate() : a.timestamp).getTime() : 0;
+            const timeB = b.timestamp ? new Date(b.timestamp.toDate ? b.timestamp.toDate() : b.timestamp).getTime() : 0;
+            return timeB - timeA; // Descending order
+          });
+          
           return transactions.length > 0 ? transactions : null;
         
         default:

@@ -393,5 +393,3 @@ class GlobalActivityTracker {
 
 // Export singleton instance
 export default GlobalActivityTracker.getInstance();
-export default globalActivityTracker;
-export default globalActivityTracker;

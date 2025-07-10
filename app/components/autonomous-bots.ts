@@ -811,26 +811,31 @@ class AutonomousBotSystem {
     try {
       const newOpinion = this.generateRandomOpinion();
       
-      // Add to opinions list
-      const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
-      opinions.push(newOpinion);
-      localStorage.setItem('opinions', JSON.stringify(opinions));
+      // FIXED: Store bot opinions separately from user opinions
+      const botOpinions = JSON.parse(localStorage.getItem('botOpinions_global') || '[]');
+      botOpinions.push({
+        id: `bot_${Date.now()}_${bot.id}`,
+        text: newOpinion,
+        createdBy: bot.id,
+        createdByUsername: bot.username,
+        createdAt: new Date().toISOString(),
+        isBot: true,
+        botId: bot.id
+      });
+      localStorage.setItem('botOpinions_global', JSON.stringify(botOpinions));
       
       // UPDATED: Initialize market data using unified system
       this.marketDataManager.getMarketData(newOpinion); // This will create it at $10.00
       
-      // FIXED: Generating opinions should be free, not rewarded
-      // No money is given for generating opinions - this is more realistic
-      
       // Record transaction with no monetary reward
-      this.addBotTransaction(bot, 'generate', (opinions.length - 1).toString(), newOpinion, 0);
+      this.addBotTransaction(bot, 'generate', `bot_${Date.now()}_${bot.id}`, newOpinion, 0);
       
-      console.log(`🤖💡 ${bot.username} generated: "${newOpinion.slice(0, 50)}..." (no monetary reward)`);
+      console.log(`🤖💡 ${bot.username} generated: "${newOpinion.slice(0, 50)}..." (stored separately from user opinions)`);
       
       // Sometimes buy their own opinion
       if (Math.random() < 0.3) {
         setTimeout(() => {
-          const targetOpinion = { id: (opinions.length - 1).toString(), text: newOpinion };
+          const targetOpinion = { id: `bot_${Date.now()}_${bot.id}`, text: newOpinion };
           this.botBuySpecificOpinion(bot, targetOpinion);
         }, 1000);
       }
@@ -1901,15 +1906,17 @@ class AutonomousBotSystem {
     return ratings[Math.abs(username.length % 3)] as 'Low' | 'Medium' | 'High';
   }
 
-  // Get all available opinions
+  // Get all available opinions (user-generated only, not bot opinions)
   private getAvailableOpinions(): any[] {
     try {
       const stored = localStorage.getItem('opinions');
       if (!stored) return [];
       
       const opinions = JSON.parse(stored);
+      
+      // Only return user opinions, not bot opinions
       return Array.isArray(opinions) ? 
-        opinions.map((text, index) => ({ id: index.toString(), text })) : [];
+        opinions.map((text, index) => ({ id: index.toString(), text, isBot: false })) : [];
     } catch (error) {
       console.error('Error getting opinions:', error);
       return [];
@@ -2142,11 +2149,11 @@ class AutonomousBotSystem {
     return opinion;
   }
 
-  // Ensure opinions exist for bot trading
+  // Ensure opinions exist for bot trading (creates user opinions for bots to trade)
   private ensureOpinionsExist(): void {
     const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
     if (opinions.length < 10) {
-      console.log('🤖 Generating initial opinions for bot system...');
+      console.log('🤖 Generating initial user opinions for bot trading...');
       
       for (let i = opinions.length; i < 15; i++) {
         const newOpinion = this.generateRandomOpinion();
@@ -2157,7 +2164,7 @@ class AutonomousBotSystem {
       }
       
       localStorage.setItem('opinions', JSON.stringify(opinions));
-      console.log(`✅ Generated ${15 - opinions.length} initial opinions`);
+      console.log(`✅ Generated ${15 - opinions.length} initial user opinions for bot trading`);
     }
   }
 }

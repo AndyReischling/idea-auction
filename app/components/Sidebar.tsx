@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useCallback, memo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import styles from './Sidebar.module.css';
 import { Lightbulb } from "@phosphor-icons/react";
 import { realtimeDataService } from '../lib/realtime-data-service';
@@ -39,27 +39,9 @@ function SidebarComponent({
   const [opinionsWithPrices, setOpinionsWithPrices] = useState<OpinionWithPrice[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
+  const [refreshCounter, setRefreshCounter] = useState(0); // Force refresh mechanism
 
-  // Safe localStorage helpers - memoized (kept for fallback)
-  const safeGetFromStorage = useCallback((key: string, defaultValue: any = null) => {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key ${key}:`, error);
-      return defaultValue;
-    }
-  }, []);
-
-  const safeSetToStorage = useCallback((key: string, value: any) => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  }, []);
+  // Note: No localStorage helpers - Firebase only
 
   // Price calculation matching other components - memoized
   const calculatePrice = useCallback((timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
@@ -79,98 +61,49 @@ function SidebarComponent({
   // Get all opinions with proper creation timestamps and maintain array index mapping
   const getAllOpinions = async (): Promise<{ id: string; text: string; createdAt: number; originalIndex: number }[]> => {
     try {
-      // Get opinions from Firebase/localStorage via realtimeDataService
+      // FIXED: Use Firebase data service to get user's opinions
       const storedOpinions: string[] = await realtimeDataService.getOpinions();
       
-      // Get user transactions from Firebase first, then fallback to localStorage
+      console.log('📊 Sidebar: Loading opinions from Firebase/localStorage, found:', storedOpinions.length);
+      
+      // Get user transactions from Firebase only
       let userTransactions: any[] = [];
       try {
         userTransactions = await realtimeDataService.getUserTransactions();
       } catch (error) {
-        console.log('📊 Sidebar: Using localStorage fallback for user transactions');
-        userTransactions = safeGetFromStorage('transactions', []);
+        console.log('📊 Sidebar: Firebase error getting user transactions');
+        userTransactions = [];
       }
       
-      // Get bot transactions from localStorage (not yet migrated to Firebase)
-      const botTransactions = safeGetFromStorage('botTransactions', []);
+      // REMOVED: Bot transactions should not be mixed with user opinions
+      // Bot transactions are separate from user transactions now
       
-      // Combine all creation transactions
-      const allCreationTransactions = [
-        ...userTransactions.filter((t: any) => t.type === 'earn'),
-        ...botTransactions.filter((t: any) => t.type === 'earn')
-      ];
+      // Get user creation transactions only
+      const userCreationTransactions = userTransactions.filter((t: any) => t.type === 'earn' || t.type === 'generate');
       
-      console.log(`📊 Sidebar: Found ${storedOpinions.length} opinions, ${allCreationTransactions.length} creation transactions`);
+      console.log(`📊 Sidebar: Found ${storedOpinions.length} opinions, ${userCreationTransactions.length} creation transactions`);
       
+      // Process all valid opinions - simplified and reliable
       return storedOpinions
-        .filter(Boolean)
-        .map((text: string, index: number) => {
-          // Keep the original array index for URL routing
-          const originalIndex = index;
+        .filter((opinion: any) => opinion && typeof opinion === 'string' && opinion.trim().length > 0)
+        .map((text: string, arrayIndex: number) => {
+          // Try to find actual creation timestamp from transactions
+          const creationTransaction = userCreationTransactions.find((t: any) => t.opinionText === text);
+          let createdAt = Date.now() - (arrayIndex * 2 * 60 * 1000); // Default fallback
           
-          // Find creation transaction for THIS SPECIFIC OPINION
-          // Use a more flexible matching approach
-          const creationTransaction = allCreationTransactions
-            .filter((t: any) => {
-              if (!t.opinionText) return false;
-              
-              // Try exact match first
-              if (t.opinionText === text) return true;
-              
-              // Try partial match (either direction)
-              const textStart = text.slice(0, 50);
-              const transactionStart = t.opinionText.slice(0, 50);
-              
-              if (textStart === transactionStart) return true;
-              if (text.includes(transactionStart) || t.opinionText.includes(textStart)) return true;
-              
-              return false;
-            })
-            .sort((a: any, b: any) => {
-              // Sort by timestamp descending to get the MOST RECENT creation
-              const aTime = a.timestamp || new Date(a.date).getTime();
-              const bTime = b.timestamp || new Date(b.date).getTime();
-              return bTime - aTime;
-            })[0];
-          
-          // Determine creation timestamp
-          let createdAt: number;
-          
-          if (creationTransaction) {
-            // Parse timestamp more carefully to ensure proper sorting
-            let timestamp: number;
-            if (creationTransaction.timestamp) {
-              timestamp = new Date(creationTransaction.timestamp).getTime();
-            } else if (creationTransaction.date) {
-              timestamp = new Date(creationTransaction.date).getTime();
-            } else {
-              timestamp = Date.now() - (storedOpinions.length - index) * 60 * 1000; // Fallback
-            }
-            
-            // Ensure timestamp is valid
-            if (isNaN(timestamp)) {
-              timestamp = Date.now() - (storedOpinions.length - index) * 60 * 1000;
-            }
-            
-            createdAt = timestamp;
-            console.log(`📋 CREATION found for "${text.slice(0, 30)}...": ${new Date(createdAt).toLocaleString()}`);
-          } else {
-            // FIXED FALLBACK: Create proper chronological order
-            // Use current time minus decreasing amounts (newest opinions get newer timestamps)
-            const minutesAgo = (storedOpinions.length - index) * 2; // 2 minute increments
-            createdAt = Date.now() - (minutesAgo * 60 * 1000);
-            
-            console.log(`📋 FALLBACK timestamp for "${text.slice(0, 30)}..." (index ${index}): ${new Date(createdAt).toLocaleString()}`);
+          if (creationTransaction && creationTransaction.timestamp) {
+            // Use actual transaction timestamp
+            createdAt = new Date(creationTransaction.timestamp).getTime();
           }
           
           return {
-            id: originalIndex.toString(), // Use original index as ID for URL consistency
+            id: arrayIndex.toString(),
             text,
             createdAt,
-            originalIndex
+            originalIndex: arrayIndex
           };
         })
-        .sort((a, b) => b.createdAt - a.createdAt); // Sort here to ensure newest first
+        .sort((a, b) => b.createdAt - a.createdAt); // Sort newest first
     } catch (error) {
       console.error('Error getting all opinions:', error);
       return [];
@@ -204,9 +137,8 @@ function SidebarComponent({
           console.log(`🔧 Sidebar: FIXING price for "${opinionText}": ${result.currentPrice} → ${expectedPrice}`);
           result.currentPrice = expectedPrice;
           
-          // Update the stored data via realtimeDataService
-          marketData[opinionText] = result;
-          safeSetToStorage('opinionMarketData', marketData);
+          // Note: Price corrections happen in Firebase via realtimeDataService
+          // No localStorage updates needed
         }
         
         return result;
@@ -282,44 +214,15 @@ function SidebarComponent({
 
   // Determine opinion source/attribution
   const getOpinionAttribution = (opinionText: string): { type: 'ai' | 'community' | 'user', emoji: string } => {
-    const opinionAttributions = safeGetFromStorage('opinionAttributions', {});
-    
-    if (opinionAttributions[opinionText]) {
-      const attribution = opinionAttributions[opinionText];
+    try {
+      // FIXED: Since sidebar now only shows user opinions (from Firebase), all opinions are user-generated
+      // Bot opinions are stored separately and not shown in user's sidebar
+      return { type: 'user', emoji: '👤' };
       
-      if (attribution.type === 'ai') {
-        return { type: 'ai', emoji: '🤖' };
-      } else if (attribution.type === 'community') {
-        return { type: 'community', emoji: '🌐' };
-      } else if (attribution.type === 'user') {
-        return { type: 'user', emoji: '👤' };
-      }
-    }
-    
-    // Check if it's a bot opinion
-    const botOpinions = safeGetFromStorage('botOpinions', []);
-    if (botOpinions.some((botOpinion: any) => 
-      botOpinion.text === opinionText || 
-      botOpinion.opinionText === opinionText ||
-      botOpinion.opinion === opinionText
-    )) {
-      return { type: 'ai', emoji: '🤖' };
-    }
-    
-    // Check if it's from bot transactions
-    const botTransactions = safeGetFromStorage('botTransactions', []);
-    if (botTransactions.some((t: any) => t.opinionText === opinionText)) {
-      return { type: 'ai', emoji: '🤖' };
-    }
-    
-    // Check if it's from user transactions (assuming user-created)
-    const userTransactions = safeGetFromStorage('transactions', []);
-    if (userTransactions.some((t: any) => t.opinionText === opinionText && t.type === 'earn')) {
+    } catch (error) {
+      console.error('Error determining opinion attribution:', error);
       return { type: 'user', emoji: '👤' };
     }
-    
-    // Default to community
-    return { type: 'community', emoji: '🌐' };
   };
 
   // Get trend indicator classes and emoji
@@ -346,10 +249,14 @@ function SidebarComponent({
   // Enhanced update function with real-time data
   const updateOpinions = useCallback(async () => {
     try {
+      console.log('📊 Sidebar: Starting updateOpinions...');
       setIsLoading(true);
+      
+      // Note: Using Firebase data only, no localStorage debug needed
       
       // Get all opinions with creation timestamps
       const allOpinions = await getAllOpinions();
+      console.log('📊 Sidebar: getAllOpinions returned:', allOpinions.length, 'opinions');
       
       if (allOpinions.length === 0) {
         console.log('📊 Sidebar: No opinions found');
@@ -383,6 +290,13 @@ function SidebarComponent({
       const sortedOpinions = opinionsWithMarketData.sort((a, b) => b.createdAt - a.createdAt);
       
       console.log(`📊 Sidebar: Updated ${sortedOpinions.length} opinions with market data`);
+      console.log('📊 Sidebar: First 3 opinions:', sortedOpinions.slice(0, 3).map(op => ({
+        id: op.id,
+        text: op.text.slice(0, 30) + '...',
+        currentPrice: op.currentPrice,
+        createdAt: new Date(op.createdAt).toLocaleString()
+      })));
+      
       setOpinionsWithPrices(sortedOpinions);
       
     } catch (error) {
@@ -432,7 +346,24 @@ function SidebarComponent({
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'opinions' || e.key === 'opinionMarketData') {
         console.log('📊 Sidebar: Storage change detected, updating opinions');
-        updateOpinions();
+        setRefreshCounter(prev => prev + 1); // Force component refresh
+      }
+    };
+
+    // CRITICAL FIX: Add polling to check for localStorage changes in same tab
+    const checkForOpinionChanges = () => {
+      try {
+        const currentOpinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+        const currentCount = currentOpinions.length;
+        const storedCount = localStorage.getItem('sidebar_opinion_count');
+        const lastKnownCount = storedCount ? parseInt(storedCount) : 0;
+        
+        if (currentCount !== lastKnownCount) {
+          localStorage.setItem('sidebar_opinion_count', currentCount.toString());
+          setRefreshCounter(prev => prev + 1);
+        }
+      } catch (error) {
+        console.error('Error checking for opinion changes:', error);
       }
     };
 
@@ -443,18 +374,38 @@ function SidebarComponent({
 
     const handleManualRefresh = () => {
       console.log('📊 Sidebar: Manual refresh requested, updating opinions');
-      updateOpinions();
+      // CRITICAL FIX: Force fresh data read and trigger re-render
+      try {
+        const freshOpinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+        console.log('🔍 DIRECT localStorage read:', freshOpinions);
+        setRefreshCounter(prev => prev + 1); // Force component refresh
+      } catch (error) {
+        console.error('Error reading fresh opinions:', error);
+        setRefreshCounter(prev => prev + 1); // Force component refresh anyway
+      }
+    };
+
+    const handleLocalStorageChange = (e: CustomEvent) => {
+      if (e.detail.key === 'opinions') {
+        setRefreshCounter(prev => prev + 1); // Force component refresh
+      }
     };
 
     // Add event listeners for localStorage changes and bot activity
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('botActivityUpdated', handleBotActivity);
     window.addEventListener('manualRefresh', handleManualRefresh);
+    window.addEventListener('localStorageChange', handleLocalStorageChange as EventListener);
+
+    // CRITICAL FIX: Start polling for opinion changes
+    const pollInterval = setInterval(checkForOpinionChanges, 1000); // Check every second
 
     return () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('botActivityUpdated', handleBotActivity);
       window.removeEventListener('manualRefresh', handleManualRefresh);
+      window.removeEventListener('localStorageChange', handleLocalStorageChange as EventListener);
+      clearInterval(pollInterval); // Clean up polling
     };
   }, []); // Remove updateOpinions dependency to prevent loop
 
@@ -464,6 +415,18 @@ function SidebarComponent({
       window.dispatchEvent(new CustomEvent('manualRefresh'));
     };
   }, []);
+
+  // Force update when refreshCounter changes
+  useEffect(() => {
+    if (refreshCounter > 0) {
+      updateOpinions();
+    }
+  }, [refreshCounter, updateOpinions]);
+
+  // Simple logging for debugging
+  if (opinionsWithPrices.length > 0) {
+    console.log(`📊 Sidebar: Rendering ${opinionsWithPrices.length} opinions`);
+  }
 
   return (
     <aside className={styles.sidebar}>
@@ -482,22 +445,6 @@ function SidebarComponent({
             </span>
             Opinions List
           </a>
-          
-          <div style={{ marginTop: '1rem' }}>
-            <a href="/migration" className={styles.migrationLink} style={{ 
-              display: 'inline-block',
-              padding: '8px 12px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              textDecoration: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              fontWeight: '500',
-              transition: 'all 0.2s ease'
-            }}>
-              📦 → ☁️ Migrate to Firebase
-            </a>
-          </div>
         </div>
       </div>
 
@@ -527,10 +474,7 @@ function SidebarComponent({
             const trendIndicator = getTrendIndicator(opinion.trend, opinion.volatility);
             const volatilityIndicator = getVolatilityIndicator(opinion.volatility);
             
-            // Debug info for first few opinions
-            if (index < 3) {
-              console.log(`📋 Displaying opinion ${index}: Original ID=${opinion.id}, text="${opinion.text.slice(0, 30)}...", price=$${opinion.currentPrice}, createdAt=${new Date(opinion.createdAt).toLocaleString()}`);
-            }
+
             
             return (
               <li key={`${opinion.id}-${opinion.createdAt}`} className={styles.opinionItem}>
@@ -619,5 +563,5 @@ function SidebarComponent({
   );
 }
 
-  // Export memoized component to prevent unnecessary re-renders
-export default memo(SidebarComponent);
+  // Export component WITHOUT memoization to ensure it re-renders when opinions change
+export default SidebarComponent;

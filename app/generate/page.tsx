@@ -49,7 +49,19 @@ function GenerateOpinions() {
     try {
       localStorage.setItem('opinions', JSON.stringify(opinions));
     } catch (error) {
-      console.error('Error saving opinions:', error);
+      console.error('Error saving opinions to localStorage:', error);
+    }
+  }, []);
+
+  // Helper function to track opinion source
+  const trackOpinionSource = useCallback((opinionText: string, source: 'ai' | 'user') => {
+    try {
+      const existingSources = JSON.parse(localStorage.getItem('opinion-sources') || '{}');
+      existingSources[opinionText] = source;
+      localStorage.setItem('opinion-sources', JSON.stringify(existingSources));
+      console.log(`📝 Tracked source: "${opinionText.slice(0, 30)}..." = ${source.toUpperCase()}`);
+    } catch (error) {
+      console.error('Error tracking opinion source:', error);
     }
   }, []);
 
@@ -94,6 +106,52 @@ function GenerateOpinions() {
       setAllOpinions(updatedOpinions);
       saveToLocalStorage(updatedOpinions);
       
+      // DEBUG: Check if opinions are being saved correctly
+      console.log('🔍 DEBUG: Generated new opinion:', newOpinion);
+      console.log('🔍 DEBUG: Updated opinions array:', updatedOpinions);
+      console.log('🔍 DEBUG: Opinions saved to localStorage:', JSON.parse(localStorage.getItem('opinions') || '[]'));
+      
+      // CRITICAL FIX: Clear realtimeDataService cache to force refresh
+      if (typeof window !== 'undefined') {
+        try {
+          // Import and clear cache
+          const { realtimeDataService } = await import('../lib/realtime-data-service');
+          (realtimeDataService as any).cache = {}; // Clear the cache
+          console.log('✅ RealtimeDataService cache cleared');
+        } catch (error) {
+          console.error('Error clearing cache:', error);
+        }
+        
+        // Method 1: Use the global refresh function
+        if ((window as any).refreshSidebar) {
+          (window as any).refreshSidebar();
+          console.log('✅ Sidebar refresh triggered via global function');
+        } else {
+          console.log('⚠️ refreshSidebar function not available');
+        }
+        
+        // Method 2: Dispatch custom event
+        window.dispatchEvent(new CustomEvent('manualRefresh'));
+        console.log('✅ Manual refresh event dispatched');
+        
+        // Method 3: Dispatch storage-like event
+        window.dispatchEvent(new CustomEvent('localStorageChange', {
+          detail: { key: 'opinions', newValue: JSON.stringify(updatedOpinions) }
+        }));
+        console.log('✅ Local storage change event dispatched');
+      }
+      
+      // CRITICAL FIX: Track opinion generation using GlobalActivityTracker
+      try {
+        // Dynamically import to avoid breaking the main flow
+        const { default: GlobalActivityTracker } = await import('../components/GlobalActivityTracker');
+        await GlobalActivityTracker.trackOpinionGeneration(newOpinion, false);
+        console.log('✅ Opinion generation tracked via GlobalActivityTracker');
+      } catch (error) {
+        console.error('Error tracking opinion generation:', error);
+        // Don't let tracking errors break the main flow
+      }
+      
     } catch (error) {
       console.error('Error generating opinion:', error);
       
@@ -115,12 +173,53 @@ function GenerateOpinions() {
       const updatedOpinions = [...allOpinions, randomOpinion];
       setAllOpinions(updatedOpinions);
       saveToLocalStorage(updatedOpinions);
+      
+      // Track this as AI-generated
+      trackOpinionSource(randomOpinion, 'ai');
+      
+      // CRITICAL FIX: Clear realtimeDataService cache to force refresh
+      if (typeof window !== 'undefined') {
+        try {
+          // Import and clear cache
+          const { realtimeDataService } = await import('../lib/realtime-data-service');
+          (realtimeDataService as any).cache = {}; // Clear the cache
+          console.log('✅ RealtimeDataService cache cleared (fallback)');
+        } catch (error) {
+          console.error('Error clearing cache (fallback):', error);
+        }
+        
+        // Method 1: Use the global refresh function
+        if ((window as any).refreshSidebar) {
+          (window as any).refreshSidebar();
+          console.log('✅ Sidebar refresh triggered via global function (fallback)');
+        }
+        
+        // Method 2: Dispatch custom event
+        window.dispatchEvent(new CustomEvent('manualRefresh'));
+        console.log('✅ Manual refresh event dispatched (fallback)');
+        
+        // Method 3: Dispatch storage-like event
+        window.dispatchEvent(new CustomEvent('localStorageChange', {
+          detail: { key: 'opinions', newValue: JSON.stringify(updatedOpinions) }
+        }));
+        console.log('✅ Local storage change event dispatched (fallback)');
+      }
+      
+      // CRITICAL FIX: Track opinion generation using GlobalActivityTracker
+      try {
+        // Dynamically import to avoid breaking the main flow
+        const { default: GlobalActivityTracker } = await import('../components/GlobalActivityTracker');
+        await GlobalActivityTracker.trackOpinionGeneration(randomOpinion, false);
+        console.log('✅ Opinion generation tracked via GlobalActivityTracker (fallback)');
+      } catch (error) {
+        console.error('Error tracking opinion generation:', error);
+      }
     } finally {
       setLoading(false);
     }
   }, [allOpinions, saveToLocalStorage]);
 
-  const submitUserOpinion = useCallback(() => {
+  const submitUserOpinion = useCallback(async () => {
     if (userInput.trim() && userInput.length <= MAX_CHARS) {
       const trimmedInput = userInput.trim();
       
@@ -128,15 +227,56 @@ function GenerateOpinions() {
       setAllOpinions(updatedOpinions);
       saveToLocalStorage(updatedOpinions);
       
-      // CRITICAL FIX: Create a transaction to mark this as user-submitted
-      // This allows the Sidebar to properly identify user-submitted opinions
+      // Track this as user-submitted
+      trackOpinionSource(trimmedInput, 'user');
+      
+      // CRITICAL FIX: Clear realtimeDataService cache to force refresh
+      if (typeof window !== 'undefined') {
+        try {
+          // Import and clear cache
+          const { realtimeDataService } = await import('../lib/realtime-data-service');
+          (realtimeDataService as any).cache = {}; // Clear the cache
+          console.log('✅ RealtimeDataService cache cleared (user opinion)');
+        } catch (error) {
+          console.error('Error clearing cache (user opinion):', error);
+        }
+        
+        // Method 1: Use the global refresh function
+        if ((window as any).refreshSidebar) {
+          (window as any).refreshSidebar();
+          console.log('✅ Sidebar refresh triggered via global function (user opinion)');
+        }
+        
+        // Method 2: Dispatch custom event
+        window.dispatchEvent(new CustomEvent('manualRefresh'));
+        console.log('✅ Manual refresh event dispatched (user opinion)');
+        
+        // Method 3: Dispatch storage-like event
+        window.dispatchEvent(new CustomEvent('localStorageChange', {
+          detail: { key: 'opinions', newValue: JSON.stringify(updatedOpinions) }
+        }));
+        console.log('✅ Local storage change event dispatched (user opinion)');
+      }
+      
+      // CRITICAL FIX: Track user-submitted opinion properly
       try {
         const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
         const currentUser = userProfile.username || 'User';
         
+        // Use GlobalActivityTracker to properly track user opinion generation
+        try {
+          // Dynamically import to avoid breaking the main flow
+          const { default: GlobalActivityTracker } = await import('../components/GlobalActivityTracker');
+          await GlobalActivityTracker.trackOpinionGeneration(trimmedInput, false);
+          console.log('✅ User opinion generation tracked via GlobalActivityTracker');
+        } catch (error) {
+          console.error('Error tracking user opinion generation:', error);
+        }
+        
+        // Also create transaction for backward compatibility
         const transaction = {
           id: Date.now().toString(),
-          type: 'earn',
+          type: 'generate', // Changed from 'earn' to 'generate' for consistency
           opinionText: trimmedInput,
           amount: 0, // No monetary reward for submitting opinions
           date: new Date().toISOString(),
@@ -148,18 +288,13 @@ function GenerateOpinions() {
         localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
         
         console.log(`✅ User submitted opinion: "${trimmedInput.slice(0, 30)}..."`);
-        
-        // Also track with global activity tracker if available
-        if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
-          (window as any).addToGlobalFeed({
-            type: 'earn',
-            username: currentUser,
-            opinionText: trimmedInput,
-            amount: 0,
-            timestamp: new Date().toISOString(),
-            isBot: false
-          });
-        }
+        console.log(`🔍 DEBUG: Created transaction:`, {
+          id: transaction.id,
+          type: transaction.type,
+          opinionText: transaction.opinionText,
+          description: transaction.description,
+          date: transaction.date
+        });
         
       } catch (error) {
         console.error('Error creating transaction for user-submitted opinion:', error);

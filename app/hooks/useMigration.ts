@@ -177,11 +177,12 @@ export function useMigration(): MigrationState & MigrationActions {
   useEffect(() => {
     if (state.isNeeded && !state.isCompleted) {
       // Auto-show after a short delay to avoid interrupting initial load
-      const timer = setTimeout(() => {
-        showMigrationUI();
-      }, 2000);
+      // DISABLED: User can manually trigger migration instead
+      // const timer = setTimeout(() => {
+      //   showMigrationUI();
+      // }, 2000);
       
-      return () => clearTimeout(timer);
+      // return () => clearTimeout(timer);
     }
   }, [state.isNeeded, state.isCompleted, showMigrationUI]);
 
