@@ -390,28 +390,28 @@ function SidebarComponent({
     } finally {
       setIsLoading(false);
     }
-  }, [getAllOpinions, getOpinionMarketData, calculatePriceTrend, getVolatilityLevel]);
+  }, []); // Remove function dependencies to prevent circular dependency
 
   // Setup real-time subscriptions on mount
   useEffect(() => {
     const setupSubscriptions = () => {
-      const subscriptionIds: string[] = [];
+      const newSubscriptionIds: string[] = [];
       
       // Subscribe to opinions changes
       const opinionsSub = realtimeDataService.subscribeToOpinions((opinions) => {
         console.log('📊 Sidebar: Opinions updated from Firebase/localStorage');
         updateOpinions();
       });
-      subscriptionIds.push(opinionsSub);
+      newSubscriptionIds.push(opinionsSub);
       
       // Subscribe to market data changes
       const marketSub = realtimeDataService.subscribeToMarketData((marketData) => {
         console.log('📊 Sidebar: Market data updated from Firebase/localStorage');
         updateOpinions();
       });
-      subscriptionIds.push(marketSub);
+      newSubscriptionIds.push(marketSub);
       
-      setSubscriptionIds(subscriptionIds);
+      setSubscriptionIds(newSubscriptionIds);
       
       // Initial load
       updateOpinions();
@@ -425,7 +425,7 @@ function SidebarComponent({
         realtimeDataService.unsubscribe(id);
       });
     };
-  }, [updateOpinions]);
+  }, []); // Remove updateOpinions dependency to prevent loop
 
   // Handle storage changes (for localStorage fallback)
   useEffect(() => {
@@ -456,7 +456,7 @@ function SidebarComponent({
       window.removeEventListener('botActivityUpdated', handleBotActivity);
       window.removeEventListener('manualRefresh', handleManualRefresh);
     };
-  }, [updateOpinions]);
+  }, []); // Remove updateOpinions dependency to prevent loop
 
   // Add a manual refresh function that can be called from other components
   useEffect(() => {
@@ -482,6 +482,22 @@ function SidebarComponent({
             </span>
             Opinions List
           </a>
+          
+          <div style={{ marginTop: '1rem' }}>
+            <a href="/migration" className={styles.migrationLink} style={{ 
+              display: 'inline-block',
+              padding: '8px 12px',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              textDecoration: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '500',
+              transition: 'all 0.2s ease'
+            }}>
+              📦 → ☁️ Migrate to Firebase
+            </a>
+          </div>
         </div>
       </div>
 
