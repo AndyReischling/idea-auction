@@ -194,13 +194,16 @@ export default function HomePage() {
     try {
       const opinionTexts = await realtimeDataService.getAllOpinions(); // returns string[]
       const processed: OpinionWithPrice[] = [];
-      for (const [idx, text] of opinionTexts.entries()) {
+      // Remove duplicates first to prevent duplicate IDs
+      const uniqueTexts = [...new Set(opinionTexts)];
+      
+      for (const [idx, text] of uniqueTexts.entries()) {
         const md = await getOpinionMarketData(text);
         const { trend, priceChange, priceChangePercent } = calculatePriceTrend(md);
         const attr = await getOpinionAttribution(text);
 
         processed.push({
-          id: btoa(text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20), // generate ID from text
+          id: `${btoa(text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)}_${idx}`, // generate unique ID from text + index
           text: text,
           currentPrice: md.currentPrice,
           priceChange,
@@ -249,16 +252,9 @@ export default function HomePage() {
     };
   }, []);
 
-  // Leaderboard data subscriptions
+  // Leaderboard data subscriptions - only when authenticated
   useEffect(() => {
-    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
-      setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as UserDoc)));
-    });
-
-    const unsubPortfolios = onSnapshot(collection(db, "user-portfolios"), (snap) => {
-      setPortfolios(snap.docs.map((d) => d.data() as PortfolioDoc));
-    });
-
+    // Market data is publicly readable, so we can always subscribe to it
     const unsubMarketData = onSnapshot(collection(db, "market-data"), (snap) => {
       const map = new Map();
       snap.docs.forEach((d) => {
@@ -270,9 +266,11 @@ export default function HomePage() {
       setMarketDataMap(map);
     });
 
+    // For now, disable leaderboard subscriptions since they require special permissions
+    // TODO: Create a public leaderboard collection or adjust firestore rules
+    console.log("⚠️ Leaderboard subscriptions disabled due to auth requirements");
+    
     return () => {
-      unsubUsers();
-      unsubPortfolios();
       unsubMarketData();
     };
   }, []);
@@ -358,7 +356,7 @@ export default function HomePage() {
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice}</p>
+                        <p>${opinion.currentPrice.toFixed(2)}</p>
                         <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>
@@ -389,7 +387,7 @@ export default function HomePage() {
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice}</p>
+                        <p>${opinion.currentPrice.toFixed(2)}</p>
                         <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>
@@ -419,7 +417,11 @@ export default function HomePage() {
           </h2>
           {topUsers.length === 0 ? (
             <div className="empty-state">
-              <p>Loading leaderboard...</p>
+              <p>Leaderboard temporarily unavailable</p>
+              <p style={{ fontSize: '14px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                Sign in to view trader rankings
+              </p>
+              <AuthButton />
             </div>
           ) : (
             <div className="grid grid-3" style={{ marginLeft: 20 }}>
@@ -495,7 +497,7 @@ export default function HomePage() {
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice}</p>
+                        <p>${opinion.currentPrice.toFixed(2)}</p>
                         <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>

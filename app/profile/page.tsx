@@ -12,6 +12,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth-context';
 import { realtimeDataService } from '../lib/realtime-data-service';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import Sidebar from '../components/Sidebar';
 import AuthGuard from '../components/AuthGuard';
 import AuthButton from '../components/AuthButton';
@@ -75,18 +77,74 @@ export default function ProfilePage() {
     // 1️⃣  Profile snapshot listener
     const unsubProfile = realtimeDataService.subscribeToUserProfile(
       user.uid,
-      (p) => setProfile({
-        username: p.username,
-        balance: p.balance,
-        joinDate: p.joinDate?.toDate?.()?.toISOString?.() ?? p.joinDate,
-        totalEarnings: p.totalEarnings,
-        totalLosses: p.totalLosses,
-      })
+      (p) => {
+        const userProfile = {
+          username: p.username,
+          balance: p.balance,
+          joinDate: p.joinDate?.toDate?.()?.toISOString?.() ?? p.joinDate,
+          totalEarnings: p.totalEarnings,
+          totalLosses: p.totalLosses,
+        };
+        setProfile(userProfile);
+        // Fetch portfolio data when profile updates
+        fetchPortfolioData(p);
+      }
     );
 
-    // 2️⃣  Portfolio data (one-time fetch for now)
-    // TODO: Implement portfolio subscription when available
-    setOwnedOpinions([]);
+    // 2️⃣  Portfolio data (fetch from user profile's portfolio field)
+    const fetchPortfolioData = async (userProfile: any) => {
+      if (!userProfile?.portfolio) {
+        setOwnedOpinions([]);
+        return;
+      }
+
+
+
+      // Get market data to get current prices
+      const marketData = await realtimeDataService.getMarketData();
+      
+      // Fetch actual opinion document IDs from Firestore
+      const transformedPortfolio = await Promise.all(
+        Object.entries(userProfile.portfolio).map(async ([opinionText, quantity]) => {
+          try {
+            // Query Firestore to find the opinion document by text
+            const q = query(
+              collection(db, 'opinions'),
+              where('text', '==', opinionText),
+              limit(1)
+            );
+            const querySnapshot = await getDocs(q);
+            
+            let opinionId = btoa(opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100); // fallback
+            if (!querySnapshot.empty) {
+              opinionId = querySnapshot.docs[0].id; // Use actual Firestore document ID
+            }
+
+            return {
+              id: opinionId,
+              text: opinionText,
+              purchasePrice: marketData[opinionText]?.basePrice || 10.00,
+              currentPrice: marketData[opinionText]?.currentPrice || 10.00,
+              purchaseDate: new Date().toLocaleDateString(),
+              quantity: quantity as number,
+            };
+          } catch (error) {
+            console.error('Error fetching opinion ID for:', opinionText, error);
+            // Fallback to base64 ID if query fails
+            return {
+              id: btoa(opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100),
+              text: opinionText,
+              purchasePrice: marketData[opinionText]?.basePrice || 10.00,
+              currentPrice: marketData[opinionText]?.currentPrice || 10.00,
+              purchaseDate: new Date().toLocaleDateString(),
+              quantity: quantity as number,
+            };
+          }
+        })
+      );
+      
+      setOwnedOpinions(transformedPortfolio);
+    };
 
     // 3️⃣  Transactions (latest 100)
     const unsubTx = realtimeDataService.subscribeToUserTransactions(
@@ -194,9 +252,9 @@ export default function ProfilePage() {
                         </p>
                       </div>
                       <div className={styles.opinionPricing}>
-                        <p>${o.purchasePrice}</p>
+                        <p>${o.purchasePrice.toFixed(2)}</p>
                         <div className={styles.currentPricing}>
-                          <p>${o.currentPrice}</p>
+                          <p>${o.currentPrice.toFixed(2)}</p>
                           <p className={gain >= 0 ? 'status-positive' : 'status-negative'}>
                             {gain >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(1)}%)
                           </p>

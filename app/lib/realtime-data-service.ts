@@ -318,6 +318,43 @@ export class RealtimeDataService {
   }
 
   // ---------------------------------------------------------------------------
+  // 💼  Portfolio data
+  // ---------------------------------------------------------------------------
+  async getUserPortfolio(uid: string = this.currentUser?.uid!): Promise<any[]> {
+    if (!uid) return [];
+    const cacheKey = `portfolio_${uid}`;
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
+
+    try {
+      const snap = await getDoc(doc(this.collections.userPortfolios, uid));
+      if (!snap.exists()) return [];
+      const data = snap.data();
+      const ownedOpinions = data?.ownedOpinions || [];
+      this.updateCache(cacheKey, ownedOpinions);
+      return ownedOpinions;
+    } catch (err) {
+      console.error("Failed to fetch user portfolio", err);
+      return [];
+    }
+  }
+
+  subscribeToUserPortfolio(uid: string, cb: (portfolio: any[]) => void) {
+    const id = `portfolio_${uid}`;
+    const unsub = onSnapshot(doc(this.collections.userPortfolios, uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const ownedOpinions = data?.ownedOpinions || [];
+        this.updateCache(id, ownedOpinions);
+        cb(ownedOpinions);
+      } else {
+        cb([]);
+      }
+    });
+    this.subscriptions.set(id, { id, collection: "user-portfolios", userId: uid, callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
+  }
+
+  // ---------------------------------------------------------------------------
   // ✍️  Write helpers
   // ---------------------------------------------------------------------------
   async updateUserProfile(uid: string, updates: any) {
@@ -377,6 +414,9 @@ export class RealtimeDataService {
           break;
         case "transactions":
           if (s.userId) this.subscribeToUserTransactions(s.userId, s.callback);
+          break;
+        case "user-portfolios":
+          if (s.userId) this.subscribeToUserPortfolio(s.userId, s.callback);
           break;
       }
     });

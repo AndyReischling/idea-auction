@@ -1,7 +1,9 @@
 // components/GlobalActivityTracker.ts
 // Unified system that works with your existing feed architecture
 
-import { firebaseDataService, ActivityFeedItem, UserProfile } from '../lib/firebase-data-service';
+import { firebaseDataService, UserProfile } from '../lib/firebase-data-service';
+import { FirebaseActivityService } from '../lib/firebase-activity';
+import { realtimeDataService } from '../lib/realtime-data-service';
 
 interface ActivityTracker {
   id: string;
@@ -21,9 +23,10 @@ class GlobalActivityTracker {
   private static instance: GlobalActivityTracker;
   private currentUser: UserProfile | null = null;
   private subscribers: Map<string, (activity: ActivityTracker) => void> = new Map();
+  private isInitialized: boolean = false;
 
   private constructor() {
-    this.initializeGlobalUser();
+    // Don't initialize immediately - wait for auth context to be ready
   }
 
   public static getInstance(): GlobalActivityTracker {
@@ -33,27 +36,31 @@ class GlobalActivityTracker {
     return GlobalActivityTracker.instance;
   }
 
-  // Initialize user from Firebase via auth context
-  private async initializeGlobalUser() {
-    if (typeof window === 'undefined') return;
+  // Initialize user from Firebase via auth context (called when auth context is ready)
+  public async initializeWithAuthContext() {
+    if (typeof window === 'undefined' || this.isInitialized) return;
 
     try {
-      // Get auth user if available
+      // Wait for auth context to be available
       const authContext = (window as any).authContext;
       if (authContext?.user?.uid) {
         this.currentUser = authContext.userProfile;
         console.log('🔄 GlobalActivityTracker: Initialized with Firebase user:', this.currentUser?.username);
+        this.isInitialized = true;
       } else {
         console.log('⚠️ GlobalActivityTracker: No authenticated user found');
+        this.isInitialized = false;
       }
     } catch (error) {
       console.error('❌ Error initializing global user:', error);
+      this.isInitialized = false;
     }
   }
 
   // Update current user (called by auth context when user changes)
   public updateCurrentUser(user: UserProfile | null) {
     this.currentUser = user;
+    this.isInitialized = !!user;
     console.log('👤 GlobalActivityTracker: User updated:', user?.username || 'None');
   }
 
@@ -122,17 +129,17 @@ class GlobalActivityTracker {
       console.log('📊 Tracking activity:', activity);
 
       // Add to Firebase activity feed
-      await firebaseDataService.addActivityFeedItem({
+      const activityService = FirebaseActivityService.getInstance();
+      await activityService.addActivity({
         userId: this.currentUser.uid,
-        type: activity.type,
+        type: activity.type as any,
         username: activity.username,
         opinionText: activity.opinionText,
         targetUser: activity.targetUser,
-        betType: activity.betType,
+        betType: activity.betType as any,
         targetPercentage: activity.targetPercentage,
-        amount: activity.amount,
+        amount: activity.amount || 0,
         quantity: activity.quantity,
-        timestamp: activity.timestamp,
         isBot: activity.isBot || false
       });
 
@@ -164,32 +171,18 @@ class GlobalActivityTracker {
     // Also create the transaction record in Firebase
     if (this.currentUser) {
       try {
-        if (isBot) {
-          // Create bot transaction
-          await firebaseDataService.createBotTransaction({
-            userId: this.currentUser.uid,
-            botId: 'auto-bot', // Default bot ID for now
-            type,
-            opinionText,
-            amount,
-            price,
-            quantity,
-            timestamp: new Date(),
-            date: new Date()
-          });
-        } else {
-          // Create user transaction
-          await firebaseDataService.createTransaction({
-            userId: this.currentUser.uid,
-            type,
-            opinionText,
-            amount,
-            price,
-            quantity,
-            timestamp: new Date(),
-            date: new Date()
-          });
-        }
+        // Create transaction record
+        await realtimeDataService.addTransaction({
+          id: `${type}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          userId: this.currentUser.uid,
+          type,
+          opinionText,
+          amount,
+          price,
+          quantity,
+          timestamp: new Date(),
+          isBot: isBot || false
+        });
 
         console.log('✅ Transaction record created in Firebase');
       } catch (error) {
@@ -288,8 +281,8 @@ class GlobalActivityTracker {
     if (!this.currentUser) return [];
 
     try {
-      const activities = await firebaseDataService.getUserActivityFeed(this.currentUser.uid, limit);
-      return activities.map(activity => ({
+      const activities = await realtimeDataService.getActivityFeed(limit);
+      return activities.map((activity: any) => ({
         id: activity.id,
         type: activity.type,
         username: activity.username,
@@ -311,8 +304,9 @@ class GlobalActivityTracker {
   // Get global activity feed from Firebase
   async getGlobalActivityFeed(limit: number = 100): Promise<ActivityTracker[]> {
     try {
-      const activities = await firebaseDataService.getGlobalActivityFeed(limit);
-      return activities.map(activity => ({
+      const activityService = FirebaseActivityService.getInstance();
+      const activities = await activityService.getRecentActivities(limit);
+      return activities.map((activity: any) => ({
         id: activity.id,
         type: activity.type,
         username: activity.username,
@@ -361,8 +355,10 @@ class GlobalActivityTracker {
 
   // Real-time activity feed subscription
   subscribeToGlobalActivityFeed(callback: (activities: ActivityTracker[]) => void, limit: number = 100): string {
-    return firebaseDataService.subscribeToGlobalActivityFeed((activities) => {
-      const trackerActivities = activities.map(activity => ({
+    const subscriptionId = `global_activity_${Date.now()}`;
+    const activityService = FirebaseActivityService.getInstance();
+    const unsub = activityService.subscribeToActivities((activities: any[]) => {
+      const trackerActivities = activities.map((activity: any) => ({
         id: activity.id,
         type: activity.type,
         username: activity.username,
@@ -377,17 +373,28 @@ class GlobalActivityTracker {
       }));
       callback(trackerActivities);
     }, limit);
+    
+    this.subscribers.set(subscriptionId, unsub);
+    return subscriptionId;
   }
 
   // Unsubscribe from Firebase subscriptions
   unsubscribeFromFirebase(subscriptionId: string) {
-    firebaseDataService.unsubscribe(subscriptionId);
+    const unsub = this.subscribers.get(subscriptionId);
+    if (unsub && typeof unsub === 'function') {
+      unsub();
+      this.subscribers.delete(subscriptionId);
+    }
   }
 
   // Clean up all subscriptions
   cleanup() {
+    this.subscribers.forEach((unsub) => {
+      if (typeof unsub === 'function') {
+        unsub();
+      }
+    });
     this.subscribers.clear();
-    firebaseDataService.unsubscribeAll();
   }
 }
 

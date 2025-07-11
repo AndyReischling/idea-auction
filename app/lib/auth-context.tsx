@@ -174,7 +174,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   // ---------------------------------------------------------------------------
-  // 🌍 Expose helpers to the window (dev builds only)
+  // 🌍 Expose helpers to the window (dev builds only) and initialize GlobalActivityTracker
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -193,6 +193,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       resetPassword,
       refreshProfile,
     };
+
+    // Initialize GlobalActivityTracker when auth context is ready
+    if (user && userProfile) {
+      import('../components/GlobalActivityTracker').then((module) => {
+        const tracker = module.default; // This is already the singleton instance
+        tracker.initializeWithAuthContext();
+        tracker.updateCurrentUser(userProfile);
+      });
+    }
   }, [user, userProfile, loading]);
 
   const value: AuthContextType = {

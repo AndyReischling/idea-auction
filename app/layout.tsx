@@ -1,8 +1,7 @@
 'use client';
 
-import './components/GlobalActivityTracker'; // This loads the global functions
-import { useEffect } from 'react';
 import './global.css';
+import { useEffect } from 'react';
 import setupUnifiedSystem from './lib/unified-system';
 import { AuthProvider } from './lib/auth-context';
 import MigrationUI from './components/MigrationUI';
@@ -15,23 +14,15 @@ function MigrationWrapper({ children }: { children: React.ReactNode }) {
     <>
       {children}
       {migration.showUI && (
-        <MigrationUI 
-          onClose={migration.hideMigrationUI}
-          autoStart={false}
-        />
+        <MigrationUI onClose={migration.hideMigrationUI} autoStart={false} />
       )}
     </>
   );
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  // Initialize the unified system on app load
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Initialise once on the client
   useEffect(() => {
-    // console.log('🔧 Initializing unified system from layout...');
     setupUnifiedSystem();
   }, []);
 
@@ -39,9 +30,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          <MigrationWrapper>
-            {children}
-          </MigrationWrapper>
+          <MigrationWrapper>{children}</MigrationWrapper>
         </AuthProvider>
       </body>
     </html>

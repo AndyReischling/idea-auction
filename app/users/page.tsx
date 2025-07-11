@@ -40,6 +40,8 @@ import { useAuth } from "../lib/auth-context";
 import Sidebar from "../components/Sidebar";
 import LeaderboardCard from "./components/LeaderboardCard"; // (extract‑ed)
 import UserDetailModal from "../components/UserDetailModal"; // (extract‑ed)
+import AuthGuard from "../components/AuthGuard";
+import ActivityIntegration from "../components/ActivityIntegration";
 import styles from "./page.module.css";
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
@@ -82,7 +84,7 @@ function useCollection<T = any>(ref: CollectionReference, deps: any[] = []) {
 
 /* ── Main Page component ────────────────────────────────────────────────── */
 export default function UsersPage() {
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
 
   /* 1️⃣  Fetch core collections */
   const users = useCollection<UserDoc>(collection(db, "users"));
@@ -132,34 +134,43 @@ export default function UsersPage() {
 
   /* ── Render ──────────────────────────────────────────────────────────── */
   return (
-    <div className="page-container">
-      <Sidebar />
+    <AuthGuard>
+      <ActivityIntegration userProfile={userProfile ? {
+        username: userProfile.username,
+        balance: userProfile.balance,
+        joinDate: userProfile.joinDate instanceof Date ? userProfile.joinDate.toISOString() : String(userProfile.joinDate || new Date().toISOString()),
+        totalEarnings: userProfile.totalEarnings,
+        totalLosses: userProfile.totalLosses
+      } : undefined} />
+      <div className="page-container">
+        <Sidebar />
 
-      <main className="main-content">
-        <h1 className={styles.pageTitle}>Portfolio Leaderboard</h1>
+        <main className="main-content">
+          <h1 className={styles.pageTitle}>Portfolio Leaderboard</h1>
 
-        {leaderboard.length === 0 ? (
-          <p style={{ padding: 40 }}>Loading traders…</p>
-        ) : (
-          <div className={styles.grid}>
-            {leaderboard
-              .sort((a, b) => b.portfolioValue - a.portfolioValue)
-              .map((row, idx) => (
-                <LeaderboardCard
-                  key={row.uid}
-                  rank={idx + 1}
-                  data={row}
-                  isMe={row.uid === user?.uid}
-                  onClick={() => setSelectedUid(row.uid)}
-                />
-              ))}
-          </div>
+          {leaderboard.length === 0 ? (
+            <p style={{ padding: 40 }}>Loading traders…</p>
+          ) : (
+            <div className={styles.grid}>
+              {leaderboard
+                .sort((a, b) => b.portfolioValue - a.portfolioValue)
+                .map((row, idx) => (
+                  <LeaderboardCard
+                    key={row.uid}
+                    rank={idx + 1}
+                    data={row}
+                    isMe={row.uid === user?.uid}
+                    onClick={() => setSelectedUid(row.uid)}
+                  />
+                ))}
+            </div>
+          )}
+        </main>
+
+        {selectedUser && (
+          <UserDetailModal uid={selectedUser.uid} onClose={() => setSelectedUid(null)} />
         )}
-      </main>
-
-      {selectedUser && (
-        <UserDetailModal uid={selectedUser.uid} onClose={() => setSelectedUid(null)} />
-      )}
-    </div>
+      </div>
+    </AuthGuard>
   );
 }
