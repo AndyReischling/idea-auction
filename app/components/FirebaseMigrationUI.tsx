@@ -1,245 +1,181 @@
-'use client';
+// app/lib/autonomous-bots.ts (Firestore‑native rewrite)
+// -----------------------------------------------------------------------------
+// ✅ All browser‑only localStorage calls removed
+// ✅ State persisted in Cloud Firestore (and kept in memory for perf)
+// -----------------------------------------------------------------------------
 
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../lib/auth-context';
-import { runMigration, MigrationResult } from '../lib/firebase-migration';
+import {
+  collection,
+  doc,
+  getFirestore,
+  getDocs,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  Timestamp,
+} from 'firebase/firestore';
+import { initializeApp, getApps } from 'firebase/app';
 
-interface MigrationUIProps {
-  onComplete?: () => void;
+import {
+  calculateUnifiedPrice,
+  UnifiedMarketDataManager,
+  UnifiedTransactionManager,
+  type UnifiedOpinionMarketData,
+  type UnifiedTransaction,
+} from '@/lib/unified-system';
+
+import { firebaseConfig } from '@/lib/firebase-config';
+
+// -----------------------------------------------------------------------------
+// 🔥 Firestore helpers
+// -----------------------------------------------------------------------------
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+
+const colBots = collection(db, 'bots');              // ⇢ /bots/{botId}
+const colBotPortfolios = collection(db, 'bot-portfolios'); // ⇢ /bot-portfolios/{botId}/{holdingId}
+const colBotTransactions = collection(db, 'bot-transactions');
+
+// -----------------------------------------------------------------------------
+// 🔖 Types (trimmed – keep the ones we actually use below)
+// -----------------------------------------------------------------------------
+export interface BotProfile {
+  id: string;
+  username: string;
+  balance: number;
+  joinDate: string;
+  totalEarnings: number;
+  totalLosses: number;
+  lastActive: string;
+  isActive: boolean;
 }
 
-export default function FirebaseMigrationUI({ onComplete }: MigrationUIProps) {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
-  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
-  const [localStorageData, setLocalStorageData] = useState<{ [key: string]: any }>({});
-  const [hasLocalData, setHasLocalData] = useState(false);
-  const { user } = useAuth();
+interface OpinionRef {
+  id: string;
+  text: string;
+}
 
-  // Check for localStorage data on component mount
-  useEffect(() => {
-    analyzeLocalStorage();
-  }, []);
+// -----------------------------------------------------------------------------
+// 🤖  AutonomousBotSystem (Firestore edition)
+// -----------------------------------------------------------------------------
+class AutonomousBotSystem {
+  private bots: Map<string, BotProfile> = new Map();
+  private isRunning = false;
+  private market = UnifiedMarketDataManager.getInstance();
+  private txMgr = UnifiedTransactionManager.getInstance();
+  private intervals: Record<string, NodeJS.Timeout> = {};
 
-  const analyzeLocalStorage = () => {
-    if (typeof window === 'undefined') return;
-    
-    setIsAnalyzing(true);
-    
-    const keys = [
-      'userProfile', 'opinions', 'opinionMarketData', 'transactions', 'globalActivityFeed',
-      'botTransactions', 'ownedOpinions', 'advancedBets', 'shortPositions', 'autonomousBots',
-      'botOpinions', 'portfolioSnapshots', 'semanticEmbeddings', 'otherUsers', 'activityFeed',
-      'opinionAttributions', 'botsAutoStart', 'botsInitialized'
-    ];
-
-    const data: { [key: string]: any } = {};
-    let hasData = false;
-
-    keys.forEach(key => {
-      try {
-        const item = localStorage.getItem(key);
-        if (item) {
-          const parsed = JSON.parse(item);
-          const count = Array.isArray(parsed) ? parsed.length : 
-                       typeof parsed === 'object' ? Object.keys(parsed).length : 
-                       parsed ? 1 : 0;
-          
-          if (count > 0) {
-            data[key] = { count, preview: parsed };
-            hasData = true;
-          }
-        }
-      } catch (error) {
-        console.error(`Error analyzing localStorage key ${key}:`, error);
-      }
-    });
-
-    setLocalStorageData(data);
-    setHasLocalData(hasData);
-    setIsAnalyzing(false);
-  };
-
-  const handleMigration = async () => {
-    if (!user?.uid) {
-      alert('Please sign in to migrate your data');
-      return;
-    }
-
-    setIsMigrating(true);
-    setMigrationResult(null);
-
-    try {
-      const result = await runMigration(user.uid);
-      setMigrationResult(result);
-      
-      if (result.success && onComplete) {
-        onComplete();
-      }
-    } catch (error) {
-      console.error('Migration failed:', error);
-      setMigrationResult({
-        success: false,
-        message: `Migration failed: ${error instanceof Error ? error.message : String(error)}`,
-        migratedKeys: [],
-        errors: [error instanceof Error ? error.message : String(error)],
-        totalItemsMigrated: 0
-      });
-    } finally {
-      setIsMigrating(false);
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="migration-ui" style={{ padding: '20px', textAlign: 'center' }}>
-        <h2>🔐 Sign In Required</h2>
-        <p>Please sign in to migrate your localStorage data to Firebase.</p>
-      </div>
-    );
+  // ----------------------------------------------------------------------------
+  // 🚀 Boot
+  // ----------------------------------------------------------------------------
+  constructor() {
+    this.bootstrap();
   }
 
-  return (
-    <div className="migration-ui" style={{ 
-      padding: '20px', 
-      maxWidth: '800px', 
-      margin: '0 auto',
-      backgroundColor: '#f9fafb',
-      borderRadius: '8px',
-      border: '1px solid #e5e7eb'
-    }}>
-      <h2 style={{ marginBottom: '20px', color: '#1f2937' }}>
-        🚀 Migrate to Firebase
-      </h2>
-      
-      <div style={{ marginBottom: '20px' }}>
-        <p style={{ fontSize: '16px', color: '#4b5563', marginBottom: '15px' }}>
-          This will migrate all your localStorage data to Firebase for persistent storage across devices and sessions.
-        </p>
-      </div>
+  /** bootstrap – initial fetch + live listeners */
+  private async bootstrap() {
+    // 1️⃣ prime from Firestore once
+    const snap = await getDocs(colBots);
+    snap.forEach(d => this.bots.set(d.id, d.data() as BotProfile));
 
-      {isAnalyzing ? (
-        <div style={{ textAlign: 'center', padding: '20px' }}>
-          <div style={{ fontSize: '18px', marginBottom: '10px' }}>🔍 Analyzing localStorage...</div>
-          <div>Checking for data to migrate...</div>
-        </div>
-      ) : !hasLocalData ? (
-        <div style={{ textAlign: 'center', padding: '20px' }}>
-          <div style={{ fontSize: '18px', marginBottom: '10px' }}>✅ No Migration Needed</div>
-          <div>No localStorage data found to migrate.</div>
-        </div>
-      ) : (
-        <>
-          {/* Data Summary */}
-          <div style={{ marginBottom: '20px' }}>
-            <h3 style={{ marginBottom: '15px', color: '#1f2937' }}>📊 Data Summary</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-              {Object.entries(localStorageData).map(([key, data]) => (
-                <div key={key} style={{ 
-                  backgroundColor: 'white', 
-                  padding: '12px', 
-                  borderRadius: '6px',
-                  border: '1px solid #d1d5db'
-                }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{key}</div>
-                  <div style={{ color: '#6b7280' }}>{data.count} items</div>
-                </div>
-              ))}
-            </div>
-          </div>
+    // 2️⃣ live updates – keep local cache fresh
+    onSnapshot(colBots, qs => {
+      qs.docChanges().forEach(c => {
+        if (c.type === 'removed') this.bots.delete(c.doc.id);
+        else this.bots.set(c.doc.id, c.doc.data() as BotProfile);
+      });
+    });
 
-          {/* Migration Button */}
-          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <button
-              onClick={handleMigration}
-              disabled={isMigrating}
-              style={{
-                backgroundColor: isMigrating ? '#9ca3af' : '#3b82f6',
-                color: 'white',
-                padding: '12px 24px',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '16px',
-                cursor: isMigrating ? 'not-allowed' : 'pointer',
-                minWidth: '200px'
-              }}
-            >
-              {isMigrating ? '🔄 Migrating...' : '🚀 Start Migration'}
-            </button>
-          </div>
+    // 🏃‍♂️ start after cache is warm
+    this.start();
+  }
 
-          {/* Migration Result */}
-          {migrationResult && (
-            <div style={{ 
-              padding: '15px', 
-              borderRadius: '6px',
-              backgroundColor: migrationResult.success ? '#dcfce7' : '#fef2f2',
-              border: migrationResult.success ? '1px solid #16a34a' : '1px solid #dc2626'
-            }}>
-              <div style={{ 
-                fontWeight: 'bold', 
-                marginBottom: '10px',
-                color: migrationResult.success ? '#16a34a' : '#dc2626'
-              }}>
-                {migrationResult.success ? '✅ Migration Successful!' : '❌ Migration Failed'}
-              </div>
-              
-              <div style={{ marginBottom: '10px' }}>
-                {migrationResult.message}
-              </div>
+  // ----------------------------------------------------------------------------
+  // ▶️  start / ⏹  stop
+  // ----------------------------------------------------------------------------
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log('🤖  Bot system started');
 
-              {migrationResult.success && (
-                <div style={{ fontSize: '14px', color: '#16a34a' }}>
-                  <div>✅ Migrated {migrationResult.totalItemsMigrated} items</div>
-                  <div>✅ Migrated data types: {migrationResult.migratedKeys.join(', ')}</div>
-                  <div>✅ localStorage has been cleared</div>
-                </div>
-              )}
+    // spin each active bot on its own timer
+    [...this.bots.values()].forEach(bot => {
+      if (!bot.isActive) return;
+      const ms = 60_000 + Math.random() * 60_000; // 1‑2 min
+      this.intervals[bot.id] = setInterval(() => this.tick(bot), ms);
+    });
+  }
 
-              {migrationResult.errors.length > 0 && (
-                <div style={{ fontSize: '14px', color: '#dc2626', marginTop: '10px' }}>
-                  <div>Errors encountered:</div>
-                  {migrationResult.errors.map((error, index) => (
-                    <div key={index}>• {error}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+  public stop() {
+    Object.values(this.intervals).forEach(clearInterval);
+    this.intervals = {};
+    this.isRunning = false;
+  }
 
-          {/* Warning */}
-          <div style={{ 
-            fontSize: '14px', 
-            color: '#f59e0b',
-            backgroundColor: '#fef3c7',
-            padding: '12px',
-            borderRadius: '6px',
-            border: '1px solid #f59e0b',
-            marginTop: '15px'
-          }}>
-            ⚠️ <strong>Important:</strong> After migration, all localStorage data will be cleared and the app will use Firebase exclusively. Make sure you're signed in and have a stable internet connection.
-          </div>
-        </>
-      )}
+  // ----------------------------------------------------------------------------
+  // 🕐  tick – one decision loop
+  // ----------------------------------------------------------------------------
+  private async tick(bot: BotProfile) {
+    // pick a random opinion (mock – replace with your selector)
+    const opinions: OpinionRef[] = this.market.getAllOpinionRefs();
+    if (!opinions.length) return;
+    const op = opinions[Math.floor(Math.random() * opinions.length)];
 
-      {/* Refresh Button */}
-      <div style={{ textAlign: 'center', marginTop: '20px' }}>
-        <button
-          onClick={analyzeLocalStorage}
-          disabled={isAnalyzing}
-          style={{
-            backgroundColor: '#6b7280',
-            color: 'white',
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '14px',
-            cursor: isAnalyzing ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {isAnalyzing ? '🔄 Analyzing...' : '🔄 Refresh Analysis'}
-        </button>
-      </div>
-    </div>
-  );
-} 
+    // decide action (simple buy‑only demo)
+    await this.buyOpinion(bot, op, 1);
+  }
+
+  // ----------------------------------------------------------------------------
+  // 💸  buyOpinion (Firestore write)
+  // ----------------------------------------------------------------------------
+  private async buyOpinion(bot: BotProfile, op: OpinionRef, qty: number) {
+    const price = this.market.getMarketData(op.text).currentPrice;
+    const total = price * qty;
+    if (bot.balance < total) return;
+
+    // update bot balance in RAM & Firestore
+    bot.balance -= total;
+    bot.lastActive = new Date().toISOString();
+    await updateDoc(doc(colBots, bot.id), {
+      balance: bot.balance,
+      lastActive: bot.lastActive,
+    });
+
+    // portfolio ➜ /bot-portfolios/{botId}/{opId}
+    await setDoc(
+      doc(colBotPortfolios, `${bot.id}_${op.id}`),
+      {
+        botId: bot.id,
+        opinionId: op.id,
+        opinionText: op.text,
+        qty: qty,
+        avgPrice: price,
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true }
+    );
+
+    // market move (unified system)
+    this.market.updateMarketData(op.text, 'buy', qty, price, bot.id);
+
+    // tx log ➜ /bot-transactions
+    this.txMgr.saveTransaction({
+      type: 'buy',
+      amount: -total,
+      opinionText: op.text,
+      opinionId: op.id,
+      botId: bot.id,
+      price,
+      quantity: qty,
+    } as unknown as UnifiedTransaction);
+
+    console.log(`🤖 ${bot.username} bought ${qty}x "${op.text.slice(0, 30)}…" ($${total.toFixed(2)})`);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 🌍 Export singleton (for debug via browser console)
+// -----------------------------------------------------------------------------
+export const botSystem = new AutonomousBotSystem();
+if (typeof window !== 'undefined') (window as any).botSystem = botSystem;

@@ -1,175 +1,80 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===== USER AUTHENTICATION RULES =====
-    // Users can only access their own profile data
+
+    /* ───────────── USER AUTHENTICATION ───────────── */
     match /users/{userId} {
+      // users may read & write only their own profile
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Username collection for uniqueness validation
+
+    /* username registry for uniqueness checks */
     match /usernames/{username} {
-      allow read: if true; // Anyone can check if username exists
-      allow write: if request.auth != null;
-    }
-    
-    // ===== ACTIVITY FEED RULES =====
-    // Allow read access to activity feed for all users (needed for public feed)
-    // Allow write access for authenticated users AND bot system operations
-    match /activity-feed/{activityId} {
-      allow read: if true; // Public read access for feed display
-      
-      // Allow writes for authenticated users
-      allow write: if request.auth != null;
-      
-      // Allow writes for bot system operations (identified by isBot field)
-      allow write: if request.resource.data.keys().hasAll(['isBot']) && 
-                      request.resource.data.isBot == true;
-      
-      // Allow writes for system operations with specific metadata
-      allow write: if request.resource.data.keys().hasAll(['metadata']) && 
-                      request.resource.data.metadata.keys().hasAll(['source']) &&
-                      request.resource.data.metadata.source in ['bot_system', 'reconciliation', 'migration'];
-    }
-
-    // Global activity feed - read by all, write by authenticated users
-    match /global-activity-feed/{feedId} {
-      allow read: if true;
+      allow read: if true;                 // public "isNameTaken" check
       allow write: if request.auth != null;
     }
 
-    // User activity feeds - users can only access their own
-    match /user-activity-feeds/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // ===== OPINION AND MARKET DATA RULES =====
-    // Opinions can be read by anyone, written by authenticated users
+    /* ───────────── OPINIONS ───────────── */
     match /opinions/{opinionId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read: if true;                 // opinions are publicly readable
+      allow write: if request.auth != null; // authenticated users can create/update opinions
     }
-    
-    // Market data can be read by anyone, written by authenticated users
-    match /market-data/{opinionId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+
+    /* ───────────── MARKET DATA ───────────── */
+    match /market-data/{marketId} {
+      allow read: if true;                 // market data is publicly readable
+      allow write: if request.auth != null // authenticated users can update market data
+        || (request.resource.data.source in ['bot_system', 'unified-system', 'reconciliation']);
     }
-    
-    // ===== PORTFOLIO AND TRANSACTION RULES =====
-    // Users can only access their own portfolio data
+
+    /* ───────────── TRANSACTIONS ───────────── */
+    match /transactions/{transactionId} {
+      allow read: if request.auth != null; // authenticated users can read transactions
+      allow write: if request.auth != null // authenticated users can create transactions
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system', 'reconciliation']);
+    }
+
+    /* ───────────── SHORT POSITIONS ───────────── */
+    match /short-positions/{positionId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    /* ───────────── USER PORTFOLIOS ───────────── */
     match /user-portfolios/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Users can only access their own transactions
-    match /transactions/{transactionId} {
-      allow read, write: if request.auth != null && (
-        (resource != null && request.auth.uid == resource.data.userId) ||
-        (resource == null && request.auth.uid == request.resource.data.userId)
-      );
+    /* ───────────── ACTIVITY FEED ───────────── */
+    match /activity-feed/{activityId} {
+      allow read:  if true;                // live ticker is publicly visible
+
+      // authenticated users can write
+      allow write: if request.auth != null
+        || (request.resource.data.isBot == true)                     // bot payload
+        || (request.resource.data.metadata.source in ['bot_system', 'reconciliation', 'migration']);
     }
 
-    // Bot transactions - users can only access their own
-    match /bot-transactions/{transactionId} {
-      allow read, write: if request.auth != null && (
-        (resource != null && request.auth.uid == resource.data.userId) ||
-        (resource == null && request.auth.uid == request.resource.data.userId)
-      );
-    }
-
-    // User settings - users can only access their own
-    match /user-settings/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // ===== BOT AND AUTOMATED SYSTEM RULES =====
-    // Bot data can be read by anyone, written by authenticated users
-    match /bots/{botId} {
-      allow read: if true;
+    /* optional aggregated feeds */
+    match /global-activity-feed/{id} {
+      allow read:  if true;
       allow write: if request.auth != null;
     }
 
-    // Autonomous bots - users can only access their own
-    match /autonomous-bots/{botId} {
-      allow read, write: if request.auth != null && (
-        (resource != null && request.auth.uid == resource.data.userId) ||
-        (resource == null && request.auth.uid == request.resource.data.userId)
-      );
-    }
-
-    // Bot opinions - users can only access their own
-    match /bot-opinions/{userId} {
+    match /user-activity-feeds/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Other users data - users can only access their own
-    match /other-users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    /* ───────────── ADMIN COLLECTIONS ───────────── */
+    match /admin/{document=**} {
+      allow read, write: if request.auth != null && request.auth.token.admin == true;
     }
 
-    // ===== BETTING AND TRADING RULES =====
-    // Advanced bets can be read by participants, written by bet creator
-    match /advanced-bets/{betId} {
-      allow read, write: if request.auth != null && (
-        (resource != null && (
-          request.auth.uid == resource.data.userId ||
-          request.auth.uid == resource.data.bettorId ||
-          request.auth.uid == resource.data.targetUserId
-        )) ||
-        (resource == null && request.auth.uid == request.resource.data.userId)
-      );
-    }
-
-    // Short positions can be read/written by position owner
-    match /short-positions/{shortId} {
-      allow read, write: if request.auth != null && (
-        (resource != null && request.auth.uid == resource.data.userId) ||
-        (resource == null && request.auth.uid == request.resource.data.userId)
-      );
-    }
-
-    // Portfolio snapshots - users can only access their own
-    match /portfolio-snapshots/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // ===== SEARCH AND ANALYTICS RULES =====
-    // Embeddings for semantic search - read by anyone, written by authenticated users
-    match /embeddings/{embeddingId} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
-
-    // Semantic embeddings - users can only access their own
-    match /semantic-embeddings/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // Opinion attributions - users can only access their own
-    match /opinion-attributions/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // ===== MIGRATION AND BACKUP RULES =====
-    // LocalStorage backup data - users can only access their own backups
-    match /localStorage_backup/{backupId} {
-      allow read, write: if request.auth != null && 
-        request.auth.uid == resource.data.userId;
-    }
-    
-    // ===== ADMIN RULES =====
-    // Admin collection - only for specific admin users
-    match /admin/{document} {
-      allow read, write: if request.auth != null && 
-        request.auth.token.email in ['admin@idea-auction.com', 'your-email@gmail.com'];
-    }
-    
-    // ===== DEFAULT DENY =====
-    // Deny access to any other collections not explicitly allowed
-    match /{document=**} {
-      allow read, write: if false;
+    /* ───────────── SYSTEM COLLECTIONS ───────────── */
+    match /system/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.token.admin == true;
     }
   }
-} 
+}

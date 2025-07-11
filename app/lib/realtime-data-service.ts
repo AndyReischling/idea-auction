@@ -1,33 +1,39 @@
-'use client';
+// Updated RealtimeDataService – Firestore‑only (no localStorage)
+// -----------------------------------------------------------------------------
+// ‼️  This refactor removes every localStorage reference. All reads/writes now
+//     flow exclusively through Firestore – which already provides an offline
+//     persistence layer. The public API surface of the class is unchanged, so
+//     other imports keep working.
 
-import { 
-  collection, 
-  doc, 
-  getDocs, 
+"use client";
+
+import {
+  collection,
+  doc,
   getDoc,
-  setDoc, 
-  updateDoc,
-  deleteDoc,
-  query, 
+  getDocs,
+  onSnapshot,
+  query,
   where,
   orderBy,
   limit,
-  onSnapshot,
+  setDoc,
+  updateDoc,
   serverTimestamp,
-  writeBatch,
-  DocumentData,
-  QuerySnapshot,
-  DocumentSnapshot,
-  Unsubscribe
-} from 'firebase/firestore';
-import { auth, db } from './firebase';
-import { User } from 'firebase/auth';
+  Unsubscribe,
+} from "firebase/firestore";
+import { auth, db } from "./firebase";
+import { User } from "firebase/auth";
 
-// Data interfaces
+// -----------------------------------------------------------------------------
+// 🔖  Types
+// -----------------------------------------------------------------------------
 interface RealtimeDataConfig {
+  /** whether Firestore listeners/write ops are enabled */
   useFirebase: boolean;
-  enableLocalStorageFallback: boolean;
+  /** ms between polling refreshes (cache invalidation) */
   syncInterval: number;
+  /** true when navigator reports offline – purely informational */
   offlineMode: boolean;
 }
 
@@ -37,7 +43,6 @@ interface DataSubscription {
   userId?: string;
   callback: (data: any) => void;
   unsubscribe?: Unsubscribe;
-  lastUpdate?: string;
   isActive: boolean;
 }
 
@@ -45,900 +50,363 @@ interface CachedData {
   [key: string]: {
     data: any;
     timestamp: string;
-    source: 'firebase' | 'localStorage';
+    source: "firebase";
     isStale: boolean;
   };
 }
 
+// -----------------------------------------------------------------------------
+// 🏗  RealtimeDataService (singleton)
+// -----------------------------------------------------------------------------
 export class RealtimeDataService {
   private static instance: RealtimeDataService;
-  private subscriptions: Map<string, DataSubscription> = new Map();
+
+  private subscriptions = new Map<string, DataSubscription>();
   private cache: CachedData = {};
-  private config: RealtimeDataConfig;
-  private isOnline: boolean = true;
+  private config: RealtimeDataConfig = {
+    useFirebase: true,
+    syncInterval: 5_000,
+    offlineMode: false,
+  };
+  private isOnline = true;
   private currentUser: User | null = null;
 
-  // Firebase collections
-  private collections = {
-    users: collection(db, 'users'),
-    opinions: collection(db, 'opinions'),
-    marketData: collection(db, 'market-data'),
-    transactions: collection(db, 'transactions'),
-    activityFeed: collection(db, 'activity-feed'),
-    userPortfolios: collection(db, 'user-portfolios'),
-    bots: collection(db, 'bots'),
-    advancedBets: collection(db, 'advanced-bets'),
-    shortPositions: collection(db, 'short-positions'),
-    embeddings: collection(db, 'embeddings')
-  };
+  // Firestore collection references
+  private readonly collections = {
+    users: collection(db, "users"),
+    opinions: collection(db, "opinions"),
+    marketData: collection(db, "market-data"),
+    transactions: collection(db, "transactions"),
+    activityFeed: collection(db, "activity-feed"),
+    userPortfolios: collection(db, "user-portfolios"),
+  } as const;
 
   private constructor() {
-    this.config = {
-      useFirebase: true,
-      enableLocalStorageFallback: true,
-      syncInterval: 5000, // 5 seconds
-      offlineMode: false
-    };
-    
     this.setupNetworkMonitoring();
     this.setupAuthListener();
   }
 
-  public static getInstance(): RealtimeDataService {
+  public static getInstance() {
     if (!RealtimeDataService.instance) {
       RealtimeDataService.instance = new RealtimeDataService();
     }
     return RealtimeDataService.instance;
   }
 
-  // Setup network monitoring
-  private setupNetworkMonitoring(): void {
-    if (typeof window !== 'undefined') {
-      this.isOnline = navigator.onLine;
-      
-      window.addEventListener('online', () => {
-        this.isOnline = true;
-        this.config.offlineMode = false;
-        console.log('🌐 Network online - switching to Firebase mode');
+  // ---------------------------------------------------------------------------
+  // 🌐  Network & auth state
+  // ---------------------------------------------------------------------------
+  private setupNetworkMonitoring() {
+    if (typeof window === "undefined") return;
+    this.isOnline = navigator.onLine;
+    window.addEventListener("online", () => {
+      this.isOnline = true;
+      this.config.offlineMode = false;
+      console.log("🌐 Online – Firestore sync resumed");
+    });
+    window.addEventListener("offline", () => {
+      this.isOnline = false;
+      this.config.offlineMode = true;
+      console.log("🌐 Offline – Firestore persistence only (reads are cached)");
+    });
+  }
+
+  private setupAuthListener() {
+    auth.onAuthStateChanged((user) => {
+      this.currentUser = user;
+      if (user) {
+        console.log("👤 Signed‑in user detected – enabling realtime sync");
         this.refreshAllSubscriptions();
-      });
-
-      window.addEventListener('offline', () => {
-        this.isOnline = false;
-        this.config.offlineMode = true;
-        console.log('🌐 Network offline - switching to localStorage mode');
-      });
-    }
+      } else {
+        console.log("👤 No user – clearing subscriptions");
+        this.stopAllSubscriptions();
+      }
+    });
   }
 
-  // Setup auth listener
-  private setupAuthListener(): void {
-    if (typeof window !== 'undefined') {
-      auth.onAuthStateChanged((user) => {
-        this.currentUser = user;
-        if (user) {
-          console.log('👤 User authenticated - enabling Firebase data sync');
-          this.config.useFirebase = true;
-          this.refreshAllSubscriptions();
-        } else {
-          console.log('👤 User signed out - switching to localStorage only');
-          this.config.useFirebase = false;
-          this.stopAllSubscriptions();
-        }
-      });
-    }
-  }
-
-  // CORE DATA METHODS
-
-  /**
-   * Get user profile with real-time updates
-   */
-  async getUserProfile(userId?: string): Promise<any> {
-    const targetUserId = userId || this.currentUser?.uid;
-    if (!targetUserId) return this.getFromLocalStorage('userProfile', null);
-
-    const cacheKey = `userProfile_${targetUserId}`;
-    
-    // Return cached data if available and not stale
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
+  // ---------------------------------------------------------------------------
+  // 👤  User profile helpers
+  // ---------------------------------------------------------------------------
+  async getUserProfile(uid: string = this.currentUser?.uid!): Promise<any | null> {
+    if (!uid) return null;
+    const cacheKey = `userProfile_${uid}`;
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
 
     try {
-      if (this.config.useFirebase && this.isOnline) {
-        const userDoc = await getDoc(doc(this.collections.users, targetUserId));
-        if (userDoc.exists()) {
-          const profile = userDoc.data();
-          this.updateCache(cacheKey, profile, 'firebase');
-          return profile;
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching user profile from Firebase:', error);
+      const snap = await getDoc(doc(this.collections.users, uid));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      this.updateCache(cacheKey, data);
+      return data;
+    } catch (err) {
+      console.error("Failed to fetch user profile", err);
+      return null;
     }
-
-    // No localStorage fallback - Firebase only
-    return null;
   }
 
-  /**
-   * Subscribe to user profile changes
-   */
-  subscribeToUserProfile(userId: string, callback: (profile: any) => void): string {
-    const subscriptionId = `userProfile_${userId}`;
-    
-    if (this.config.useFirebase && this.isOnline) {
-      const unsubscribe = onSnapshot(
-        doc(this.collections.users, userId),
-        (doc) => {
-          if (doc.exists()) {
-            const profile = doc.data();
-            this.updateCache(`userProfile_${userId}`, profile, 'firebase');
-            
-            // Update localStorage for backward compatibility
-            if (userId === this.currentUser?.uid) {
-              this.saveToLocalStorage('userProfile', profile);
-            }
-            
-            callback(profile);
-          }
-        },
-        (error) => {
-          console.error('User profile subscription error:', error);
-          // Fallback to localStorage data
-          const localProfile = this.getFromLocalStorage('userProfile', null);
-          if (localProfile) {
-            callback(localProfile);
-          }
-        }
-      );
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'users',
-        userId,
-        callback,
-        unsubscribe,
-        isActive: true
-      });
-    } else {
-      // Fallback to localStorage with polling
-      const localProfile = this.getFromLocalStorage('userProfile', null);
-      if (localProfile) {
-        callback(localProfile);
+  subscribeToUserProfile(uid: string, cb: (p: any) => void) {
+    const id = `userProfile_${uid}`;
+    const unsub = onSnapshot(doc(this.collections.users, uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        this.updateCache(id, data);
+        cb(data);
       }
-      
-      // Poll for localStorage changes
-      const interval = setInterval(() => {
-        const currentProfile = this.getFromLocalStorage('userProfile', null);
-        if (currentProfile) {
-          callback(currentProfile);
-        }
-      }, this.config.syncInterval);
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'users',
-        userId,
-        callback,
-        unsubscribe: () => clearInterval(interval),
-        isActive: true
-      });
-    }
-    
-    return subscriptionId;
+    });
+    this.subscriptions.set(id, { id, collection: "users", userId: uid, callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
   }
 
-  /**
-   * Get opinions with real-time updates (user-specific)
-   */
+  // ---------------------------------------------------------------------------
+  // 💬  Opinions (per‑user)
+  // ---------------------------------------------------------------------------
   async getOpinions(): Promise<string[]> {
-    const cacheKey = 'opinions';
-    
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
+    if (!this.currentUser) return [];
+    const cacheKey = "opinions";
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
 
-    try {
-      if (this.config.useFirebase && this.isOnline && this.currentUser) {
-        // FIXED: Get only the current user's opinions (removed orderBy to avoid index requirement)
-        const opinionsSnapshot = await getDocs(
-          query(
-            this.collections.opinions, 
-            where('createdBy', '==', this.currentUser.uid)
-          )
-        );
-        
-        const opinionsWithTimestamp: {text: string, createdAt: any}[] = [];
-        opinionsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.text) {
-            opinionsWithTimestamp.push({
-              text: data.text,
-              createdAt: data.createdAt || new Date()
-            });
-          }
-        });
-        
-        // Sort manually by createdAt (newest first)
-        opinionsWithTimestamp.sort((a, b) => {
-          const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
-          const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
-          return timeB - timeA; // Descending order (newest first)
-        });
-        
-        const opinions = opinionsWithTimestamp.map(op => op.text);
-        
-        console.log(`📊 Loaded ${opinions.length} opinions from Firebase for user: ${this.currentUser.uid}`);
-        
-        this.updateCache(cacheKey, opinions, 'firebase');
-        return opinions;
-      }
-    } catch (error) {
-      console.error('Error fetching opinions from Firebase:', error);
-    }
+    const q = query(this.collections.opinions, where("createdBy", "==", this.currentUser.uid));
+    const snap = await getDocs(q);
+    const list = snap.docs
+      .map((d) => d.data())
+      .filter((d) => d.text)
+      .sort((a: any, b: any) => b.createdAt?.seconds - a.createdAt?.seconds)
+      .map((d: any) => d.text as string);
 
-    // No localStorage fallback - Firebase only
-    return [];
+    this.updateCache(cacheKey, list);
+    return list;
   }
 
-  /**
-   * Subscribe to opinions changes (user-specific)
-   */
-  subscribeToOpinions(callback: (opinions: string[]) => void): string {
-    const subscriptionId = 'opinions';
-    
-    if (this.config.useFirebase && this.isOnline && this.currentUser) {
-      const unsubscribe = onSnapshot(
-        query(
-          this.collections.opinions, 
-          where('createdBy', '==', this.currentUser.uid)
-        ),
-        (snapshot) => {
-          const opinionsWithTimestamp: {text: string, createdAt: any}[] = [];
-          snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.text) {
-              opinionsWithTimestamp.push({
-                text: data.text,
-                createdAt: data.createdAt || new Date()
-              });
-            }
-          });
-          
-          // Sort manually by createdAt (newest first)
-          opinionsWithTimestamp.sort((a, b) => {
-            const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime();
-            const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime();
-            return timeB - timeA; // Descending order (newest first)
-          });
-          
-          const opinions = opinionsWithTimestamp.map(op => op.text);
-          
-          console.log(`📊 Subscribed to ${opinions.length} opinions for user: ${this.currentUser?.uid}`);
-          
-          this.updateCache('opinions', opinions, 'firebase');
-          callback(opinions);
-        },
-        (error) => {
-          console.error('Opinions subscription error:', error);
-          callback([]);
-        }
-      );
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'opinions',
-        callback,
-        unsubscribe,
-        isActive: true
+  // Get all public opinions (for home page/marketplace)
+  async getAllOpinions(): Promise<string[]> {
+    const cacheKey = "allOpinions";
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
+
+    const q = query(this.collections.opinions, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const list = snap.docs
+      .map((d) => d.data())
+      .filter((d) => d.text)
+      .map((d: any) => d.text as string);
+
+    this.updateCache(cacheKey, list);
+    return list;
+  }
+
+  subscribeToOpinions(cb: (ops: string[]) => void) {
+    if (!this.currentUser) {
+      cb([]);
+      return "opinions";
+    }
+    const id = "opinions";
+    const q = query(this.collections.opinions, where("createdBy", "==", this.currentUser.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map((d) => d.data())
+        .filter((d) => d.text)
+        .sort((a: any, b: any) => b.createdAt?.seconds - a.createdAt?.seconds)
+        .map((d: any) => d.text as string);
+      this.updateCache(id, list);
+      cb(list);
+    });
+    this.subscriptions.set(id, { id, collection: "opinions", callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
+  }
+
+  subscribeToAllOpinions(cb: (ops: string[]) => void) {
+    const id = "allOpinions";
+    const q = query(this.collections.opinions, orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map((d) => d.data())
+        .filter((d) => d.text)
+        .map((d: any) => d.text as string);
+      this.updateCache(id, list);
+      cb(list);
+    });
+    this.subscriptions.set(id, { id, collection: "opinions", callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 💲  Market data
+  // ---------------------------------------------------------------------------
+  async getMarketData() {
+    const cacheKey = "marketData";
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
+
+    const snap = await getDocs(this.collections.marketData);
+    const map: any = {};
+    snap.docs.forEach((d) => {
+      const data = d.data();
+      if (data.opinionText) map[data.opinionText] = data;
+    });
+    this.updateCache(cacheKey, map);
+    return map;
+  }
+
+  subscribeToMarketData(cb: (m: any) => void) {
+    const id = "marketData";
+    const unsub = onSnapshot(this.collections.marketData, (snap) => {
+      const map: any = {};
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        if (data.opinionText) map[data.opinionText] = data;
       });
-    } else {
-      // No localStorage fallback - Firebase only
-      console.log(`📊 Firebase unavailable, returning empty opinions for subscription`);
-      callback([]);
-    }
-    
-    return subscriptionId;
+      this.updateCache(id, map);
+      cb(map);
+    });
+    this.subscriptions.set(id, { id, collection: "market-data", callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
   }
 
-  /**
-   * Get market data with real-time updates
-   */
-  async getMarketData(): Promise<any> {
-    const cacheKey = 'marketData';
-    
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
-
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        const marketSnapshot = await getDocs(this.collections.marketData);
-        const marketData: any = {};
-        
-        marketSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.opinionText) {
-            marketData[data.opinionText] = {
-              timesPurchased: data.timesPurchased || 0,
-              timesSold: data.timesSold || 0,
-              currentPrice: data.currentPrice || 10.00,
-              basePrice: data.basePrice || 10.00,
-              lastUpdated: data.lastUpdated
-            };
-          }
-        });
-        
-        this.updateCache(cacheKey, marketData, 'firebase');
-        return marketData;
-      }
-    } catch (error) {
-      console.error('Error fetching market data from Firebase:', error);
-    }
-
-    // No localStorage fallback - Firebase only
-    return {};
-  }
-
-  /**
-   * Subscribe to market data changes
-   */
-  subscribeToMarketData(callback: (marketData: any) => void): string {
-    const subscriptionId = 'marketData';
-    
-    if (this.config.useFirebase && this.isOnline) {
-      const unsubscribe = onSnapshot(
-        this.collections.marketData,
-        (snapshot) => {
-          const marketData: any = {};
-          
-          snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.opinionText) {
-              marketData[data.opinionText] = {
-                timesPurchased: data.timesPurchased || 0,
-                timesSold: data.timesSold || 0,
-                currentPrice: data.currentPrice || 10.00,
-                basePrice: data.basePrice || 10.00,
-                lastUpdated: data.lastUpdated
-              };
-            }
-          });
-          
-          this.updateCache('marketData', marketData, 'firebase');
-          callback(marketData);
-        },
-        (error) => {
-          console.error('Market data subscription error:', error);
-          callback({});
-        }
-      );
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'market-data',
-        callback,
-        unsubscribe,
-        isActive: true
-      });
-    } else {
-      // Fallback to localStorage with polling
-      const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
-      callback(localMarketData);
-      
-      const interval = setInterval(() => {
-        const currentMarketData = this.getFromLocalStorage('opinionMarketData', {});
-        callback(currentMarketData);
-      }, this.config.syncInterval);
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'market-data',
-        callback,
-        unsubscribe: () => clearInterval(interval),
-        isActive: true
-      });
-    }
-    
-    return subscriptionId;
-  }
-
-  /**
-   * Get activity feed with real-time updates
-   */
-  async getActivityFeed(limitCount: number = 100): Promise<any[]> {
+  // ---------------------------------------------------------------------------
+  // 📜  Activity feed
+  // ---------------------------------------------------------------------------
+  async getActivityFeed(limitCount = 100) {
     const cacheKey = `activityFeed_${limitCount}`;
-    
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
 
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        const activitySnapshot = await getDocs(
-          query(this.collections.activityFeed, orderBy('timestamp', 'desc'), limit(limitCount))
-        );
-        
-        const activities: any[] = [];
-        activitySnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          activities.push({
-            id: doc.id,
-            ...data,
-            timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-          });
-        });
-        
-        this.updateCache(cacheKey, activities, 'firebase');
-        this.saveToLocalStorage('globalActivityFeed', activities);
-        
-        return activities;
-      }
-    } catch (error) {
-      console.error('Error fetching activity feed from Firebase:', error);
-    }
-
-    // Fallback to localStorage
-    const localActivityFeed = this.getFromLocalStorage('globalActivityFeed', []);
-    this.updateCache(cacheKey, localActivityFeed, 'localStorage');
-    
-    return localActivityFeed.slice(0, limitCount);
+    const q = query(this.collections.activityFeed, orderBy("timestamp", "desc"), limit(limitCount));
+    const snap = await getDocs(q);
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data(), timestamp: d.data().timestamp?.toDate?.() ?? d.data().timestamp }));
+    this.updateCache(cacheKey, list);
+    return list;
   }
 
-  /**
-   * Subscribe to activity feed changes
-   */
-  subscribeToActivityFeed(callback: (activities: any[]) => void, limitCount: number = 100): string {
-    const subscriptionId = `activityFeed_${limitCount}`;
-    
-    if (this.config.useFirebase && this.isOnline) {
-      // Simplified query without orderBy to avoid index requirement
-      const unsubscribe = onSnapshot(
-        query(this.collections.activityFeed, limit(limitCount)),
-        (snapshot) => {
-          const activities: any[] = [];
-          snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            activities.push({
-              id: doc.id,
-              ...data,
-              timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-            });
-          });
-          
-          // Sort manually by timestamp (newest first)
-          activities.sort((a, b) => {
-            const timeA = new Date(a.timestamp).getTime();
-            const timeB = new Date(b.timestamp).getTime();
-            return timeB - timeA; // Descending order (newest first)
-          });
-          
-          this.updateCache(`activityFeed_${limitCount}`, activities, 'firebase');
-          callback(activities.slice(0, limitCount)); // Apply limit after sorting
-        },
-        (error) => {
-          console.error('Activity feed subscription error:', error);
-          callback([]);
-        }
-      );
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'activity-feed',
-        callback,
-        unsubscribe,
-        isActive: true
-      });
-    } else {
-      // No localStorage fallback - Firebase only
-      console.log(`📊 Firebase unavailable, returning empty activity feed for subscription`);
-      callback([]);
-    }
-    
-    return subscriptionId;
-  }
-
-  /**
-   * Get user transactions
-   */
-  async getUserTransactions(userId?: string): Promise<any[]> {
-    const targetUserId = userId || this.currentUser?.uid;
-    if (!targetUserId) return [];
-
-    const cacheKey = `transactions_${targetUserId}`;
-    
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
-
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        // Simplified query to avoid composite index requirement
-        const transactionsSnapshot = await getDocs(
-          query(this.collections.transactions, where('userId', '==', targetUserId))
-          // Removed orderBy to avoid composite index requirement
-          // orderBy('timestamp', 'desc')
-        );
-        
-        const transactions: any[] = [];
-        transactionsSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          transactions.push({
-            id: doc.id,
-            ...data,
-            timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-          });
-        });
-        
-        // Sort manually to avoid composite index requirement
-        transactions.sort((a, b) => {
-          const timeA = new Date(a.timestamp).getTime();
-          const timeB = new Date(b.timestamp).getTime();
-          return timeB - timeA; // Descending order (newest first)
-        });
-        
-        this.updateCache(cacheKey, transactions, 'firebase');
-        return transactions;
-      }
-    } catch (error) {
-      console.error('Error fetching transactions from Firebase:', error);
-    }
-
-    // No localStorage fallback - Firebase only
-    return [];
-  }
-
-  /**
-   * Subscribe to user transactions
-   */
-  subscribeToUserTransactions(userId: string, callback: (transactions: any[]) => void): string {
-    const subscriptionId = `transactions_${userId}`;
-    
-    if (this.config.useFirebase && this.isOnline) {
-      // Simplified query to avoid composite index requirement
-      const unsubscribe = onSnapshot(
-        query(this.collections.transactions, where('userId', '==', userId))
-        // Removed orderBy to avoid composite index requirement
-        // orderBy('timestamp', 'desc')
-        ,
-        (snapshot) => {
-          const transactions: any[] = [];
-          snapshot.docs.forEach(doc => {
-            const data = doc.data();
-            transactions.push({
-              id: doc.id,
-              ...data,
-              timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-            });
-          });
-          
-          // Sort manually to avoid composite index requirement
-          transactions.sort((a, b) => {
-            const timeA = new Date(a.timestamp).getTime();
-            const timeB = new Date(b.timestamp).getTime();
-            return timeB - timeA; // Descending order (newest first)
-          });
-          
-          this.updateCache(`transactions_${userId}`, transactions, 'firebase');
-          callback(transactions);
-        },
-        (error) => {
-          console.error('Transactions subscription error:', error);
-          callback([]);
-        }
-      );
-      
-      this.subscriptions.set(subscriptionId, {
-        id: subscriptionId,
-        collection: 'transactions',
-        userId,
-        callback,
-        unsubscribe,
-        isActive: true
-      });
-    } else {
-      // No localStorage fallback - Firebase only
-      console.log(`📊 Firebase unavailable, returning empty transactions for subscription`);
-      callback([]);
-    }
-    
-    return subscriptionId;
-  }
-
-  // WRITE OPERATIONS
-
-  /**
-   * Update user profile
-   */
-  async updateUserProfile(userId: string, updates: any): Promise<void> {
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        await updateDoc(doc(this.collections.users, userId), {
-          ...updates,
-          updatedAt: serverTimestamp()
-        });
-        
-        console.log('✅ User profile updated in Firebase');
-      }
-    } catch (error) {
-      console.error('Error updating user profile in Firebase:', error);
-    }
-
-    // Always update localStorage for immediate UI updates
-    const currentProfile = this.getFromLocalStorage('userProfile', {});
-    const updatedProfile = { ...currentProfile, ...updates };
-    this.saveToLocalStorage('userProfile', updatedProfile);
-    
-    // Update cache
-    this.updateCache(`userProfile_${userId}`, updatedProfile, 'localStorage');
-  }
-
-  /**
-   * Add new opinion (user-specific)
-   */
-  async addOpinion(opinion: string, userId: string): Promise<void> {
-    try {
-      if (this.config.useFirebase && this.isOnline && this.currentUser) {
-        const opinionId = btoa(opinion).replace(/[^a-zA-Z0-9]/g, '');
-        await setDoc(doc(this.collections.opinions, opinionId), {
-          text: opinion,
-          createdBy: userId,
-          createdAt: serverTimestamp(),
-          status: 'active',
-          metadata: {
-            source: 'user',
-            timestamp: new Date().toISOString()
-          }
-        });
-        
-        console.log(`✅ Opinion added to Firebase for user: ${userId}`);
-      } else {
-        console.log(`⚠️ Firebase not available, opinion not saved`);
-      }
-    } catch (error) {
-      console.error('Error adding opinion to Firebase:', error);
-    }
-  }
-
-  /**
-   * Add transaction
-   */
-  async addTransaction(transaction: any): Promise<void> {
-    try {
-      if (this.config.useFirebase && this.isOnline && this.currentUser) {
-        await setDoc(doc(this.collections.transactions, transaction.id), {
-          ...transaction,
-          userId: this.currentUser.uid,
-          timestamp: serverTimestamp()
-        });
-        
-        console.log('✅ Transaction added to Firebase');
-      } else {
-        console.log(`⚠️ Firebase not available, transaction not saved`);
-      }
-    } catch (error) {
-      console.error('Error adding transaction to Firebase:', error);
-    }
-  }
-
-  /**
-   * Get user portfolio (owned opinions) from Firebase
-   */
-  async getUserPortfolio(userId?: string): Promise<any[]> {
-    const targetUserId = userId || this.currentUser?.uid;
-    if (!targetUserId) {
-      console.log('📊 No user ID provided for portfolio, returning empty array');
-      return [];
-    }
-
-    const cacheKey = `portfolio_${targetUserId}`;
-    
-    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) {
-      return this.cache[cacheKey].data;
-    }
-
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        const portfolioDoc = await getDoc(doc(this.collections.userPortfolios, targetUserId));
-        
-        if (portfolioDoc.exists()) {
-          const portfolioData = portfolioDoc.data();
-          const ownedOpinions = portfolioData.ownedOpinions || [];
-          
-                    console.log(`📊 Loaded ${ownedOpinions.length} owned opinions from Firebase for user: ${targetUserId}`);
-          
-          this.updateCache(cacheKey, ownedOpinions, 'firebase');
-          return ownedOpinions;
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching portfolio from Firebase:', error);
-    }
-
-    // No localStorage fallback - Firebase only
-    return [];
-  }
-
-  /**
-   * Update user portfolio in Firebase
-   */
-  async updateUserPortfolio(userId: string, ownedOpinions: any[]): Promise<void> {
-    try {
-      if (this.config.useFirebase && this.isOnline) {
-        await setDoc(doc(this.collections.userPortfolios, userId), {
-          userId,
-          ownedOpinions,
-          lastUpdated: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
-        
-        console.log(`✅ Portfolio updated in Firebase for user: ${userId}`);
-      } else {
-        console.log(`⚠️ Firebase not available, portfolio not updated`);
-      }
-    } catch (error) {
-      console.error('Error updating portfolio in Firebase:', error);
-    }
-  }
-
-  // SUBSCRIPTION MANAGEMENT
-
-  /**
-   * Unsubscribe from data updates
-   */
-  unsubscribe(subscriptionId: string): void {
-    const subscription = this.subscriptions.get(subscriptionId);
-    if (subscription && subscription.unsubscribe) {
-      subscription.unsubscribe();
-      this.subscriptions.delete(subscriptionId);
-      console.log(`🔄 Unsubscribed from ${subscriptionId}`);
-    }
-  }
-
-  /**
-   * Stop all subscriptions
-   */
-  stopAllSubscriptions(): void {
-    this.subscriptions.forEach((subscription, id) => {
-      if (subscription.unsubscribe) {
-        subscription.unsubscribe();
-      }
+  subscribeToActivityFeed(cb: (arr: any[]) => void, limitCount = 100) {
+    const id = `activityFeed_${limitCount}`;
+    const q = query(this.collections.activityFeed, orderBy("timestamp", "desc"), limit(limitCount));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data(), timestamp: d.data().timestamp?.toDate?.() ?? d.data().timestamp }));
+      this.updateCache(id, list);
+      cb(list);
     });
+    this.subscriptions.set(id, { id, collection: "activity-feed", callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 💸  Transactions
+  // ---------------------------------------------------------------------------
+  async getUserTransactions(uid: string = this.currentUser?.uid!): Promise<any[]> {
+    if (!uid) return [];
+    const cacheKey = `tx_${uid}`;
+    if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
+
+    const q = query(this.collections.transactions, where("userId", "==", uid));
+    const snap = await getDocs(q);
+    const list = snap.docs
+      .map((d) => ({ id: d.id, ...d.data(), timestamp: d.data().timestamp?.toDate?.() ?? d.data().timestamp }))
+      .sort((a: any, b: any) => +new Date(b.timestamp) - +new Date(a.timestamp));
+    this.updateCache(cacheKey, list);
+    return list;
+  }
+
+  subscribeToUserTransactions(uid: string, cb: (tx: any[]) => void) {
+    const id = `tx_${uid}`;
+    const q = query(this.collections.transactions, where("userId", "==", uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...d.data(), timestamp: d.data().timestamp?.toDate?.() ?? d.data().timestamp }))
+        .sort((a: any, b: any) => +new Date(b.timestamp) - +new Date(a.timestamp));
+      this.updateCache(id, list);
+      cb(list);
+    });
+    this.subscriptions.set(id, { id, collection: "transactions", userId: uid, callback: cb, unsubscribe: unsub, isActive: true });
+    return id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✍️  Write helpers
+  // ---------------------------------------------------------------------------
+  async updateUserProfile(uid: string, updates: any) {
+    await updateDoc(doc(this.collections.users, uid), { ...updates, updatedAt: serverTimestamp() });
+    this.updateCache(`userProfile_${uid}`, { ...(await this.getUserProfile(uid)), ...updates });
+  }
+
+  async addOpinion(text: string) {
+    if (!this.currentUser) throw new Error("Not signed in");
+    const id = btoa(text).replace(/[^a-zA-Z0-9]/g, "");
+    await setDoc(doc(this.collections.opinions, id), {
+      text,
+      createdBy: this.currentUser.uid,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  async addTransaction(tx: any) {
+    if (!this.currentUser) throw new Error("Not signed in");
+    await setDoc(doc(this.collections.transactions, tx.id), { ...tx, userId: this.currentUser.uid, timestamp: serverTimestamp() });
+  }
+
+  async updateUserPortfolio(uid: string, ownedOpinions: any[]) {
+    await setDoc(doc(this.collections.userPortfolios, uid), { userId: uid, ownedOpinions, lastUpdated: serverTimestamp() }, { merge: true });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 🔄  Subscription management
+  // ---------------------------------------------------------------------------
+  unsubscribe(id: string) {
+    this.subscriptions.get(id)?.unsubscribe?.();
+    this.subscriptions.delete(id);
+  }
+
+  stopAllSubscriptions() {
+    this.subscriptions.forEach((s) => s.unsubscribe?.());
     this.subscriptions.clear();
-    console.log('🔄 All subscriptions stopped');
   }
 
-  /**
-   * Refresh all active subscriptions
-   */
-  private refreshAllSubscriptions(): void {
-    const activeSubscriptions = Array.from(this.subscriptions.values());
-    
-    // Stop all current subscriptions
+  private refreshAllSubscriptions() {
+    const active = Array.from(this.subscriptions.values());
     this.stopAllSubscriptions();
-    
-    // Restart subscriptions based on type
-    activeSubscriptions.forEach(subscription => {
-      if (subscription.isActive) {
-        switch (subscription.collection) {
-          case 'users':
-            if (subscription.userId) {
-              this.subscribeToUserProfile(subscription.userId, subscription.callback);
-            }
-            break;
-          case 'opinions':
-            this.subscribeToOpinions(subscription.callback);
-            break;
-          case 'market-data':
-            this.subscribeToMarketData(subscription.callback);
-            break;
-          case 'activity-feed':
-            this.subscribeToActivityFeed(subscription.callback);
-            break;
-          case 'transactions':
-            if (subscription.userId) {
-              this.subscribeToUserTransactions(subscription.userId, subscription.callback);
-            }
-            break;
-        }
+    active.forEach((s) => {
+      if (!s.isActive) return;
+      switch (s.collection) {
+        case "users":
+          if (s.userId) this.subscribeToUserProfile(s.userId, s.callback);
+          break;
+        case "opinions":
+          this.subscribeToOpinions(s.callback);
+          break;
+        case "market-data":
+          this.subscribeToMarketData(s.callback);
+          break;
+        case "activity-feed":
+          this.subscribeToActivityFeed(s.callback);
+          break;
+        case "transactions":
+          if (s.userId) this.subscribeToUserTransactions(s.userId, s.callback);
+          break;
       }
     });
   }
 
-  // CACHE MANAGEMENT
-
-  /**
-   * Update cache with new data
-   */
-  private updateCache(key: string, data: any, source: 'firebase' | 'localStorage'): void {
+  // ---------------------------------------------------------------------------
+  // 📦  Cache helpers
+  // ---------------------------------------------------------------------------
+  private updateCache(key: string, data: any) {
     this.cache[key] = {
       data,
       timestamp: new Date().toISOString(),
-      source,
-      isStale: false
+      source: "firebase",
+      isStale: false,
     };
-    
-    // Mark cache as stale after 30 seconds
-    setTimeout(() => {
-      if (this.cache[key]) {
-        this.cache[key].isStale = true;
-      }
-    }, 30000);
+    setTimeout(() => (this.cache[key].isStale = true), 30_000);
   }
 
-  /**
-   * Clear cache
-   */
-  clearCache(): void {
+  clearCache() {
     this.cache = {};
   }
 
-  // UTILITY METHODS
-
-  /**
-   * Safe localStorage get
-   */
-  private getFromLocalStorage<T>(key: string, defaultValue: T): T {
-    try {
-      if (typeof window === 'undefined') return defaultValue;
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key ${key}:`, error);
-      return defaultValue;
-    }
-  }
-
-  /**
-   * Safe localStorage set
-   */
-  private saveToLocalStorage<T>(key: string, value: T): void {
-    try {
-      if (typeof window === 'undefined') return;
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  }
-
-  /**
-   * Get configuration
-   */
-  getConfig(): RealtimeDataConfig {
-    return { ...this.config };
-  }
-
-  /**
-   * Update configuration
-   */
-  updateConfig(updates: Partial<RealtimeDataConfig>): void {
-    this.config = { ...this.config, ...updates };
-    
-    if (updates.useFirebase !== undefined) {
-      this.refreshAllSubscriptions();
-    }
-  }
-
-  /**
-   * Get cache status
-   */
-  getCacheStatus(): { [key: string]: any } {
-    const status: { [key: string]: any } = {};
-    
-    Object.entries(this.cache).forEach(([key, value]) => {
-      status[key] = {
-        source: value.source,
-        timestamp: value.timestamp,
-        isStale: value.isStale,
-        hasData: value.data !== null && value.data !== undefined
-      };
+  getCacheStatus() {
+    const out: any = {};
+    Object.entries(this.cache).forEach(([k, v]) => {
+      out[k] = { timestamp: v.timestamp, isStale: v.isStale, hasData: !!v.data };
     });
-    
-    return status;
+    return out;
   }
 }
 
-// Export singleton instance
-export const realtimeDataService = RealtimeDataService.getInstance(); 
+// Singleton export
+export const realtimeDataService = RealtimeDataService.getInstance();

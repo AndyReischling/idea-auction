@@ -1,9 +1,9 @@
-// components/ActivityIntegration.tsx
-// Minimal component that just ensures global functions are available
-
-'use client';
+"use client";
 
 import { useEffect } from 'react';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from '../lib/auth-context';
 
 interface UserProfile {
   username: string;
@@ -17,92 +17,58 @@ interface ActivityIntegrationProps {
   userProfile?: UserProfile;
 }
 
-const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({
-  userProfile
-}) => {
+/**
+ * ActivityIntegration
+ * --------------------------------------------------------------
+ * A tiny bridge that wires the globalActivityTracker helper to the
+ * current Firebase‑backed user profile. No localStorage listeners
+ * remain – the component now listens to the signed‑in user doc via
+ * Firestore `onSnapshot`.
+ */
+const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }) => {
+  const { user } = useAuth();
+
   useEffect(() => {
-    const initializeGlobalTracker = async () => {
+    let unsubscribe: (() => void) | undefined;
+
+    const init = async () => {
       try {
-        console.log('🔧 Initializing global activity tracking system...');
-        
-        // Import the global tracker (this will set up window globals)
         const { default: globalActivityTracker } = await import('./GlobalActivityTracker');
-        
-        // Set current user if provided
-        if (userProfile) {
-          globalActivityTracker.setCurrentUser(userProfile);
-        } else {
-          // Load from localStorage if no userProfile provided
-          const storedProfile = localStorage.getItem('userProfile');
-          if (storedProfile) {
-            try {
-              const parsed = JSON.parse(storedProfile);
-              globalActivityTracker.setCurrentUser(parsed);
-            } catch (error) {
-              console.error('Error parsing stored user profile:', error);
+        console.log('🔧 Initialising global activity tracker…');
+
+        // Helper to push a profile into the tracker
+        const applyProfile = (profile: UserProfile) => {
+          // call whatever setter the tracker exposes
+          (globalActivityTracker as any).setCurrentUser?.(profile) ||
+          (globalActivityTracker as any).updateCurrentUser?.(profile) ||
+          (globalActivityTracker as any).setUser?.(profile);
+          console.log('👤 Tracker user set →', profile.username);
+        };
+
+        // If a profile was passed as prop (e.g. SSR), apply immediately
+        if (userProfile) applyProfile(userProfile);
+
+        // Listen to live profile updates via Firestore
+        if (user?.uid) {
+          const userDoc = doc(db, 'users', user.uid);
+          unsubscribe = onSnapshot(userDoc, snap => {
+            if (snap.exists()) {
+              applyProfile(snap.data() as UserProfile);
             }
-          }
+          });
         }
 
-        // Listen for user profile changes from localStorage
-        const handleStorageChange = (e: StorageEvent) => {
-          if (e.key === 'userProfile' && e.newValue) {
-            try {
-              const updatedUser = JSON.parse(e.newValue);
-              globalActivityTracker.setCurrentUser(updatedUser);
-              console.log('👤 User profile updated from storage:', updatedUser.username);
-            } catch (error) {
-              console.error('Error parsing updated user profile:', error);
-            }
-          }
-        };
-
-        // Listen for manual user profile updates
-        const handleUserProfileUpdate = (event: CustomEvent) => {
-          const updatedUser = event.detail;
-          globalActivityTracker.setCurrentUser(updatedUser);
-          console.log('👤 User profile updated from event:', updatedUser.username);
-        };
-
-        // Add event listeners
-        window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('userProfileUpdated', handleUserProfileUpdate as EventListener);
-
-        console.log('✅ Global activity tracking system initialized successfully!');
-        console.log('🎯 The following functions are now available globally:');
-        console.log('   - addToGlobalFeed() ✅');
-        console.log('   - trackTrade() ✅');
-        console.log('   - interceptBuyTransaction() ✅');
-        console.log('   - interceptSellTransaction() ✅');
-
-        // Test to make sure functions are available
-        if (typeof (window as any).addToGlobalFeed === 'function') {
-          console.log('✅ addToGlobalFeed is ready');
-        } else {
-          console.error('❌ addToGlobalFeed not available!');
-        }
-
-        if (typeof (window as any).trackTrade === 'function') {
-          console.log('✅ trackTrade is ready');
-        } else {
-          console.error('❌ trackTrade not available!');
-        }
-
-        // Cleanup function
-        return () => {
-          window.removeEventListener('storage', handleStorageChange);
-          window.removeEventListener('userProfileUpdated', handleUserProfileUpdate as EventListener);
-        };
-
-      } catch (error) {
-        console.error('❌ Failed to initialize global activity tracking:', error);
+        console.log('✅ Global activity tracker initialised');
+      } catch (err) {
+        console.error('❌ Failed to initialise activity tracker', err);
       }
     };
 
-    initializeGlobalTracker();
-  }, [userProfile]);
+    init();
+    return () => unsubscribe?.();
+  }, [user, userProfile]);
 
-  // This component doesn't render anything visible
+  // No visible output
   return null;
 };
 

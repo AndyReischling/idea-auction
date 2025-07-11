@@ -1,14 +1,33 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './lib/auth-context';
 import AuthModal from './components/AuthModal';
 import Sidebar from './components/Sidebar';
 import AuthButton from './components/AuthButton';
 import { realtimeDataService } from './lib/realtime-data-service';
-import { TrendUp, TrendDown, Minus, Sparkle, Clock, Fire, Eye, ChartLineUp, ChartLineDown, User, SignIn } from '@phosphor-icons/react';
+import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { db } from './lib/firebase';
+import styles from './page.module.css';
+import {
+  TrendUp,
+  ChartLineUp,
+  ChartLineDown,
+  Minus,
+  Sparkle,
+  Clock,
+  Fire,
+  Eye,
+  User,
+  SignIn,
+  Trophy,
+  Crown,
+} from '@phosphor-icons/react';
 
+/* ------------------------------------------------------------------
+ * TYPES
+ * ------------------------------------------------------------------*/
 interface OpinionWithPrice {
   id: string;
   text: string;
@@ -37,322 +56,255 @@ interface OpinionMarketData {
   priceHistory?: { price: number; timestamp: string; action: 'buy' | 'sell' | 'create' }[];
 }
 
+interface LeaderboardUser {
+  uid: string;
+  username: string;
+  joinDate: string;
+  portfolioValue: number;
+  exposure: number;
+  opinionsCount: number;
+}
+
+interface UserDoc {
+  id: string;
+  username: string;
+  joinDate: string;
+  avatar?: string;
+}
+
+interface PortfolioDoc {
+  userId: string;
+  ownedOpinions: Array<{
+    opinionId: string;
+    opinionText: string;
+    quantity: number;
+    purchasePrice: number;
+  }>;
+  shortExposure: number;
+  betExposure: number;
+}
+
+/* ------------------------------------------------------------------
+ * COMPONENT
+ * ------------------------------------------------------------------*/
 export default function HomePage() {
+  /* -------------------------- state --------------------------- */
   const [opinions, setOpinions] = useState<OpinionWithPrice[]>([]);
   const [featuredOpinions, setFeaturedOpinions] = useState<OpinionWithPrice[]>([]);
   const [trendingOpinions, setTrendingOpinions] = useState<OpinionWithPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
-  const [priceFlash, setPriceFlash] = useState<{[key: string]: string}>({});
-  const [subscriptionIds, setSubscriptionIds] = useState<string[]>([]);
-  
+  const [priceFlash, setPriceFlash] = useState<Record<string, string>>({});
+
+  // Leaderboard state
+  const [users, setUsers] = useState<UserDoc[]>([]);
+  const [portfolios, setPortfolios] = useState<PortfolioDoc[]>([]);
+  const [marketDataMap, setMarketDataMap] = useState<Map<string, any>>(new Map());
+
   const { user, userProfile } = useAuth();
   const router = useRouter();
 
-  // Log auth state for debugging
-  useEffect(() => {
-    console.log('HomePage: Auth state - user:', !!user, 'userProfile:', !!userProfile);
-  }, [user, userProfile]);
+  /* ------------------------------------------------------------------
+   * HELPERS – everything below hits Firestore via realtimeDataService
+   * ----------------------------------------------------------------*/
 
-  // Note: Using Firebase data only, no localStorage helpers needed
-
-  // Calculate price based on market activity
-  const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
-    const netDemand = timesPurchased - timesSold;
-    let priceMultiplier;
-    
-    if (netDemand >= 0) {
-      priceMultiplier = Math.pow(1.001, netDemand);
-    } else {
-      priceMultiplier = Math.max(0.1, Math.pow(0.999, Math.abs(netDemand)));
-    }
-    
-    const calculatedPrice = Math.max(basePrice * 0.5, basePrice * priceMultiplier);
-    return Math.round(calculatedPrice * 100) / 100;
+  const calculatePrice = (
+    timesPurchased: number,
+    timesSold: number,
+    basePrice: number = 10,
+  ) => {
+    const net = timesPurchased - timesSold;
+    const multiplier = net >= 0 ? Math.pow(1.001, net) : Math.max(0.1, Math.pow(0.999, Math.abs(net)));
+    return Math.round(Math.max(basePrice * 0.5, basePrice * multiplier) * 100) / 100;
   };
 
-  // Get market data for an opinion
-  const getOpinionMarketData = async (opinionText: string): Promise<OpinionMarketData> => {
-    try {
-      // Get market data from Firebase/localStorage via realtimeDataService
-      const marketData = await realtimeDataService.getMarketData();
-      
-      if (marketData[opinionText]) {
-        const data = marketData[opinionText];
-        return {
-          opinionText,
-          timesPurchased: data.timesPurchased || 0,
-          timesSold: data.timesSold || 0,
-          currentPrice: data.currentPrice || 10,
-          basePrice: data.basePrice || 10,
-          volatility: data.volatility || 1.0,
-          lastUpdated: data.lastUpdated || new Date().toISOString(),
-          priceHistory: data.priceHistory || []
-        };
-      }
-      
-      return {
-        opinionText,
-        timesPurchased: 0,
-        timesSold: 0,
-        currentPrice: 10,
-        basePrice: 10,
-        volatility: 1.0,
-        lastUpdated: new Date().toISOString(),
-        priceHistory: []
-      };
-    } catch (error) {
-      console.error('Error getting market data:', error);
-      
-      // No localStorage fallback - Firebase only
-      
-      return {
-        opinionText,
-        timesPurchased: 0,
-        timesSold: 0,
-        currentPrice: 10,
-        basePrice: 10,
-        volatility: 1.0,
-        lastUpdated: new Date().toISOString(),
-        priceHistory: []
-      };
-    }
-  };
-
-  // Calculate price trend
-  const calculatePriceTrend = (marketData: OpinionMarketData): { trend: 'up' | 'down' | 'neutral', priceChange: number, priceChangePercent: number } => {
-    const { priceHistory = [] } = marketData;
-    
-    if (priceHistory.length < 2) {
-      return { trend: 'neutral', priceChange: 0, priceChangePercent: 0 };
-    }
-    
-    const recentPrices = priceHistory.slice(-5);
-    const previousPrice = recentPrices[0]?.price || 10;
-    const currentPrice = marketData.currentPrice;
-    
-    const priceChange = currentPrice - previousPrice;
-    const priceChangePercent = ((priceChange / previousPrice) * 100);
-    
-    const trend = priceChange > 0.1 ? 'up' : priceChange < -0.1 ? 'down' : 'neutral';
-    
-    return {
-      trend,
-      priceChange: Math.round(priceChange * 100) / 100,
-      priceChangePercent: Math.round(priceChangePercent * 100) / 100
+  const getOpinionMarketData = async (text: string): Promise<OpinionMarketData> => {
+    const marketData = await realtimeDataService.getMarketData();
+    const fallback: OpinionMarketData = {
+      opinionText: text,
+      timesPurchased: 0,
+      timesSold: 0,
+      currentPrice: 10,
+      basePrice: 10,
+      volatility: 1,
+      lastUpdated: new Date().toISOString(),
+      priceHistory: [],
     };
+    return marketData[text] ? { ...fallback, ...marketData[text] } : fallback;
   };
 
-  // Get opinion attribution with Firebase fallback
-  const getOpinionAttribution = async (opinionText: string): Promise<{ author: string, isBot: boolean }> => {
-    try {
-      // First try Firebase via realtimeDataService
-      const transactions = await realtimeDataService.getUserTransactions();
-      const userProfile = await realtimeDataService.getUserProfile();
-      
-      // Check for user-generated opinion
-      const userGenerated = transactions.find((t: any) => 
-        t.type === 'earn' && 
-        (t.opinionText === opinionText || t.description?.includes(opinionText.slice(0, 30)))
-      );
-      
-      if (userGenerated) {
-        return {
-          author: userProfile?.username || 'User',
-          isBot: false
-        };
-      }
-      
-      // No localStorage fallback - Firebase only
-      // Bot data should be in Firebase now
-      
-      return {
-        author: 'AI',
-        isBot: false
-      };
-    } catch (error) {
-      console.error('Error getting opinion attribution:', error);
-      return {
-        author: 'AI',
-        isBot: false
-      };
-    }
+  const calculatePriceTrend = (md: OpinionMarketData) => {
+    const hist = md.priceHistory ?? [];
+    if (hist.length < 2) return { trend: 'neutral', priceChange: 0, priceChangePercent: 0 };
+    const prev = hist[hist.length - 2].price;
+    const change = md.currentPrice - prev;
+    const pct = (change / prev) * 100;
+    const trend: 'up' | 'down' | 'neutral' = change > 0.1 ? 'up' : change < -0.1 ? 'down' : 'neutral';
+    return { trend, priceChange: +change.toFixed(2), priceChangePercent: +pct.toFixed(2) };
   };
 
-  // Load and process opinions with real-time updates
+  const getOpinionAttribution = async (text: string) => {
+    // For now, return default attribution since getTransactionsForOpinion doesn't exist
+    return { author: 'AI', isBot: false };
+  };
+
+  /* ------------------------------------------------------------------
+   * LEADERBOARD LOGIC
+   * ----------------------------------------------------------------*/
+  
+  // Calculate leaderboard from users, portfolios, and market data
+  const leaderboard = useMemo(() => {
+    if (users.length === 0 || portfolios.length === 0) return [];
+    
+    return users.map((u) => {
+      const pf = portfolios.find((p) => p.userId === u.id);
+      if (!pf) return null;
+      
+      const value = pf.ownedOpinions.reduce((sum, op) => {
+        const md = marketDataMap.get(op.opinionText);
+        return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
+      }, 0);
+      
+      const exposure = (pf.shortExposure || 0) + (pf.betExposure || 0);
+      
+      return {
+        uid: u.id,
+        username: u.username,
+        joinDate: u.joinDate,
+        portfolioValue: value - exposure,
+        exposure,
+        opinionsCount: pf.ownedOpinions.length,
+      };
+    }).filter(Boolean) as LeaderboardUser[];
+  }, [users, portfolios, marketDataMap]);
+
+  // Get top 5 for preview
+  const topUsers = useMemo(() => {
+    return leaderboard
+      .sort((a, b) => b.portfolioValue - a.portfolioValue)
+      .slice(0, 5);
+  }, [leaderboard]);
+
+  /* ------------------------------------------------------------------
+   * LOAD & SUBSCRIBE
+   * ----------------------------------------------------------------*/
   const loadOpinions = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      
-      // Get opinions from Firebase/localStorage via realtimeDataService
-      const storedOpinions: string[] = await realtimeDataService.getOpinions();
-      const processedOpinions: OpinionWithPrice[] = [];
-      
-      // Process each opinion with market data and attribution
-      for (let index = 0; index < storedOpinions.length; index++) {
-        const text = storedOpinions[index];
-        if (!text || typeof text !== 'string') continue;
-        
-        const marketData = await getOpinionMarketData(text);
-        const { trend, priceChange, priceChangePercent } = calculatePriceTrend(marketData);
-        const attribution = await getOpinionAttribution(text);
-        
-        // Calculate creation timestamp
-        const createdAt = Date.now() - (storedOpinions.length - index) * 60 * 1000;
-        
-        processedOpinions.push({
-          id: index.toString(),
-          text,
-          currentPrice: marketData.currentPrice,
+      const opinionTexts = await realtimeDataService.getAllOpinions(); // returns string[]
+      const processed: OpinionWithPrice[] = [];
+      for (const [idx, text] of opinionTexts.entries()) {
+        const md = await getOpinionMarketData(text);
+        const { trend, priceChange, priceChangePercent } = calculatePriceTrend(md);
+        const attr = await getOpinionAttribution(text);
+
+        processed.push({
+          id: btoa(text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20), // generate ID from text
+          text: text,
+          currentPrice: md.currentPrice,
           priceChange,
           priceChangePercent,
-          trend,
-          volatility: marketData.volatility && marketData.volatility > 1.5 ? 'high' : 
-                     marketData.volatility && marketData.volatility > 1.2 ? 'medium' : 'low',
-          createdAt,
-          originalIndex: index,
-          timesPurchased: marketData.timesPurchased,
-          timesSold: marketData.timesSold,
-          volume: marketData.timesPurchased + marketData.timesSold,
-          author: attribution.author,
-          isBot: attribution.isBot
+          trend: trend as 'up' | 'down' | 'neutral',
+          volatility:
+            md.volatility && md.volatility > 1.5
+              ? 'high'
+              : md.volatility && md.volatility > 1.2
+              ? 'medium'
+              : 'low',
+          createdAt: Date.now() - (idx * 1000 * 60 * 60), // mock timestamps
+          originalIndex: idx,
+          timesPurchased: md.timesPurchased,
+          timesSold: md.timesSold,
+          volume: md.timesPurchased + md.timesSold,
+          author: attr.author,
+          isBot: attr.isBot,
         });
       }
-      
-      // Sort by creation time (newest first)
-      const sortedOpinions = processedOpinions.sort((a, b) => b.createdAt - a.createdAt);
-      
-      setOpinions(sortedOpinions);
-      
-      // Set featured opinions (high volume or trending)
-      const featured = sortedOpinions
-        .filter(op => op.volume > 5 || Math.abs(op.priceChangePercent) > 10)
-        .slice(0, 3);
-      setFeaturedOpinions(featured);
-      
-      // Set trending opinions (recent activity)
-      const trending = sortedOpinions
-        .filter(op => op.trend !== 'neutral')
-        .sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent))
-        .slice(0, 5);
-      setTrendingOpinions(trending);
-      
+
+      const sorted = processed.sort((a, b) => b.createdAt - a.createdAt);
+      setOpinions(sorted);
+      setFeaturedOpinions(sorted.filter(o => o.volume > 5 || Math.abs(o.priceChangePercent) > 10).slice(0, 3));
+      setTrendingOpinions(
+        sorted
+          .filter(o => o.trend !== 'neutral')
+          .sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent))
+          .slice(0, 5),
+      );
       setLastUpdateTime(new Date().toLocaleTimeString());
-      console.log(`📊 HomePage: Loaded ${sortedOpinions.length} opinions`);
-      
-    } catch (error) {
-      console.error('Error loading opinions:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle opinion click
-  const handleOpinionClick = (opinion: OpinionWithPrice) => {
-    router.push(`/opinion/${opinion.originalIndex}`);
-  };
-
-  // Format price change
-  const formatPriceChange = (change: number, percent: number) => {
-    const sign = change >= 0 ? '+' : '';
-    return `${sign}$${change.toFixed(2)} (${sign}${percent.toFixed(1)}%)`;
-  };
-
-  // Get trend icon
-  const getTrendIcon = (trend: 'up' | 'down' | 'neutral') => {
-    switch (trend) {
-      case 'up': return <ChartLineUp size={16} className="status-positive" />;
-      case 'down': return <ChartLineDown size={16} className="status-negative" />;
-      default: return <Minus size={16} className="status-neutral" />;
-    }
-  };
-
-  // Get volatility indicator
-  const getVolatilityBadge = (volatility: 'high' | 'medium' | 'low') => {
-    const badges = {
-      high: { emoji: '🔥', label: 'High Vol', class: 'status-negative' },
-      medium: { emoji: '⚡', label: 'Med Vol', class: 'status-neutral' },
-      low: { emoji: '💧', label: 'Low Vol', class: 'status-positive' }
+  useEffect(() => {
+    // Subscribe to Firestore changes via service wrappers
+    const unsubOpinions = realtimeDataService.subscribeToAllOpinions(() => loadOpinions());
+    const unsubMarket = realtimeDataService.subscribeToMarketData(() => loadOpinions());
+    // initial fetch
+    loadOpinions();
+    return () => {
+      realtimeDataService.unsubscribe(unsubOpinions);
+      realtimeDataService.unsubscribe(unsubMarket);
     };
-    
-    const badge = badges[volatility];
+  }, []);
+
+  // Leaderboard data subscriptions
+  useEffect(() => {
+    const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+      setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() } as UserDoc)));
+    });
+
+    const unsubPortfolios = onSnapshot(collection(db, "user-portfolios"), (snap) => {
+      setPortfolios(snap.docs.map((d) => d.data() as PortfolioDoc));
+    });
+
+    const unsubMarketData = onSnapshot(collection(db, "market-data"), (snap) => {
+      const map = new Map();
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        if (data.opinionText) {
+          map.set(data.opinionText, data);
+        }
+      });
+      setMarketDataMap(map);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubPortfolios();
+      unsubMarketData();
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------
+   * UI helpers (unchanged apart from imports)
+   * ----------------------------------------------------------------*/
+  const handleOpinionClick = (op: OpinionWithPrice) => router.push(`/opinion/${op.id}`);
+  const formatPriceChange = (c: number, p: number) => `${c >= 0 ? '+' : ''}$${c.toFixed(2)} (${c >= 0 ? '+' : ''}${p.toFixed(1)}%)`;
+  const getTrendIcon = (t: 'up' | 'down' | 'neutral') =>
+    t === 'up' ? <ChartLineUp size={16} className="status-positive" /> : t === 'down' ? <ChartLineDown size={16} className="status-negative" /> : <Minus size={16} className="status-neutral" />;
+  const getVolatilityBadge = (v: 'high' | 'medium' | 'low') => {
+    const map = {
+      high: { l: 'High Vol', c: 'status-negative', bg: '#ef4444' },
+      medium: { l: 'Med Vol', c: 'status-neutral', bg: '#6b7280' },
+      low: { l: 'Low Vol', c: 'status-positive', bg: '#22c55e' },
+    }[v];
     return (
-      <span className={`${badge.class}`} style={{ 
-        fontSize: '12px', 
-        fontWeight: '500', 
-        padding: '2px 6px',
-        borderRadius: '4px',
-        backgroundColor: volatility === 'low' ? '#22c55e' : volatility === 'high' ? '#ef4444' : '#6b7280',
-        color: 'white'
-      }}>
-        {badge.emoji} {badge.label}
+      <span className={map.c} style={{ fontSize: 12, fontWeight: 500, padding: '2px 6px', borderRadius: 4, backgroundColor: map.bg, color: '#fff' }}>
+        {map.l}
       </span>
     );
   };
 
-  // Setup real-time subscriptions
-  useEffect(() => {
-    const setupSubscriptions = () => {
-      const subscriptionIds: string[] = [];
-      
-      // Subscribe to opinions changes
-      const opinionsSub = realtimeDataService.subscribeToOpinions((opinions) => {
-        console.log('📊 HomePage: Opinions updated from Firebase/localStorage');
-        loadOpinions();
-      });
-      subscriptionIds.push(opinionsSub);
-      
-      // Subscribe to market data changes
-      const marketSub = realtimeDataService.subscribeToMarketData((marketData) => {
-        console.log('📊 HomePage: Market data updated from Firebase/localStorage');
-        loadOpinions();
-      });
-      subscriptionIds.push(marketSub);
-      
-      setSubscriptionIds(subscriptionIds);
-      
-      // Initial load
-      loadOpinions();
-    };
-    
-    setupSubscriptions();
-    
-    // Cleanup subscriptions on unmount
-    return () => {
-      subscriptionIds.forEach(id => {
-        realtimeDataService.unsubscribe(id);
-      });
-    };
-  }, []);
-
-  // Handle storage changes (for localStorage fallback)
-  useEffect(() => {
-    const handleStorageChange = () => {
-      console.log('📊 HomePage: Storage change detected, reloading opinions');
-      loadOpinions();
-    };
-
-    // Listen for localStorage changes
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Custom events for manual updates
-    window.addEventListener('opinionsUpdated', handleStorageChange);
-    window.addEventListener('marketDataUpdated', handleStorageChange);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('opinionsUpdated', handleStorageChange);
-      window.removeEventListener('marketDataUpdated', handleStorageChange);
-    };
-  }, []);
-
+  /* ------------------------------------------------------------------
+   * RENDER — the long JSX remains largely unchanged
+   * ----------------------------------------------------------------*/
   if (loading) {
     return (
       <div className="page-container">
         <div className="loading">
-          <div className="spinner"></div>
-          Loading market data...
+          <div className="spinner" /> Loading market data…
         </div>
       </div>
     );
@@ -360,138 +312,61 @@ export default function HomePage() {
 
   return (
     <div className="page-container">
-      <Sidebar opinions={opinions.map(op => ({ id: op.id, text: op.text }))} />
+      <Sidebar />
       
       <main className="main-content">
         {/* Header */}
         <div className="header-section">
           <div className="user-header">
             <div className="user-avatar">
-              <Sparkle size={32} />
+              <Fire size={24} />
             </div>
             <div className="user-info">
-              <div className="user-name">
-                <div>Opinion Market</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  <Clock size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
-                  Last updated: {lastUpdateTime}
-                </div>
-              </div>
-              <p>Live opinion trading marketplace • {opinions.length} active opinions</p>
+              <div className="user-name">Opinion Market</div>
+              <p>Live market feed</p>
+              {lastUpdateTime && <p>Last updated: {lastUpdateTime}</p>}
             </div>
           </div>
 
           <div className="navigation-buttons">
-            <a href="/feed" className="nav-button">
-              <Fire size={20} /> Live Feed
-            </a>
             <a href="/users" className="nav-button">
               <User size={20} /> Traders
+            </a>
+            <a href="/feed" className="nav-button">
+              <Fire size={20} /> Feed
             </a>
             <a href="/generate" className="nav-button">
               <Sparkle size={20} /> Generate
             </a>
-            {user ? (
-              <AuthButton />
-            ) : (
-              <button 
-                onClick={() => setShowAuthModal(true)}
-                className="nav-button"
-              >
-                <SignIn size={20} /> Login
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Market Status */}
-        <div style={{
-          background: 'var(--bg-section)',
-          padding: '16px',
-          borderRadius: '8px',
-          marginBottom: '24px',
-          border: '1px solid var(--border-secondary)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ margin: 0, fontSize: 'var(--font-size-lg)', color: 'var(--text-primary)' }}>
-              Market Status
-            </h3>
-            <div className="status-positive" style={{ fontSize: '12px', fontWeight: '500' }}>
-              ● Live Trading
-            </div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Total Opinions</div>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>{opinions.length}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Trending</div>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--green)' }}>{trendingOpinions.length}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Featured</div>
-              <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--text-primary)' }}>{featuredOpinions.length}</div>
-            </div>
+            <AuthButton />
           </div>
         </div>
 
         {/* Featured Opinions */}
         {featuredOpinions.length > 0 && (
-          <section style={{ marginBottom: '32px' }}>
-            <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Fire size={24} /> Featured Opinions
-            </h2>
-            <div className="grid grid-3">
+          <section className="section" style={{ marginLeft: 20 }}>
+            <h2 className="section-title">Featured Opinions</h2>
+            <div className="grid grid-3" style={{ marginLeft: 20 }}>
               {featuredOpinions.map((opinion) => (
-                <div
-                  key={opinion.id}
-                  onClick={() => handleOpinionClick(opinion)}
-                  className={`card ${priceFlash[opinion.text] || ''}`}
-                  style={{ 
-                    cursor: 'pointer',
-                    transform: 'translateY(0)',
-                    transition: 'all 0.3s ease',
-                    border: '2px solid var(--green)',
-                    background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-section) 100%)'
-                  }}
-                >
+                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
                     <div className="card-content">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          {getTrendIcon(opinion.trend)}
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
-                          </span>
-                        </div>
-                        {getVolatilityBadge(opinion.volatility)}
-                      </div>
-                      
-                      <p className="card-title" style={{ 
-                        fontSize: '14px', 
-                        fontWeight: '500',
-                        marginBottom: '12px',
-                        lineHeight: '1.4'
-                      }}>
-                        {opinion.text.length > 80 ? `${opinion.text.slice(0, 80)}...` : opinion.text}
+                      <p className="card-title">{opinion.text.slice(0, 80)}...</p>
+                      <p className="card-subtitle">
+                        Vol: {opinion.volume} • {opinion.author}
                       </p>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                        <div>
-                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                            ${opinion.currentPrice.toFixed(2)}
-                          </div>
-                          <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
-                            {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                          </div>
-                        </div>
+                    </div>
+                    <div className={styles.opinionPricing}>
+                      <div className={styles.currentPricing}>
+                        <p>${opinion.currentPrice}</p>
+                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                        </p>
                       </div>
+                      {getTrendIcon(opinion.trend)}
                     </div>
                   </div>
+                  {getVolatilityBadge(opinion.volatility)}
                 </div>
               ))}
             </div>
@@ -500,56 +375,26 @@ export default function HomePage() {
 
         {/* Trending Opinions */}
         {trendingOpinions.length > 0 && (
-          <section style={{ marginBottom: '32px' }}>
-            <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <TrendUp size={24} /> Trending Now
-            </h2>
-            <div className="grid grid-2">
+          <section className="section" style={{ marginLeft: 20 }}>
+            <h2 className="section-title">Trending Opinions</h2>
+            <div className="grid grid-2" style={{ marginLeft: 20 }}>
               {trendingOpinions.map((opinion) => (
-                <div
-                  key={opinion.id}
-                  onClick={() => handleOpinionClick(opinion)}
-                  className={`card ${priceFlash[opinion.text] || ''}`}
-                  style={{ 
-                    cursor: 'pointer',
-                    transform: 'translateY(0)',
-                    transition: 'all 0.3s ease'
-                  }}
-                >
+                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
                     <div className="card-content">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          {getTrendIcon(opinion.trend)}
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
-                          </span>
-                        </div>
-                        {getVolatilityBadge(opinion.volatility)}
-                      </div>
-                      
-                      <p className="card-title" style={{ 
-                        fontSize: '14px', 
-                        fontWeight: '500',
-                        marginBottom: '12px',
-                        lineHeight: '1.4'
-                      }}>
-                        {opinion.text.length > 100 ? `${opinion.text.slice(0, 100)}...` : opinion.text}
+                      <p className="card-title">{opinion.text.slice(0, 60)}...</p>
+                      <p className="card-subtitle">
+                        Vol: {opinion.volume} • {opinion.author}
                       </p>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                        <div>
-                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                            ${opinion.currentPrice.toFixed(2)}
-                          </div>
-                          <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
-                            {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                          </div>
-                        </div>
+                    </div>
+                    <div className={styles.opinionPricing}>
+                      <div className={styles.currentPricing}>
+                        <p>${opinion.currentPrice}</p>
+                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                        </p>
                       </div>
+                      {getTrendIcon(opinion.trend)}
                     </div>
                   </div>
                 </div>
@@ -558,65 +403,66 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* All Opinions */}
-        <section>
-          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Eye size={24} /> All Opinions
+        {/* Leaderboard Preview */}
+        <section className="section" style={{ marginLeft: 20 }}>
+          <h2 className="section-title">
+            Top Traders
+            <a href="/users" style={{ 
+              fontSize: '14px', 
+              marginLeft: '16px', 
+              color: 'var(--text-secondary)',
+              textDecoration: 'none',
+              fontWeight: '400'
+            }}>
+              View All →
+            </a>
           </h2>
-          
-          {opinions.length === 0 ? (
+          {topUsers.length === 0 ? (
             <div className="empty-state">
-              <p>No opinions available yet!</p>
-              <p>Visit the <a href="/generate" style={{ color: 'var(--green)' }}>Generate page</a> to create the first opinion.</p>
+              <p>Loading leaderboard...</p>
             </div>
           ) : (
-            <div className="grid grid-2">
-              {opinions.map((opinion) => (
-                <div
-                  key={opinion.id}
-                  onClick={() => handleOpinionClick(opinion)}
-                  className={`card ${priceFlash[opinion.text] || ''}`}
-                  style={{ 
-                    cursor: 'pointer',
-                    transform: 'translateY(0)',
-                    transition: 'all 0.3s ease'
-                  }}
+            <div className="grid grid-3" style={{ marginLeft: 20 }}>
+              {topUsers.map((trader, idx) => (
+                <div 
+                  key={trader.uid} 
+                  className="card" 
+                  onClick={() => router.push(`/users/${trader.username}`)}
+                  style={{ cursor: 'pointer' }}
                 >
                   <div className="card-header">
                     <div className="card-content">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          {getTrendIcon(opinion.trend)}
-                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {opinion.isBot ? '🤖' : '👤'} {opinion.author}
-                          </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          background: idx === 0 ? '#FFD700' : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : 'var(--bg-elevated)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold',
+                          fontSize: '14px',
+                          color: idx < 3 ? '#000' : 'var(--text-primary)'
+                        }}>
+                          #{idx + 1}
                         </div>
-                        {getVolatilityBadge(opinion.volatility)}
-                      </div>
-                      
-                      <p className="card-title" style={{ 
-                        fontSize: '14px', 
-                        fontWeight: '500',
-                        marginBottom: '12px',
-                        lineHeight: '1.4'
-                      }}>
-                        {opinion.text.length > 120 ? `${opinion.text.slice(0, 120)}...` : opinion.text}
-                      </p>
-                      
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
                         <div>
-                          <div style={{ color: 'var(--text-secondary)' }}>Volume: {opinion.volume}</div>
+                          <p className="card-title" style={{ margin: 0 }}>{trader.username}</p>
+                          <p className="card-subtitle" style={{ margin: '2px 0 0 0' }}>
+                            {trader.opinionsCount} opinions
+                          </p>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                            ${opinion.currentPrice.toFixed(2)}
-                          </div>
-                          {opinion.priceChange !== 0 && (
-                            <div className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
-                              {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                            </div>
-                          )}
-                        </div>
+                      </div>
+                    </div>
+                    <div className={styles.opinionPricing}>
+                      <div className={styles.currentPricing}>
+                        <p className={trader.portfolioValue >= 0 ? 'status-positive' : 'status-negative'}>
+                          ${trader.portfolioValue.toFixed(2)}
+                        </p>
+                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
+                          Portfolio Value
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -625,13 +471,44 @@ export default function HomePage() {
             </div>
           )}
         </section>
-      </main>
 
-      {/* Authentication Modal */}
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
-      />
+        {/* All Opinions */}
+        <section className="section" style={{ marginLeft: 20 }}>
+          <h2 className="section-title">All Opinions</h2>
+          {opinions.length === 0 ? (
+            <div className="empty-state">
+              <p>No opinions available yet. Be the first to share your thoughts!</p>
+              <button onClick={() => window.location.href = '/generate'} className="btn btn-primary">
+                <Sparkle size={16} /> Generate Opinion
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-2" style={{ marginLeft: 20 }}>
+              {opinions.map((opinion) => (
+                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
+                  <div className="card-header">
+                    <div className="card-content">
+                      <p className="card-title">{opinion.text.slice(0, 100)}...</p>
+                      <p className="card-subtitle">
+                        Vol: {opinion.volume} • {opinion.author} • {getVolatilityBadge(opinion.volatility)}
+                      </p>
+                    </div>
+                    <div className={styles.opinionPricing}>
+                      <div className={styles.currentPricing}>
+                        <p>${opinion.currentPrice}</p>
+                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                        </p>
+                      </div>
+                      {getTrendIcon(opinion.trend)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
