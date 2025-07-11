@@ -9,30 +9,21 @@ import { useEffect, useState, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { firebaseDataService } from '../../lib/firebase-data-service';
-import { UnifiedMarketDataManager, UnifiedTransactionManager } from '../../lib/unified-system';
-import { doc as fsDoc, getDoc, collection, query, where, limit, getDocs, orderBy, setDoc, doc } from 'firebase/firestore';
+import { UnifiedMarketDataManager } from '../../lib/unified-system';
+import { doc as fsDoc, getDoc, collection, query, where, limit, getDocs, orderBy, setDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 // UI components & assets
 import Sidebar from '../../components/Sidebar';
-import Accordion from '../../components/Accordion';
 import {
   ArrowLeft,
   PiggyBank,
   ScanSmiley,
   RssSimple,
   Balloon,
-  RocketLaunch,
-  ChartLineUp,
-  ChartLineDown,
-  Skull,
-  FlowerLotus,
-  Ticket,
-  X,
   TrendUp,
   TrendDown,
-  Clock,
-  Info,
+  ChartLineUp,
 } from '@phosphor-icons/react';
 import styles from './page.module.css';
 
@@ -67,28 +58,6 @@ interface UserProfile {
   portfolio?: { [key: string]: number };
 }
 
-interface TradeHistoryItem {
-  id: string;
-  type: 'buy' | 'sell' | 'short';
-  amount: number;
-  price: number;
-  quantity: number;
-  date: string;
-  username: string;
-  isBot?: boolean;
-  opinionText: string;
-}
-
-interface ShortPosition {
-  id: string;
-  opinionText: string;
-  entryPrice: number;
-  quantity: number;
-  date: string;
-  collateral: number;
-  targetPrice: number;
-}
-
 // Helper utilities
 const iso = () => new Date().toISOString();
 const ts = (x: any): string => {
@@ -100,7 +69,11 @@ const ts = (x: any): string => {
 };
 
 const formatCurrency = (amount: number) => `$${amount.toFixed(2)}`;
-const formatNumber = (num: number) => num.toLocaleString();
+const formatPercent = (change: number, base: number) => {
+  const percent = ((change / base) * 100);
+  const sign = percent >= 0 ? '+' : '';
+  return `${sign}${percent.toFixed(2)}%`;
+};
 
 export default function OpinionPage() {
   const { id } = useParams();
@@ -116,46 +89,19 @@ export default function OpinionPage() {
   const [market, setMarket] = useState<OpinionMarketData | null>(null);
   const [profile, setProfile] = useState<UserProfile>({
     username: 'Loading…',
-    balance: 0,
+    balance: 10000, // Show proper initial balance instead of 0
     joinDate: iso(),
     totalEarnings: 0,
     totalLosses: 0,
     portfolio: {},
   });
-  const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
-  const [userShortPositions, setUserShortPositions] = useState<ShortPosition[]>([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Modal states
-  const [showBuyModal, setShowBuyModal] = useState(false);
-  const [showSellModal, setShowSellModal] = useState(false);
-  const [showShortModal, setShowShortModal] = useState(false);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [buyQuantity, setBuyQuantity] = useState(1);
-  const [sellQuantity, setSellQuantity] = useState(1);
-  const [shortQuantity, setShortQuantity] = useState(1);
-  const [shortCollateral, setShortCollateral] = useState(50);
-
-  const popMsg = (m: string, ms = 5000) => {
+  const popMsg = (m: string, ms = 3000) => {
     setMsg(m);
     setTimeout(() => setMsg(''), ms);
   };
-
-  // Trend analysis
-  const trend = useMemo(() => {
-    if (!market) return { icon: FlowerLotus, label: 'Stable', className: 'stable' } as const;
-    const net = market.timesPurchased - market.timesSold;
-    const recentTrend = market.priceHistory.slice(-5);
-    const priceChange = recentTrend.length > 1 ? 
-      recentTrend[recentTrend.length - 1].price - recentTrend[0].price : 0;
-    
-    if (net > 10 && priceChange > 0) return { icon: RocketLaunch, label: 'Bullish', className: 'bullish' } as const;
-    if (net > 5 || priceChange > 0.5) return { icon: ChartLineUp, label: 'Rising', className: 'bullish' } as const;
-    if (net > -5 && Math.abs(priceChange) < 0.5) return { icon: FlowerLotus, label: 'Stable', className: 'stable' } as const;
-    if (net > -10 || priceChange < -0.5) return { icon: ChartLineDown, label: 'Declining', className: 'bearish' } as const;
-    return { icon: Skull, label: 'Bearish', className: 'bearish' } as const;
-  }, [market]);
 
   // User's position in this opinion
   const userPosition = useMemo(() => {
@@ -163,6 +109,27 @@ export default function OpinionPage() {
     const portfolio = (profile as any).portfolio || {};
     return portfolio[docData.text] || 0;
   }, [profile, docData]);
+
+  // Market trend analysis
+  const trendData = useMemo(() => {
+    if (!market) return { label: 'Stable', icon: TrendUp, className: 'stable', netDemand: 0 };
+    
+    const netDemand = market.timesPurchased - market.timesSold;
+    if (netDemand > 0) {
+      return { label: 'Rising', icon: ChartLineUp, className: 'bullish', netDemand };
+    } else if (netDemand < 0) {
+      return { label: 'Declining', icon: TrendDown, className: 'bearish', netDemand };
+    }
+    return { label: 'Stable', icon: TrendUp, className: 'stable', netDemand };
+  }, [market]);
+
+  // Price change calculations
+  const priceChange = useMemo(() => {
+    if (!market) return { absolute: 0, percent: 0 };
+    const absolute = market.currentPrice - market.basePrice;
+    const percent = (absolute / market.basePrice) * 100;
+    return { absolute, percent };
+  }, [market]);
 
   // Data loading
   useEffect(() => {
@@ -181,13 +148,14 @@ export default function OpinionPage() {
         const d = snap.data() as OpinionDocument;
         setDocData(d);
 
-        // 2. Fetch market data
+        // 2. Fetch or create market data
         const marketQuery = query(
           collection(db, 'market-data'),
           where('opinionText', '==', d.text),
           limit(1)
         );
         const marketSnap = await getDocs(marketQuery);
+        
         if (!marketSnap.empty) {
           const mkt = marketSnap.docs[0].data();
           setMarket({
@@ -206,69 +174,65 @@ export default function OpinionPage() {
             liquidityScore: mkt.liquidityScore || 1.0,
             dailyVolume: (mkt.timesPurchased || 0) + (mkt.timesSold || 0),
           });
+        } else {
+          // Create initial market data
+          const initialMarket = {
+            opinionText: d.text,
+            timesPurchased: 0,
+            timesSold: 0,
+            currentPrice: 10.0,
+            basePrice: 10.0,
+            lastUpdated: iso(),
+            priceHistory: [{ price: 10.0, timestamp: iso(), action: 'create' as const, quantity: 1 }],
+            liquidityScore: 1.0,
+            dailyVolume: 0,
+          };
+          
+          const docId = btoa(d.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+          await setDoc(doc(db, 'market-data', docId), initialMarket);
+          setMarket(initialMarket);
         }
 
         // 3. Fetch user profile
         if (user?.uid) {
           const p = await firebaseDataService.getUserProfile(user.uid);
           if (p) {
+            // Fix balance if it's too low (existing users might need this)
+            const fixedBalance = p.balance < 100 ? 10000 : p.balance;
+            if (fixedBalance !== p.balance) {
+              await firebaseDataService.updateUserProfile(user.uid, { balance: fixedBalance });
+              popMsg('Balance updated to $10,000! 💰');
+            }
+            
             setProfile({
               username: p.username,
-              balance: p.balance,
+              balance: fixedBalance,
               joinDate: ts(p.joinDate),
               totalEarnings: p.totalEarnings || 0,
               totalLosses: p.totalLosses || 0,
               portfolio: (p as any).portfolio || {},
             });
-          }
-        }
-
-        // 4. Fetch trade history for this opinion
-        const historyQuery = query(
-          collection(db, 'transactions'),
-          where('opinionText', '==', d.text),
-          orderBy('timestamp', 'desc'),
-          limit(50)
-        );
-        const historySnap = await getDocs(historyQuery);
-        const history = historySnap.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            type: data.type,
-            amount: data.amount,
-            price: data.price || 0,
-            quantity: data.quantity || 1,
-            date: ts(data.timestamp),
-            username: data.username || 'Anonymous',
-            isBot: data.isBot || false,
-            opinionText: data.opinionText,
-          };
-        });
-        setTradeHistory(history);
-
-        // 5. Fetch user's short positions
-        if (user?.uid) {
-          const shortQuery = query(
-            collection(db, 'short-positions'),
-            where('userId', '==', user.uid),
-            where('opinionText', '==', d.text),
-            where('isActive', '==', true)
-          );
-          const shortSnap = await getDocs(shortQuery);
-          const positions = shortSnap.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              opinionText: data.opinionText,
-              entryPrice: data.entryPrice,
-              quantity: data.quantity,
-              date: ts(data.timestamp),
-              collateral: data.collateral,
-              targetPrice: data.targetPrice,
+          } else {
+            // Create new user profile with correct balance
+            const newProfile = {
+              uid: user.uid,
+              username: user.email?.split('@')[0] || 'User',
+              balance: 10000,
+              totalEarnings: 0,
+              totalLosses: 0,
+              joinDate: new Date(),
             };
-          });
-          setUserShortPositions(positions);
+            await firebaseDataService.createUserProfile(user.uid, newProfile);
+            setProfile({
+              username: newProfile.username,
+              balance: 10000,
+              joinDate: iso(),
+              totalEarnings: 0,
+              totalLosses: 0,
+              portfolio: {},
+            });
+            popMsg('Welcome! You start with $10,000! 🎉');
+          }
         }
 
       } catch (err) {
@@ -290,133 +254,265 @@ export default function OpinionPage() {
       market.priceHistory : 
       [{ price: market.basePrice, timestamp: market.lastUpdated, action: 'create' as const }];
     
-    const minPrice = Math.min(...history.map(h => h.price));
-    const maxPrice = Math.max(...history.map(h => h.price));
-    const range = maxPrice - minPrice || 1;
+    // Filter out any invalid prices
+    const validHistory = history.filter(h => h.price && !isNaN(h.price) && h.price > 0);
     
-    return { history, minPrice, maxPrice, range };
+    if (validHistory.length === 0) {
+      // Fallback if no valid price data
+      return {
+        history: [{ price: 10.0, timestamp: iso(), action: 'create' as const }],
+        minPrice: 10.0,
+        maxPrice: 10.0,
+        range: 1.0
+      };
+    }
+    
+    const prices = validHistory.map(h => h.price);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const range = maxPrice - minPrice;
+    
+    // Ensure we have a minimum range for single-point charts
+    const safeRange = range > 0 ? range : Math.max(minPrice * 0.1, 1.0);
+    
+    return { 
+      history: validHistory, 
+      minPrice, 
+      maxPrice, 
+      range: safeRange 
+    };
   }, [market]);
 
-  // Trading functions
+  // Helper function to safely calculate SVG coordinates
+  const getChartCoordinates = (index: number, price: number, totalPoints: number) => {
+    const x = totalPoints > 1 ? (index / (totalPoints - 1)) * 760 + 20 : 400; // Center single point
+    const y = chartData ? 280 - ((price - chartData.minPrice) / chartData.range) * 260 : 150;
+    return {
+      x: isNaN(x) ? 400 : Math.max(20, Math.min(780, x)), // Clamp to valid range
+      y: isNaN(y) ? 150 : Math.max(20, Math.min(280, y))  // Clamp to valid range
+    };
+  };
+
+  // Simple buy function - increases price by 0.1%
   const executeBuy = async () => {
-    if (!user?.uid || !docData || !market) return;
+    if (!user?.uid || !docData || !market || loading) return;
     
-    const totalCost = market.currentPrice * buyQuantity;
-    if (totalCost > profile.balance) {
-      popMsg('Insufficient balance');
-      return;
-    }
-
     try {
       setLoading(true);
-      await UnifiedMarketDataManager.applyTrade(
-        docData.text,
-        'buy',
-        buyQuantity,
-        user.uid
+      
+      // Check if user has enough balance
+      const cost = market.currentPrice;
+      if (cost > profile.balance) {
+        popMsg(`Insufficient balance! Need ${formatCurrency(cost)}, have ${formatCurrency(profile.balance)}`);
+        return;
+      }
+      
+      // Anti-arbitrage check: Max 4 shares per 10 minutes per opinion
+      const now = new Date();
+      const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      
+      // Query recent transactions for this user and opinion
+      const recentTransactionsQuery = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid),
+        where('opinionText', '==', docData.text),
+        where('type', '==', 'buy'),
+        where('timestamp', '>=', tenMinutesAgo),
+        orderBy('timestamp', 'desc')
       );
       
-      // Update user balance and portfolio
-      await firebaseDataService.updateUserProfile(user.uid, {
-        balance: profile.balance - totalCost,
-        [`portfolio.${docData.text}`]: (userPosition + buyQuantity),
-      } as any);
+      const recentTransactionsSnap = await getDocs(recentTransactionsQuery);
+      const recentBuys = recentTransactionsSnap.docs.length;
       
-      popMsg(`Successfully bought ${buyQuantity} shares for ${formatCurrency(totalCost)}`);
-      setShowBuyModal(false);
-      setBuyQuantity(1);
+      if (recentBuys >= 4) {
+        const earliestBuy = recentTransactionsSnap.docs[recentTransactionsSnap.docs.length - 1];
+        const nextAllowedTime = new Date(earliestBuy.data().timestamp.toDate().getTime() + 10 * 60 * 1000);
+        const minutesLeft = Math.ceil((nextAllowedTime.getTime() - now.getTime()) / (60 * 1000));
+        
+        popMsg(`🚫 Anti-arbitrage limit: You've bought 4 shares in the last 10 minutes. Wait ${minutesLeft} minutes before buying again.`);
+        return;
+      }
       
-      // Refresh data
-      window.location.reload();
-    } catch (err) {
-      console.error('Buy error:', err);
-      popMsg('Error executing buy order');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const executeSell = async () => {
-    if (!user?.uid || !docData || !market) return;
-    
-    if (sellQuantity > userPosition) {
-      popMsg('Cannot sell more than you own');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const totalValue = market.currentPrice * sellQuantity;
+      // Calculate new price (0.1% increase)
+      const newPrice = market.currentPrice * 1.001;
       
-      await UnifiedMarketDataManager.applyTrade(
-        docData.text,
-        'sell',
-        sellQuantity,
-        user.uid
-      );
-      
-      // Update user balance and portfolio
-      await firebaseDataService.updateUserProfile(user.uid, {
-        balance: profile.balance + totalValue,
-        [`portfolio.${docData.text}`]: (userPosition - sellQuantity),
-      } as any);
-      
-      popMsg(`Successfully sold ${sellQuantity} shares for ${formatCurrency(totalValue)}`);
-      setShowSellModal(false);
-      setSellQuantity(1);
-      
-      // Refresh data
-      window.location.reload();
-    } catch (err) {
-      console.error('Sell error:', err);
-      popMsg('Error executing sell order');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const executeShort = async () => {
-    if (!user?.uid || !docData || !market) return;
-    
-    const requiredCollateral = (market.currentPrice * shortQuantity * shortCollateral) / 100;
-    if (requiredCollateral > profile.balance) {
-      popMsg('Insufficient collateral');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      
-      // Create short position
-      const shortPosition = {
-        userId: user.uid,
-        opinionText: docData.text,
-        entryPrice: market.currentPrice,
-        quantity: shortQuantity,
-        collateral: requiredCollateral,
-        targetPrice: market.currentPrice * 0.8, // 20% drop target
-        isActive: true,
-        timestamp: new Date(),
-      };
-      
-      // Create short position using direct Firestore write
-      await setDoc(doc(db, 'short-positions', `${user.uid}_${Date.now()}`), shortPosition);
-      
-      // Update user balance
-      await firebaseDataService.updateUserProfile(user.uid, {
-        balance: profile.balance - requiredCollateral,
+      console.log('🔄 Executing buy:', {
+        currentPrice: market.currentPrice,
+        newPrice,
+        cost,
+        balance: profile.balance,
+        userPosition: userPosition,
+        recentBuys: recentBuys
       });
       
-      popMsg(`Short position opened: ${shortQuantity} shares at ${formatCurrency(market.currentPrice)}`);
-      setShowShortModal(false);
-      setShortQuantity(1);
-      setShortCollateral(50);
+      // Update market data
+      const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const updatedMarket = {
+        ...market,
+        timesPurchased: market.timesPurchased + 1,
+        currentPrice: newPrice,
+        lastUpdated: iso(),
+        priceHistory: [
+          ...market.priceHistory.slice(-19), // Keep last 20 points
+          { 
+            price: newPrice, 
+            timestamp: iso(), 
+            action: 'buy' as const, 
+            quantity: 1 
+          }
+        ],
+        dailyVolume: market.dailyVolume + 1,
+      };
       
-      // Refresh data
-      window.location.reload();
+      // Create transaction record
+      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transaction = {
+        id: transactionId,
+        type: 'buy',
+        userId: user.uid,
+        username: profile.username,
+        amount: cost,
+        opinionText: docData.text,
+        opinionId: id,
+        timestamp: serverTimestamp(),
+        metadata: {
+          oldPrice: market.currentPrice,
+          newPrice: newPrice,
+          source: 'opinion-page'
+        }
+      };
+      
+      // Use batch write for consistency
+      const batch = writeBatch(db);
+      
+      // Update market data
+      batch.set(doc(db, 'market-data', docId), updatedMarket);
+      
+      // Save transaction
+      batch.set(doc(db, 'transactions', transactionId), transaction);
+      
+      // Update user profile
+      batch.update(doc(db, 'users', user.uid), {
+        balance: profile.balance - cost,
+        [`portfolio.${docData.text}`]: (userPosition + 1),
+        updatedAt: serverTimestamp()
+      });
+      
+      // Commit all changes
+      await batch.commit();
+      
+      // Update local state
+      setMarket(updatedMarket);
+      setProfile(prev => ({
+        ...prev,
+        balance: prev.balance - cost,
+        portfolio: {
+          ...((prev as any).portfolio || {}),
+          [docData.text]: userPosition + 1
+        }
+      } as any));
+      
+      popMsg(`✅ Share purchased for ${formatCurrency(cost)}! New price: ${formatCurrency(newPrice)} (+0.1%) | ${4 - recentBuys - 1} more allowed in 10min`);
+      
     } catch (err) {
-      console.error('Short error:', err);
-      popMsg('Error opening short position');
+      console.error('❌ Buy error:', err);
+      popMsg('❌ Error purchasing share. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sell function (existing logic)
+  const executeSell = async () => {
+    if (!user?.uid || !docData || !market || userPosition === 0 || loading) return;
+    
+    try {
+      setLoading(true);
+      
+      // Calculate sell price with 5% spread
+      const sellPrice = market.currentPrice * 0.95;
+      const newPrice = market.currentPrice * 0.999; // Slight price decrease on sell
+      
+      console.log('🔄 Executing sell:', {
+        currentPrice: market.currentPrice,
+        sellPrice,
+        newPrice,
+        userPosition: userPosition,
+        balance: profile.balance
+      });
+      
+      // Update market data
+      const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const updatedMarket = {
+        ...market,
+        timesSold: market.timesSold + 1,
+        currentPrice: newPrice,
+        lastUpdated: iso(),
+        priceHistory: [
+          ...market.priceHistory.slice(-19), // Keep last 20 points
+          { 
+            price: newPrice, 
+            timestamp: iso(), 
+            action: 'sell' as const, 
+            quantity: 1 
+          }
+        ],
+        dailyVolume: market.dailyVolume + 1,
+      };
+      
+      // Create transaction record
+      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transaction = {
+        id: transactionId,
+        type: 'sell',
+        userId: user.uid,
+        username: profile.username,
+        amount: sellPrice,
+        opinionText: docData.text,
+        opinionId: id,
+        timestamp: serverTimestamp(),
+        metadata: {
+          oldPrice: market.currentPrice,
+          newPrice: newPrice,
+          source: 'opinion-page'
+        }
+      };
+      
+      // Use batch write for consistency
+      const batch = writeBatch(db);
+      
+      // Update market data
+      batch.set(doc(db, 'market-data', docId), updatedMarket);
+      
+      // Save transaction
+      batch.set(doc(db, 'transactions', transactionId), transaction);
+      
+      // Update user profile
+      batch.update(doc(db, 'users', user.uid), {
+        balance: profile.balance + sellPrice,
+        [`portfolio.${docData.text}`]: (userPosition - 1),
+        updatedAt: serverTimestamp()
+      });
+      
+      // Commit all changes
+      await batch.commit();
+      
+      // Update local state
+      setMarket(updatedMarket);
+      setProfile(prev => ({
+        ...prev,
+        balance: prev.balance + sellPrice,
+        portfolio: {
+          ...((prev as any).portfolio || {}),
+          [docData.text]: userPosition - 1
+        }
+      } as any));
+      
+      popMsg(`✅ Share sold for ${formatCurrency(sellPrice)}! New price: ${formatCurrency(newPrice)} (-0.1%)`);
+      
+    } catch (err) {
+      console.error('❌ Sell error:', err);
+      popMsg('❌ Error selling share. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -447,7 +543,148 @@ export default function OpinionPage() {
           </div>
         </div>
 
-        {/* Opinion Card */}
+        {/* Price Summary */}
+        {market && (
+          <div className={styles.priceSummary}>
+            <div className={styles.priceItem}>
+              <div className={styles.priceLabel}>Starting Price</div>
+              <div className={styles.priceValue}>{formatCurrency(market.basePrice)}</div>
+            </div>
+            <div className={styles.priceDivider}></div>
+            <div className={styles.priceItem}>
+              <div className={styles.priceLabel}>Current Price</div>
+              <div className={styles.priceValue}>{formatCurrency(market.currentPrice)}</div>
+            </div>
+            <div className={styles.priceDivider}></div>
+            <div className={styles.priceItem}>
+              <div className={styles.priceLabel}>Total Change</div>
+              <div className={`${styles.priceValue} ${priceChange.absolute >= 0 ? styles.positive : styles.negative}`}>
+                {priceChange.absolute >= 0 ? '+' : ''}{formatCurrency(priceChange.absolute)} ({formatPercent(priceChange.absolute, market.basePrice)})
+              </div>
+            </div>
+            <div className={styles.priceDivider}></div>
+            <div className={styles.priceItem}>
+              <div className={styles.priceLabel}>Data Points</div>
+              <div className={styles.priceValue}>{chartData?.history.length || 0}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Price Chart */}
+        {chartData && (
+          <div className={styles.chartContainer}>
+            <div className={styles.chartVisual}>
+              <svg className={styles.chartSvg} viewBox="0 0 800 300" width="800" height="300">
+                {/* Grid lines */}
+                <defs>
+                  <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
+                    <path d="M 40 0 L 0 0 0 30" fill="none" stroke="#333" strokeWidth="1"/>
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+                
+                {/* Price line */}
+                {chartData.history.length > 1 && (
+                  <path
+                    className={styles.priceLine}
+                    d={chartData.history.map((point, i) => {
+                      const coords = getChartCoordinates(i, point.price, chartData.history.length);
+                      return `${i === 0 ? 'M' : 'L'} ${coords.x} ${coords.y}`;
+                    }).join(' ')}
+                    fill="none"
+                    stroke="#22c55e"
+                    strokeWidth="3"
+                  />
+                )}
+                
+                {/* Data points */}
+                {chartData.history.map((point, i) => {
+                  const coords = getChartCoordinates(i, point.price, chartData.history.length);
+                  return (
+                    <circle
+                      key={i}
+                      className={styles.dataPoint}
+                      cx={coords.x}
+                      cy={coords.y}
+                      r="5"
+                      fill="#22c55e"
+                    >
+                      <title>{`${formatCurrency(point.price)} - ${point.action} (${new Date(point.timestamp).toLocaleString()})`}</title>
+                    </circle>
+                  );
+                })}
+                
+                {/* Y-axis labels */}
+                <text x="10" y="30" className={styles.axisLabel}>
+                  {formatCurrency(chartData.maxPrice)}
+                </text>
+                <text x="10" y="290" className={styles.axisLabel}>
+                  {formatCurrency(chartData.minPrice)}
+                </text>
+                
+                {/* Current price line */}
+                {market && (
+                  <>
+                    <line
+                      x1="20"
+                      y1={getChartCoordinates(0, market.currentPrice, 1).y}
+                      x2="780"
+                      y2={getChartCoordinates(0, market.currentPrice, 1).y}
+                      stroke="#fbbf24"
+                      strokeWidth="2"
+                      strokeDasharray="5,5"
+                    />
+                    <text 
+                      x="790" 
+                      y={getChartCoordinates(0, market.currentPrice, 1).y + 5} 
+                      className={styles.currentPriceLabel}
+                    >
+                      {formatCurrency(market.currentPrice)}
+                    </text>
+                  </>
+                )}
+              </svg>
+            </div>
+            
+            <div className={styles.chartLegend}>
+              <div className={styles.legendItem}>
+                <div className={styles.legendColor} style={{backgroundColor: '#22c55e'}}></div>
+                <span>● Positive Trend</span>
+              </div>
+              <div className={styles.legendText}>
+                • Interactive data points show price and time on hover
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Trading Actions */}
+        <div className={styles.tradingActions}>
+          <button 
+            className={`${styles.tradingButton} ${styles.buyButton}`}
+            onClick={executeBuy}
+            disabled={loading}
+          >
+            {loading ? 'Processing...' : `Buy More (${formatCurrency(market?.currentPrice || 0)})`}
+          </button>
+          
+          <button 
+            className={`${styles.tradingButton} ${styles.sellButton}`}
+            onClick={executeSell}
+            disabled={loading || userPosition === 0}
+          >
+            {userPosition > 0 ? `Sell 1 for ${formatCurrency((market?.currentPrice || 0) * 0.95)}` : 'Sell 1 for $0.00'}
+          </button>
+          
+          <button 
+            className={`${styles.tradingButton} ${styles.shortButton}`}
+            disabled={userPosition > 0}
+          >
+            {userPosition > 0 ? "Own Shares (Can't Short)" : "Short Position"}
+          </button>
+        </div>
+
+        {/* Opinion Text */}
         <div className={styles.opinionCard}>
           <div className={styles.opinionText}>
             <p>{docData?.text}</p>
@@ -455,598 +692,56 @@ export default function OpinionPage() {
           
           {docData && (
             <div className={styles.attributionLine}>
-              <span>{docData.isBot ? '🤖' : '👤'} {docData.author || 'Anonymous'}</span> •{' '}
+              <span>{docData.author || 'Anonymous'}</span>
               <span>{new Date(ts(docData.createdAt)).toLocaleDateString()}</span>
             </div>
           )}
-
-          {/* Market Statistics */}
-          {market && (
-            <div className={styles.marketStats}>
-              <div className={`${styles.statCard} ${styles.price}`}>
-                <div className={styles.statTitle}>Current Price</div>
-                <div className={styles.statValue}>{formatCurrency(market.currentPrice)}</div>
-                <div className={styles.statSubtext}>
-                  {market.currentPrice > market.basePrice ? '+' : ''}
-                  {formatCurrency(market.currentPrice - market.basePrice)} from base
-                </div>
-              </div>
-
-              <div className={`${styles.statCard} ${styles.trend}`}>
-                <div className={styles.statTitle}>Trend</div>
-                <div className={`${styles.statValue} ${styles[trend.className]}`}>
-                  <trend.icon size={20} /> {trend.label}
-                </div>
-                <div className={styles.statSubtext}>
-                  {market.timesPurchased} buys, {market.timesSold} sells
-                </div>
-              </div>
-
-              <div className={`${styles.statCard} ${styles.volume}`}>
-                <div className={styles.statTitle}>Daily Volume</div>
-                <div className={styles.statValue}>{formatNumber(market.dailyVolume)}</div>
-                <div className={styles.statSubtext}>Total transactions</div>
-              </div>
-
-              <div className={`${styles.statCard} ${styles.clickable}`} onClick={() => setShowHistoryModal(true)}>
-                <div className={styles.statTitle}>Your Position</div>
-                <div className={styles.statValue}>{userPosition}</div>
-                <div className={styles.statSubtext}>
-                  {userPosition > 0 ? 'shares owned' : 'Click to view history'}
-                </div>
-                <div className={styles.clickHint}>Click to view trading history</div>
-              </div>
-            </div>
-          )}
-
-          {/* Price Chart */}
-          {chartData && (
-            <div className={styles.chartContainer}>
-              <div className={styles.chartTitle}>Price Chart</div>
-              
-              <div className={styles.chartSummary}>
-                <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>Current</div>
-                  <div className={styles.summaryValue}>
-                    {formatCurrency(market?.currentPrice || 0)}
-                  </div>
-                </div>
-                <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>High</div>
-                  <div className={`${styles.summaryValue} ${styles.positive}`}>
-                    {formatCurrency(chartData.maxPrice)}
-                  </div>
-                </div>
-                <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>Low</div>
-                  <div className={`${styles.summaryValue} ${styles.negative}`}>
-                    {formatCurrency(chartData.minPrice)}
-                  </div>
-                </div>
-                <div className={styles.summaryItem}>
-                  <div className={styles.summaryLabel}>Base</div>
-                  <div className={styles.summaryValue}>
-                    {formatCurrency(market?.basePrice || 0)}
-                  </div>
-                </div>
-              </div>
-
-              <div className={styles.chartVisual}>
-                <div className={styles.lineChart}>
-                  <svg className={styles.chartSvg} viewBox="0 0 800 300" width="800" height="300">
-                    {/* Grid lines */}
-                    <defs>
-                      <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 30" fill="none" stroke="#333" strokeWidth="1"/>
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-                    
-                    {/* Price line */}
-                    {chartData.history.length > 1 && (
-                      <path
-                        className={styles.priceLine}
-                        d={chartData.history.map((point, i) => {
-                          const x = (i / (chartData.history.length - 1)) * 760 + 20;
-                          const y = 280 - ((point.price - chartData.minPrice) / chartData.range) * 260;
-                          return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                        }).join(' ')}
-                        fill="none"
-                        stroke="#22c55e"
-                        strokeWidth="3"
-                      />
-                    )}
-                    
-                    {/* Data points */}
-                    {chartData.history.map((point, i) => {
-                      const x = (i / (chartData.history.length - 1)) * 760 + 20;
-                      const y = 280 - ((point.price - chartData.minPrice) / chartData.range) * 260;
-                      return (
-                        <circle
-                          key={i}
-                          className={styles.dataPoint}
-                          cx={x}
-                          cy={y}
-                          r="4"
-                          fill={point.action === 'buy' ? '#22c55e' : point.action === 'sell' ? '#ef4444' : '#6b7280'}
-                        >
-                          <title>{`${formatCurrency(point.price)} - ${point.action} (${new Date(point.timestamp).toLocaleString()})`}</title>
-                        </circle>
-                      );
-                    })}
-                    
-                    {/* Y-axis labels */}
-                    <text x="10" y="30" className={styles.axisLabel}>
-                      {formatCurrency(chartData.maxPrice)}
-                    </text>
-                    <text x="10" y="290" className={styles.axisLabel}>
-                      {formatCurrency(chartData.minPrice)}
-                    </text>
-                    
-                    {/* Current price line */}
-                    {market && (
-                      <line
-                        x1="20"
-                        y1={280 - ((market.currentPrice - chartData.minPrice) / chartData.range) * 260}
-                        x2="780"
-                        y2={280 - ((market.currentPrice - chartData.minPrice) / chartData.range) * 260}
-                        stroke="#fbbf24"
-                        strokeWidth="2"
-                        strokeDasharray="5,5"
-                      />
-                    )}
-                  </svg>
-                </div>
-              </div>
-
-              <div className={styles.chartLegend}>
-                <div className={styles.legendItem}>
-                  <div className={`${styles.legendColor} ${styles.positive}`}></div>
-                  <span>Buy Orders</span>
-                </div>
-                <div className={styles.legendItem}>
-                  <div className={`${styles.legendColor} ${styles.negative}`}></div>
-                  <span>Sell Orders</span>
-                </div>
-                <div className={styles.legendItem}>
-                  <div className={styles.legendColor} style={{backgroundColor: '#fbbf24'}}></div>
-                  <span>Current Price</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Trading Actions */}
-          <div className={styles.actionButtons}>
-            <button 
-              className={`${styles.actionButton} ${styles.buy}`}
-              onClick={() => setShowBuyModal(true)}
-              disabled={loading}
-            >
-              <TrendUp size={18} /> Buy
-            </button>
-            
-            <button 
-              className={`${styles.actionButton} ${styles.sell}`}
-              onClick={() => setShowSellModal(true)}
-              disabled={loading || userPosition === 0}
-            >
-              <TrendDown size={18} /> Sell
-            </button>
-            
-            <button 
-              className={`${styles.actionButton} ${styles.short}`}
-              onClick={() => setShowShortModal(true)}
-              disabled={loading}
-            >
-              <Ticket size={18} /> Short
-            </button>
-          </div>
-
-          {/* Status Messages */}
-          {msg && (
-            <div className={styles.statusMessage}>
-              {msg}
-            </div>
-          )}
-
-          {/* User's Short Positions */}
-          {userShortPositions.length > 0 && (
-            <div className={styles.tradingInfo}>
-              <h3 className={styles.tradingInfoTitle}>Your Short Positions</h3>
-              <div className={styles.tradingInfoGrid}>
-                {userShortPositions.map(position => (
-                  <div key={position.id} className={styles.tradingInfoSection}>
-                    <strong>
-                      {position.quantity} shares @ {formatCurrency(position.entryPrice)}
-                    </strong>
-                    <p>Collateral: {formatCurrency(position.collateral)}</p>
-                    <p>Target: {formatCurrency(position.targetPrice)}</p>
-                    <p>Current P&L: {market ? formatCurrency((position.entryPrice - market.currentPrice) * position.quantity) : 'N/A'}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Trading Details Accordion */}
+        {/* Market Statistics Grid */}
         {market && (
-          <Accordion title="Trading Details & Market Data">
-            <div className={styles.tradingInfo}>
-              <div className={styles.tradingInfoGrid}>
-                <div className={styles.tradingInfoSection}>
-                  <strong>Market Statistics</strong>
-                  <ul>
-                    <li>Base Price: {formatCurrency(market.basePrice)}</li>
-                    <li>Current Price: {formatCurrency(market.currentPrice)}</li>
-                    <li>Total Purchases: {market.timesPurchased}</li>
-                    <li>Total Sales: {market.timesSold}</li>
-                    <li>Liquidity Score: {market.liquidityScore.toFixed(2)}</li>
-                    <li>Last Updated: {new Date(market.lastUpdated).toLocaleString()}</li>
-                  </ul>
-                </div>
-                
-                <div className={styles.tradingInfoSection}>
-                  <strong>Your Portfolio</strong>
-                  <ul>
-                    <li>Shares Owned: {userPosition}</li>
-                    <li>Current Value: {formatCurrency(userPosition * (market.currentPrice || 0))}</li>
-                    <li>Available Balance: {formatCurrency(profile.balance)}</li>
-                    <li>Short Positions: {userShortPositions.length}</li>
-                  </ul>
-                </div>
+          <div className={styles.marketStatsGrid}>
+            <div className={styles.statCard}>
+              <div className={styles.statTitle}>Current Price</div>
+              <div className={styles.statValue}>{formatCurrency(market.currentPrice)}</div>
+              <div className={styles.statSubtext}>Base price: {formatCurrency(market.basePrice)}</div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statTitle}>Market Trend</div>
+              <div className={`${styles.statValue} ${styles.trendValue}`}>
+                <trendData.icon size={20} /> {trendData.label}
+              </div>
+              <div className={styles.statSubtext}>Net demand: {trendData.netDemand}</div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statTitle}>Trading Volume</div>
+              <div className={styles.statValue}>{market.timesPurchased} buys</div>
+              <div className={styles.statSubtext}>{market.timesSold} sells</div>
+              <div className={styles.statSubtext}>Click to view trader history</div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statTitle}>Sell Price</div>
+              <div className={styles.statValue}>{formatCurrency(market.currentPrice * 0.95)}</div>
+              <div className={styles.statSubtext}>
+                Purchase: {formatCurrency(market.basePrice)} | Market: {formatCurrency(market.currentPrice)} | Sell: {formatCurrency(market.currentPrice * 0.95)}
+              </div>
+              <div className={styles.statLoss}>
+                📉 Loss: {formatCurrency(market.currentPrice * 0.05)} (5% transaction cost + small market moves)
               </div>
             </div>
-          </Accordion>
+          </div>
+        )}
+
+        {/* Status Messages */}
+        {msg && (
+          <div className={styles.statusMessage}>
+            {msg}
+          </div>
         )}
       </main>
-
-      {/* Buy Modal */}
-      {showBuyModal && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.shortModal}>
-            <div className={styles.modalHeader}>
-              <h3>Buy Shares</h3>
-              <button onClick={() => setShowBuyModal(false)} className={styles.closeButton}>
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className={styles.modalContent}>
-              <div className={styles.shortExplanation}>
-                <h4>📈 How it works:</h4>
-                <p><strong>When you buy</strong> → Price goes UP</p>
-                <p><strong>More demand</strong> → Higher value</p>
-                <p>You profit if the idea becomes more popular!</p>
-              </div>
-              
-              <div className={styles.shortSettings}>
-                <div className={styles.settingGroup}>
-                  <label>How many shares?</label>
-                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                    <button 
-                      onClick={() => setBuyQuantity(Math.max(1, buyQuantity - 1))}
-                      className={styles.quantityBtn}
-                    >-</button>
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={buyQuantity}
-                      onChange={(e) => setBuyQuantity(parseInt(e.target.value) || 1)}
-                      className={styles.quantityInput}
-                    />
-                    <button 
-                      onClick={() => setBuyQuantity(Math.min(50, buyQuantity + 1))}
-                      className={styles.quantityBtn}
-                    >+</button>
-                  </div>
-                </div>
-                
-                <div className={styles.quickSummary}>
-                  <div className={styles.summaryRow}>
-                    <span>Current Price:</span>
-                    <span className={styles.currentPrice}>{formatCurrency(market?.currentPrice || 0)}</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>You're buying:</span>
-                    <span>{buyQuantity} shares</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>Total Cost:</span>
-                    <span className={styles.totalCost}>{formatCurrency((market?.currentPrice || 0) * buyQuantity)}</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>After purchase:</span>
-                    <span>Price will increase! 📈</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className={styles.modalActions}>
-                <button onClick={() => setShowBuyModal(false)} className={`${styles.modalButton} ${styles.cancel}`}>
-                  Cancel
-                </button>
-                <button 
-                  onClick={executeBuy} 
-                  className={`${styles.modalButton} ${styles.confirm}`}
-                  disabled={loading || (market?.currentPrice || 0) * buyQuantity > profile.balance}
-                >
-                  {loading ? 'Buying...' : `Buy ${buyQuantity} shares`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sell Modal */}
-      {showSellModal && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.shortModal}>
-            <div className={styles.modalHeader}>
-              <h3>Sell Shares</h3>
-              <button onClick={() => setShowSellModal(false)} className={styles.closeButton}>
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className={styles.modalContent}>
-              <div className={styles.shortExplanation}>
-                <h4>📉 How it works:</h4>
-                <p><strong>When you sell</strong> → Price goes DOWN</p>
-                <p><strong>Less demand</strong> → Lower value</p>
-                <p>Sell high to lock in profits!</p>
-              </div>
-              
-              <div className={styles.shortSettings}>
-                <div className={styles.settingGroup}>
-                  <label>How many shares to sell?</label>
-                  <p className={styles.portfolioInfo}>You own: <strong>{userPosition} shares</strong></p>
-                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                    <button 
-                      onClick={() => setSellQuantity(Math.max(1, sellQuantity - 1))}
-                      className={styles.quantityBtn}
-                    >-</button>
-                    <input
-                      type="number"
-                      min="1"
-                      max={userPosition}
-                      value={sellQuantity}
-                      onChange={(e) => setSellQuantity(parseInt(e.target.value) || 1)}
-                      className={styles.quantityInput}
-                    />
-                    <button 
-                      onClick={() => setSellQuantity(Math.min(userPosition, sellQuantity + 1))}
-                      className={styles.quantityBtn}
-                    >+</button>
-                  </div>
-                  <button 
-                    onClick={() => setSellQuantity(userPosition)} 
-                    className={styles.sellAllBtn}
-                  >
-                    Sell All
-                  </button>
-                </div>
-                
-                <div className={styles.quickSummary}>
-                  <div className={styles.summaryRow}>
-                    <span>Current Price:</span>
-                    <span className={styles.currentPrice}>{formatCurrency(market?.currentPrice || 0)}</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>You're selling:</span>
-                    <span>{sellQuantity} shares</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>You'll receive:</span>
-                    <span className={styles.sellValue}>{formatCurrency((market?.currentPrice || 0) * sellQuantity)}</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>After sale:</span>
-                    <span>Price will decrease! 📉</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className={styles.modalActions}>
-                <button onClick={() => setShowSellModal(false)} className={`${styles.modalButton} ${styles.cancel}`}>
-                  Cancel
-                </button>
-                <button 
-                  onClick={executeSell} 
-                  className={`${styles.modalButton} ${styles.confirm}`}
-                  disabled={loading || sellQuantity > userPosition}
-                >
-                  {loading ? 'Selling...' : `Sell ${sellQuantity} shares`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Short Modal */}
-      {showShortModal && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.shortModal}>
-            <div className={styles.modalHeader}>
-              <h3>Short Position</h3>
-              <button onClick={() => setShowShortModal(false)} className={styles.closeButton}>
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className={styles.modalContent}>
-              <div className={styles.shortExplanation}>
-                <h4>⚡ Advanced Strategy:</h4>
-                <p><strong>Bet AGAINST the idea</strong> → Profit if price falls</p>
-                <p><strong>Higher risk</strong> → Higher potential rewards</p>
-                <p>⚠️ You can lose money if price goes up!</p>
-              </div>
-              
-              <div className={styles.shortSettings}>
-                <div className={styles.settingGroup}>
-                  <label>Short how many shares?</label>
-                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
-                    <button 
-                      onClick={() => setShortQuantity(Math.max(1, shortQuantity - 1))}
-                      className={styles.quantityBtn}
-                    >-</button>
-                    <input
-                      type="number"
-                      min="1"
-                      max="25"
-                      value={shortQuantity}
-                      onChange={(e) => setShortQuantity(parseInt(e.target.value) || 1)}
-                      className={styles.quantityInput}
-                    />
-                    <button 
-                      onClick={() => setShortQuantity(Math.min(25, shortQuantity + 1))}
-                      className={styles.quantityBtn}
-                    >+</button>
-                  </div>
-                </div>
-                
-                <div className={styles.settingGroup}>
-                  <label>Safety deposit (collateral)</label>
-                  <div className={styles.collateralOptions}>
-                    <button 
-                      onClick={() => setShortCollateral(50)}
-                      className={`${styles.collateralBtn} ${shortCollateral === 50 ? styles.active : ''}`}
-                    >50% (Risky)</button>
-                    <button 
-                      onClick={() => setShortCollateral(75)}
-                      className={`${styles.collateralBtn} ${shortCollateral === 75 ? styles.active : ''}`}
-                    >75% (Safe)</button>
-                    <button 
-                      onClick={() => setShortCollateral(100)}
-                      className={`${styles.collateralBtn} ${shortCollateral === 100 ? styles.active : ''}`}
-                    >100% (Very Safe)</button>
-                  </div>
-                </div>
-                
-                <div className={styles.quickSummary}>
-                  <div className={styles.summaryRow}>
-                    <span>Entry Price:</span>
-                    <span>{formatCurrency(market?.currentPrice || 0)}</span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>Deposit Required:</span>
-                    <span className={styles.depositCost}>
-                      {formatCurrency(((market?.currentPrice || 0) * shortQuantity * shortCollateral) / 100)}
-                    </span>
-                  </div>
-                  <div className={styles.summaryRow}>
-                    <span>Profit if price drops 20%:</span>
-                    <span className={styles.profitEstimate}>
-                      {formatCurrency((market?.currentPrice || 0) * shortQuantity * 0.2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className={styles.modalActions}>
-                <button onClick={() => setShowShortModal(false)} className={`${styles.modalButton} ${styles.cancel}`}>
-                  Cancel
-                </button>
-                <button 
-                  onClick={executeShort} 
-                  className={`${styles.modalButton} ${styles.confirm}`}
-                  disabled={loading || ((market?.currentPrice || 0) * shortQuantity * shortCollateral) / 100 > profile.balance}
-                >
-                  {loading ? 'Opening...' : `Short ${shortQuantity} shares`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Trading History Modal */}
-      {showHistoryModal && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.traderHistoryModal}>
-            <div className={styles.modalHeader}>
-              <h3>Trading History</h3>
-              <button onClick={() => setShowHistoryModal(false)} className={styles.closeButton}>
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className={styles.modalContent}>
-              <div className={styles.historyExplanation}>
-                <p>Recent trading activity for this opinion</p>
-              </div>
-              
-              {tradeHistory.length === 0 ? (
-                <div className={styles.noHistory}>
-                  <div>📈</div>
-                  <h4>No trading history yet</h4>
-                  <p>Be the first to trade this opinion!</p>
-                </div>
-              ) : (
-                <div className={styles.historyList}>
-                  {tradeHistory.map((trade) => (
-                    <div key={trade.id} className={styles.tradeItem}>
-                      <div className={styles.tradeHeader}>
-                        <div className={styles.traderInfo}>
-                          <span className={`${styles.traderName} ${trade.isBot ? styles.botTrader : styles.humanTrader}`}>
-                            {trade.isBot ? '🤖' : '👤'} {trade.username}
-                          </span>
-                          <span className={styles.tradeDate}>
-                            {new Date(trade.date).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className={`${styles.tradeAction} ${styles[trade.type]}`}>
-                          {trade.type.toUpperCase()}
-                        </div>
-                      </div>
-                      
-                      <div className={styles.tradeDetails}>
-                        <div className={styles.tradeDetailItem}>
-                          <span>Quantity:</span>
-                          <span>{trade.quantity}</span>
-                        </div>
-                        <div className={styles.tradeDetailItem}>
-                          <span>Price:</span>
-                          <span className={styles.tradePrice}>{formatCurrency(trade.price)}</span>
-                        </div>
-                        <div className={styles.tradeDetailItem}>
-                          <span>Total:</span>
-                          <span className={styles.tradeTotal}>
-                            {formatCurrency(Math.abs(trade.amount))}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <div className={styles.historyStats}>
-                <div className={styles.statItem}>
-                  <span>Total Trades:</span>
-                  <span>{tradeHistory.length}</span>
-                </div>
-                <div className={styles.statItem}>
-                  <span>Total Volume:</span>
-                  <span>{formatCurrency(tradeHistory.reduce((sum, t) => sum + Math.abs(t.amount), 0))}</span>
-                </div>
-                <div className={styles.statItem}>
-                  <span>Buy Orders:</span>
-                  <span>{tradeHistory.filter(t => t.type === 'buy').length}</span>
-                </div>
-                <div className={styles.statItem}>
-                  <span>Sell Orders:</span>
-                  <span>{tradeHistory.filter(t => t.type === 'sell').length}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
