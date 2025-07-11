@@ -1129,3 +1129,239 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* New simplified modal styles */
+.quickSummary {
+  background: var(--bg-section);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  border: 1px solid var(--border-secondary);
+}
+
+.quantityBtn {
+  background: var(--bg-button);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  color: var(--text-primary);
+}
+
+.quantityBtn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.quantityInput {
+  background: var(--bg-white);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  text-align: center;
+  width: 80px;
+  color: var(--text-primary);
+}
+
+.quantityInput:focus {
+  outline: none;
+  border-color: var(--lime-green);
+}
+
+.portfolioInfo {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 8px 0;
+}
+
+.sellAllBtn {
+  background: var(--red);
+  color: var(--white);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 16px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all var(--transition);
+}
+
+.sellAllBtn:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+.collateralOptions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.collateralBtn {
+  background: var(--bg-white);
+  border: 2px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex: 1;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.collateralBtn:hover {
+  border-color: var(--lime-green);
+  background: var(--bg-hover);
+}
+
+.collateralBtn.active {
+  background: var(--lime-green);
+  border-color: var(--lime-green);
+  color: var(--black);
+  font-weight: 600;
+}
+
+.currentPrice {
+  font-family: var(--font-number);
+  font-weight: 700;
+  color: var(--lime-green);
+}
+
+.totalCost {
+  font-family: var(--font-number);
+  font-weight: 700;
+  color: var(--red);
+}
+
+.sellValue {
+  font-family: var(--font-number);
+  font-weight: 700;
+  color: var(--green);
+}
+
+.depositCost {
+  font-family: var(--font-number);
+  font-weight: 700;
+  color: var(--yellow);
+}
+
+.profitEstimate {
+  font-family: var(--font-number);
+  font-weight: 700;
+  color: var(--green);
+}
+
+.shortExplanation h4 {
+  margin: 0 0 12px 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+}
+
+.shortExplanation p {
+  margin: 8px 0;
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+}
+
+.shortExplanation p strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Enhanced summary row styling */
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-tertiary);
+}
+
+.summaryRow:last-child {
+  border-bottom: none;
+  font-weight: 600;
+  font-size: var(--font-size-md);
+}
+
+.summaryRow span:first-child {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.summaryRow span:last-child {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Modal button improvements */
+.modalButton.confirm {
+  background: var(--lime-green);
+  color: var(--black);
+  font-weight: 600;
+  font-size: var(--font-size-md);
+  padding: 16px 24px;
+  min-width: 160px;
+}
+
+.modalButton.confirm:hover:not(:disabled) {
+  background: #65a30d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(132, 204, 22, 0.3);
+}
+
+.modalButton.cancel {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.modalButton.cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Responsive improvements */
+@media (max-width: 480px) {
+  .quantityBtn {
+    width: 36px;
+    height: 36px;
+    font-size: var(--font-size-md);
+  }
+
+  .quantityInput {
+    width: 70px;
+    padding: 10px 12px;
+    font-size: var(--font-size-md);
+  }
+
+  .collateralOptions {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .collateralBtn {
+    padding: 10px 12px;
+    font-size: var(--font-size-xs);
+  }
+
+  .quickSummary {
+    padding: var(--spacing-md);
+  }
+
+  .summaryRow {
+    padding: 10px 0;
+    font-size: var(--font-size-sm);
+  }
+}

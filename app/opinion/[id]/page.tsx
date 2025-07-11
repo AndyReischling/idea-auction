@@ -715,43 +715,51 @@ export default function OpinionPage() {
             
             <div className={styles.modalContent}>
               <div className={styles.shortExplanation}>
-                <p>Purchase shares of this opinion. The price may change based on market activity.</p>
+                <h4>📈 How it works:</h4>
+                <p><strong>When you buy</strong> → Price goes UP</p>
+                <p><strong>More demand</strong> → Higher value</p>
+                <p>You profit if the idea becomes more popular!</p>
               </div>
               
               <div className={styles.shortSettings}>
                 <div className={styles.settingGroup}>
-                  <label>Quantity</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={buyQuantity}
-                    onChange={(e) => setBuyQuantity(parseInt(e.target.value) || 1)}
-                    className={styles.settingInput}
-                  />
+                  <label>How many shares?</label>
+                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <button 
+                      onClick={() => setBuyQuantity(Math.max(1, buyQuantity - 1))}
+                      className={styles.quantityBtn}
+                    >-</button>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={buyQuantity}
+                      onChange={(e) => setBuyQuantity(parseInt(e.target.value) || 1)}
+                      className={styles.quantityInput}
+                    />
+                    <button 
+                      onClick={() => setBuyQuantity(Math.min(50, buyQuantity + 1))}
+                      className={styles.quantityBtn}
+                    >+</button>
+                  </div>
                 </div>
                 
-                <div className={styles.betSummary}>
-                  <div className={styles.summaryHeader}>
-                    <h4>Order Summary</h4>
+                <div className={styles.quickSummary}>
+                  <div className={styles.summaryRow}>
+                    <span>Current Price:</span>
+                    <span className={styles.currentPrice}>{formatCurrency(market?.currentPrice || 0)}</span>
                   </div>
-                  <div className={styles.summaryDetails}>
-                    <div className={styles.summaryRow}>
-                      <span>Price per share:</span>
-                      <span>{formatCurrency(market?.currentPrice || 0)}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Quantity:</span>
-                      <span>{buyQuantity}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Total Cost:</span>
-                      <span>{formatCurrency((market?.currentPrice || 0) * buyQuantity)}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Remaining Balance:</span>
-                      <span>{formatCurrency(profile.balance - (market?.currentPrice || 0) * buyQuantity)}</span>
-                    </div>
+                  <div className={styles.summaryRow}>
+                    <span>You're buying:</span>
+                    <span>{buyQuantity} shares</span>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <span>Total Cost:</span>
+                    <span className={styles.totalCost}>{formatCurrency((market?.currentPrice || 0) * buyQuantity)}</span>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <span>After purchase:</span>
+                    <span>Price will increase! 📈</span>
                   </div>
                 </div>
               </div>
@@ -765,7 +773,7 @@ export default function OpinionPage() {
                   className={`${styles.modalButton} ${styles.confirm}`}
                   disabled={loading || (market?.currentPrice || 0) * buyQuantity > profile.balance}
                 >
-                  {loading ? 'Processing...' : 'Buy Shares'}
+                  {loading ? 'Buying...' : `Buy ${buyQuantity} shares`}
                 </button>
               </div>
             </div>
@@ -786,43 +794,58 @@ export default function OpinionPage() {
             
             <div className={styles.modalContent}>
               <div className={styles.shortExplanation}>
-                <p>Sell your shares of this opinion. You currently own {userPosition} shares.</p>
+                <h4>📉 How it works:</h4>
+                <p><strong>When you sell</strong> → Price goes DOWN</p>
+                <p><strong>Less demand</strong> → Lower value</p>
+                <p>Sell high to lock in profits!</p>
               </div>
               
               <div className={styles.shortSettings}>
                 <div className={styles.settingGroup}>
-                  <label>Quantity</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={userPosition}
-                    value={sellQuantity}
-                    onChange={(e) => setSellQuantity(parseInt(e.target.value) || 1)}
-                    className={styles.settingInput}
-                  />
+                  <label>How many shares to sell?</label>
+                  <p className={styles.portfolioInfo}>You own: <strong>{userPosition} shares</strong></p>
+                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <button 
+                      onClick={() => setSellQuantity(Math.max(1, sellQuantity - 1))}
+                      className={styles.quantityBtn}
+                    >-</button>
+                    <input
+                      type="number"
+                      min="1"
+                      max={userPosition}
+                      value={sellQuantity}
+                      onChange={(e) => setSellQuantity(parseInt(e.target.value) || 1)}
+                      className={styles.quantityInput}
+                    />
+                    <button 
+                      onClick={() => setSellQuantity(Math.min(userPosition, sellQuantity + 1))}
+                      className={styles.quantityBtn}
+                    >+</button>
+                  </div>
+                  <button 
+                    onClick={() => setSellQuantity(userPosition)} 
+                    className={styles.sellAllBtn}
+                  >
+                    Sell All
+                  </button>
                 </div>
                 
-                <div className={styles.betSummary}>
-                  <div className={styles.summaryHeader}>
-                    <h4>Order Summary</h4>
+                <div className={styles.quickSummary}>
+                  <div className={styles.summaryRow}>
+                    <span>Current Price:</span>
+                    <span className={styles.currentPrice}>{formatCurrency(market?.currentPrice || 0)}</span>
                   </div>
-                  <div className={styles.summaryDetails}>
-                    <div className={styles.summaryRow}>
-                      <span>Price per share:</span>
-                      <span>{formatCurrency(market?.currentPrice || 0)}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Quantity:</span>
-                      <span>{sellQuantity}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Total Value:</span>
-                      <span className={styles.winnings}>{formatCurrency((market?.currentPrice || 0) * sellQuantity)}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>New Balance:</span>
-                      <span>{formatCurrency(profile.balance + (market?.currentPrice || 0) * sellQuantity)}</span>
-                    </div>
+                  <div className={styles.summaryRow}>
+                    <span>You're selling:</span>
+                    <span>{sellQuantity} shares</span>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <span>You'll receive:</span>
+                    <span className={styles.sellValue}>{formatCurrency((market?.currentPrice || 0) * sellQuantity)}</span>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <span>After sale:</span>
+                    <span>Price will decrease! 📉</span>
                   </div>
                 </div>
               </div>
@@ -836,7 +859,7 @@ export default function OpinionPage() {
                   className={`${styles.modalButton} ${styles.confirm}`}
                   disabled={loading || sellQuantity > userPosition}
                 >
-                  {loading ? 'Processing...' : 'Sell Shares'}
+                  {loading ? 'Selling...' : `Sell ${sellQuantity} shares`}
                 </button>
               </div>
             </div>
@@ -849,7 +872,7 @@ export default function OpinionPage() {
         <div className={styles.modalOverlay}>
           <div className={styles.shortModal}>
             <div className={styles.modalHeader}>
-              <h3>Open Short Position</h3>
+              <h3>Short Position</h3>
               <button onClick={() => setShowShortModal(false)} className={styles.closeButton}>
                 <X size={24} />
               </button>
@@ -857,80 +880,69 @@ export default function OpinionPage() {
             
             <div className={styles.modalContent}>
               <div className={styles.shortExplanation}>
-                <p><strong>⚠️ Advanced Trading:</strong> Shorting allows you to profit if the price goes down, but you can lose money if it goes up.</p>
-                <p>You'll need to put up collateral as security for your short position.</p>
+                <h4>⚡ Advanced Strategy:</h4>
+                <p><strong>Bet AGAINST the idea</strong> → Profit if price falls</p>
+                <p><strong>Higher risk</strong> → Higher potential rewards</p>
+                <p>⚠️ You can lose money if price goes up!</p>
               </div>
               
               <div className={styles.shortSettings}>
                 <div className={styles.settingGroup}>
-                  <label>Quantity to Short</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="50"
-                    value={shortQuantity}
-                    onChange={(e) => setShortQuantity(parseInt(e.target.value) || 1)}
-                    className={styles.settingInput}
-                  />
+                  <label>Short how many shares?</label>
+                  <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                    <button 
+                      onClick={() => setShortQuantity(Math.max(1, shortQuantity - 1))}
+                      className={styles.quantityBtn}
+                    >-</button>
+                    <input
+                      type="number"
+                      min="1"
+                      max="25"
+                      value={shortQuantity}
+                      onChange={(e) => setShortQuantity(parseInt(e.target.value) || 1)}
+                      className={styles.quantityInput}
+                    />
+                    <button 
+                      onClick={() => setShortQuantity(Math.min(25, shortQuantity + 1))}
+                      className={styles.quantityBtn}
+                    >+</button>
+                  </div>
                 </div>
                 
                 <div className={styles.settingGroup}>
-                  <label>Collateral %</label>
-                  <div className={styles.percentageInputContainer}>
-                    <input
-                      type="range"
-                      min="30"
-                      max="100"
-                      value={shortCollateral}
-                      onChange={(e) => setShortCollateral(parseInt(e.target.value))}
-                      className={styles.settingSlider}
-                    />
-                    <input
-                      type="number"
-                      min="30"
-                      max="100"
-                      value={shortCollateral}
-                      onChange={(e) => setShortCollateral(parseInt(e.target.value) || 50)}
-                      className={styles.percentageInput}
-                    />
-                    <span className={styles.sliderValue}>{shortCollateral}%</span>
-                  </div>
-                  <div className={styles.percentageHint}>
-                    Higher collateral = lower risk of liquidation
+                  <label>Safety deposit (collateral)</label>
+                  <div className={styles.collateralOptions}>
+                    <button 
+                      onClick={() => setShortCollateral(50)}
+                      className={`${styles.collateralBtn} ${shortCollateral === 50 ? styles.active : ''}`}
+                    >50% (Risky)</button>
+                    <button 
+                      onClick={() => setShortCollateral(75)}
+                      className={`${styles.collateralBtn} ${shortCollateral === 75 ? styles.active : ''}`}
+                    >75% (Safe)</button>
+                    <button 
+                      onClick={() => setShortCollateral(100)}
+                      className={`${styles.collateralBtn} ${shortCollateral === 100 ? styles.active : ''}`}
+                    >100% (Very Safe)</button>
                   </div>
                 </div>
                 
-                <div className={styles.betSummary}>
-                  <div className={styles.summaryHeader}>
-                    <h4>Short Position Summary</h4>
+                <div className={styles.quickSummary}>
+                  <div className={styles.summaryRow}>
+                    <span>Entry Price:</span>
+                    <span>{formatCurrency(market?.currentPrice || 0)}</span>
                   </div>
-                  <div className={styles.summaryDetails}>
-                    <div className={styles.summaryRow}>
-                      <span>Entry Price:</span>
-                      <span>{formatCurrency(market?.currentPrice || 0)}</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Quantity:</span>
-                      <span>{shortQuantity} shares</span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Required Collateral:</span>
-                      <span className={styles.penalty}>
-                        {formatCurrency(((market?.currentPrice || 0) * shortQuantity * shortCollateral) / 100)}
-                      </span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Target Price (20% drop):</span>
-                      <span className={styles.winnings}>
-                        {formatCurrency((market?.currentPrice || 0) * 0.8)}
-                      </span>
-                    </div>
-                    <div className={styles.summaryRow}>
-                      <span>Max Profit:</span>
-                      <span className={styles.winnings}>
-                        {formatCurrency((market?.currentPrice || 0) * shortQuantity * 0.2)}
-                      </span>
-                    </div>
+                  <div className={styles.summaryRow}>
+                    <span>Deposit Required:</span>
+                    <span className={styles.depositCost}>
+                      {formatCurrency(((market?.currentPrice || 0) * shortQuantity * shortCollateral) / 100)}
+                    </span>
+                  </div>
+                  <div className={styles.summaryRow}>
+                    <span>Profit if price drops 20%:</span>
+                    <span className={styles.profitEstimate}>
+                      {formatCurrency((market?.currentPrice || 0) * shortQuantity * 0.2)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -944,7 +956,7 @@ export default function OpinionPage() {
                   className={`${styles.modalButton} ${styles.confirm}`}
                   disabled={loading || ((market?.currentPrice || 0) * shortQuantity * shortCollateral) / 100 > profile.balance}
                 >
-                  {loading ? 'Processing...' : 'Open Short Position'}
+                  {loading ? 'Opening...' : `Short ${shortQuantity} shares`}
                 </button>
               </div>
             </div>
