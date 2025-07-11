@@ -2330,7 +2330,7 @@ export default function FeedPage() {
   const shortActivityCount = activityFeed.filter(a => a.type.includes('short')).length;
 
   return (
-    <div className="page-container">
+    <div className="page-container feedPage">
       <Sidebar opinions={opinions} />
       
       <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px', paddingTop: '0', marginTop: '24px' }}>

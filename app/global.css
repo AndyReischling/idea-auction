@@ -103,6 +103,21 @@ body, #__next, .page-container, .main-content, .feedPage, .main, .content, .cont
   line-height: 1.6;
 }
 
+/* Feed page specific global overrides */
+.feedPage body, .feedPage .pageContainer, .feedPage #__next {
+  background: var(--white) !important;
+}
+
+.feedPage .main-content {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+
+.feedPage .main-content > *:first-child {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
 a { color: inherit; text-decoration: none; }
 
 /* 4️⃣  Layout -------------------------------------------------------------- */

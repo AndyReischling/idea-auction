@@ -929,24 +929,3 @@
   font-size: var(--font-size-base);
 }
 
-body, .pageContainer, #__next {
-  background: var(--white) !important;
-}
-
-.feedPage, .main, .main-content, .content, .container {
-  background: var(--white) !important;
-}
-
-.page-container, .main-content {
-  background: var(--white) !important;
-}
-
-.main-content {
-  padding-top: 0 !important;
-  margin-top: 0 !important;
-}
-
-.main-content > *:first-child {
-  margin-top: 0 !important;
-  padding-top: 0 !important;
-}
