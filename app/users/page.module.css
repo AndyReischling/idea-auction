@@ -46,6 +46,7 @@
   align-items: center;
   gap: 8px;
   margin: 0;
+  margin-left: 20px;
   font-family: inherit;
 }
 
@@ -244,6 +245,353 @@
   background: var(--lime-green);
   color: var(--text-black);
   transform: translateY(-1px);
+}
+
+/* New Leaderboard Card Styles */
+.newLeaderboardCard {
+  border: 2px solid var(--border-primary);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--bg-card);
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.newLeaderboardCard:hover {
+  border-color: var(--lime-green);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.newLeaderboardCard.isMe {
+  border-color: var(--lime-green);
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(191, 255, 0, 0.05) 100%);
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #FFD700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  border: 2px solid var(--border-primary);
+}
+
+
+
+.userDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.username {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userStats {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.betsCount {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.portfolioDisplay {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.portfolioLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.portfolioValue {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.portfolioValue.positive {
+  color: var(--success);
+}
+
+.portfolioValue.negative {
+  color: var(--error);
+}
+
+.performanceChange {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.performanceChange.positive {
+  color: var(--success);
+}
+
+.performanceChange.negative {
+  color: var(--error);
+}
+
+.performanceChange.neutral {
+  color: var(--text-secondary);
+}
+
+.exposure {
+  font-size: 14px;
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.metricsSection {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.metricBox {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.metricLabel {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.metricValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.metricValue.positive {
+  color: var(--success);
+}
+
+.metricValue.negative {
+  color: var(--error);
+}
+
+.volatilityHigh {
+  color: var(--error);
+}
+
+.volatilityMedium {
+  color: var(--warning);
+}
+
+.volatilityLow {
+  color: var(--success);
+}
+
+.holdingsSection {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.holdingsTitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.holdingsContent {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.holdingItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-card);
+}
+
+.holdingItem:last-child {
+  margin-bottom: 0;
+}
+
+.holdingText {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+
+.holdingDetails {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.holdingValue {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.holdingChange {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.holdingChange.positive {
+  color: var(--success);
+}
+
+.holdingChange.negative {
+  color: var(--error);
+}
+
+.holdingChange.neutral {
+  color: var(--text-secondary);
+}
+
+.holdingTotalValue {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-left: auto;
+}
+
+.noHoldings {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.actionButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.detailsButton {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detailsButton:hover {
+  background: var(--bg-card);
+  border-color: var(--lime-green);
+}
+
+.betButton {
+  background: var(--warning);
+  border: 2px solid var(--warning);
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-black);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.betButton:hover {
+  background: #ff8c00;
+  border-color: #ff8c00;
+  transform: translateY(-1px);
+}
+
+/* Leaderboard Layout */
+.leaderboardContainer {
+  background: var(--bg-card);
+  border: 2px solid var(--border-primary);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.leaderboardTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 20px 0;
+  text-align: center;
+}
+
+.leaderboardStats {
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-section);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border-primary);
+  text-align: center;
+}
+
+.leaderboardStats p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.leaderboardGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* User Cards */

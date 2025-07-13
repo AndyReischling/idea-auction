@@ -9,6 +9,7 @@ import AuthButton from './components/AuthButton';
 import { realtimeDataService } from './lib/realtime-data-service';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from './lib/firebase';
+import { publicLeaderboardService, PublicLeaderboardEntry } from './lib/public-leaderboard';
 import styles from './page.module.css';
 import {
   TrendUp,
@@ -21,8 +22,8 @@ import {
   Eye,
   User,
   SignIn,
-  Trophy,
   Crown,
+  Trophy,
 } from '@phosphor-icons/react';
 
 /* ------------------------------------------------------------------
@@ -63,6 +64,7 @@ interface LeaderboardUser {
   portfolioValue: number;
   exposure: number;
   opinionsCount: number;
+  isBot?: boolean;
 }
 
 interface UserDoc {
@@ -70,6 +72,20 @@ interface UserDoc {
   username: string;
   joinDate: string;
   avatar?: string;
+}
+
+interface BotDoc {
+  id: string;
+  username?: string;
+  balance: number;
+  joinDate: string;
+  totalEarnings: number;
+  totalLosses: number;
+  personality?: any;
+  riskTolerance?: string;
+  tradingStrategy?: any;
+  lastActive?: string;
+  isActive?: boolean;
 }
 
 interface PortfolioDoc {
@@ -82,6 +98,16 @@ interface PortfolioDoc {
   }>;
   shortExposure: number;
   betExposure: number;
+}
+
+interface BotPortfolioDoc {
+  botId: string;
+  holdings: Array<{
+    opinionId: string;
+    opinionText: string;
+    quantity: number;
+    purchasePrice: number;
+  }>;
 }
 
 /* ------------------------------------------------------------------
@@ -100,7 +126,10 @@ export default function HomePage() {
   // Leaderboard state
   const [users, setUsers] = useState<UserDoc[]>([]);
   const [portfolios, setPortfolios] = useState<PortfolioDoc[]>([]);
+  const [bots, setBots] = useState<BotDoc[]>([]);
+  const [botPortfolios, setBotPortfolios] = useState<BotPortfolioDoc[]>([]);
   const [marketDataMap, setMarketDataMap] = useState<Map<string, any>>(new Map());
+  const [publicLeaderboard, setPublicLeaderboard] = useState<PublicLeaderboardEntry[]>([]);
 
   const { user, userProfile } = useAuth();
   const router = useRouter();
@@ -153,20 +182,35 @@ export default function HomePage() {
    * LEADERBOARD LOGIC
    * ----------------------------------------------------------------*/
   
-  // Calculate leaderboard from users, portfolios, and market data
+  // Calculate leaderboard from users, portfolios, and market data - only for authenticated users
   const leaderboard = useMemo(() => {
-    if (users.length === 0 || portfolios.length === 0) return [];
+    if (!user || (users.length === 0 && bots.length === 0)) return [];
     
-    return users.map((u) => {
+    // Process regular users
+    const regularUsers = users.map((u) => {
       const pf = portfolios.find((p) => p.userId === u.id);
-      if (!pf) return null;
       
-      const value = pf.ownedOpinions.reduce((sum, op) => {
+      // Create default portfolio data for users without portfolios
+      const defaultPortfolio = {
+        userId: u.id,
+        ownedOpinions: [] as Array<{
+          opinionId: string;
+          opinionText: string;
+          quantity: number;
+          purchasePrice: number;
+        }>,
+        shortExposure: 0,
+        betExposure: 0
+      };
+      
+      const portfolio = pf || defaultPortfolio;
+      
+      const value = portfolio.ownedOpinions.reduce((sum, op) => {
         const md = marketDataMap.get(op.opinionText);
         return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
       }, 0);
       
-      const exposure = (pf.shortExposure || 0) + (pf.betExposure || 0);
+      const exposure = (portfolio.shortExposure || 0) + (portfolio.betExposure || 0);
       
       return {
         uid: u.id,
@@ -174,21 +218,184 @@ export default function HomePage() {
         joinDate: u.joinDate,
         portfolioValue: value - exposure,
         exposure,
-        opinionsCount: pf.ownedOpinions.length,
+        opinionsCount: portfolio.ownedOpinions.length,
+        isBot: false,
       };
-    }).filter(Boolean) as LeaderboardUser[];
-  }, [users, portfolios, marketDataMap]);
+    }) as LeaderboardUser[];
 
-  // Get top 5 for preview
+    // Process bots
+    const botUsers = bots.map((bot) => {
+      const botPf = botPortfolios.find((bp) => bp.botId === bot.id);
+      const portfolio = botPf || { botId: bot.id, holdings: [] };
+      
+      const value = portfolio.holdings.reduce((sum, op) => {
+        const md = marketDataMap.get(op.opinionText);
+        return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
+      }, 0);
+      
+      const exposure = 0; // Bots don't have short exposure typically
+      
+      return {
+        uid: bot.id,
+        username: bot.username || `Bot_${bot.id.slice(0, 8)}`,
+        joinDate: bot.joinDate,
+        portfolioValue: value - exposure,
+        exposure,
+        opinionsCount: portfolio.holdings.length,
+        isBot: true,
+      };
+    });
+
+    // Merge users and bots, then sort by portfolio value
+    return [...regularUsers, ...botUsers].sort((a, b) => b.portfolioValue - a.portfolioValue);
+  }, [user, users, bots, portfolios, botPortfolios, marketDataMap]);
+
+  // Get top 10 traders for homepage display - use public leaderboard for unauthorized users
   const topUsers = useMemo(() => {
-    return leaderboard
-      .sort((a, b) => b.portfolioValue - a.portfolioValue)
-      .slice(0, 5);
-  }, [leaderboard]);
+    if (user) {
+      // For authenticated users, use the full leaderboard
+      return leaderboard
+        .sort((a, b) => b.portfolioValue - a.portfolioValue)
+        .slice(0, 10);
+    } else {
+      // For unauthorized users, use the public leaderboard
+      return publicLeaderboard.map(trader => ({
+        uid: trader.uid,
+        username: trader.username,
+        joinDate: '', // Not needed for public display
+        portfolioValue: trader.portfolioValue,
+        exposure: 0, // Not needed for public display
+        opinionsCount: trader.topHoldings.length,
+        isBot: trader.isBot
+      }));
+    }
+  }, [leaderboard, publicLeaderboard, user]);
 
   /* ------------------------------------------------------------------
    * LOAD & SUBSCRIBE
    * ----------------------------------------------------------------*/
+  
+  // Fetch bots from autonomous-bots collection
+  useEffect(() => {
+    const findAndLoadBots = async () => {
+      try {
+        console.log("🔍 Searching for bots in autonomous-bots collection...");
+        
+        const autonomousBotsRef = collection(db, "autonomous-bots");
+        const autonomousBotsSnap = await getDocs(autonomousBotsRef);
+        
+        console.log(`📁 Found ${autonomousBotsSnap.size} documents in autonomous-bots collection`);
+        
+        if (autonomousBotsSnap.empty) {
+          console.log("❌ No documents found in autonomous-bots collection");
+          setBots([]);
+          return;
+        }
+        
+        const botsList: BotDoc[] = [];
+        
+        // Try each document in autonomous-bots
+        for (const docSnap of autonomousBotsSnap.docs) {
+          console.log(`📄 Checking document: ${docSnap.id}`);
+          
+          // Check if this document has a 'bots' subcollection
+          const botsSubRef = collection(docSnap.ref, "bots");
+          const botsSubSnap = await getDocs(botsSubRef);
+          
+          if (!botsSubSnap.empty) {
+            console.log(`🎯 Found bots subcollection in ${docSnap.id} with ${botsSubSnap.size} documents`);
+            
+            // Check each document in the bots subcollection
+            for (const botDocSnap of botsSubSnap.docs) {
+              console.log(`🤖 Checking bot document: ${botDocSnap.id}`);
+              const botData = botDocSnap.data();
+              
+              // Extract all bot objects from this document
+              Object.entries(botData).forEach(([key, value]: [string, any]) => {
+                // Check if this field looks like a bot object
+                if (typeof value === 'object' && value !== null && 
+                    (key.startsWith('bot_') || 
+                     (value.id && value.balance !== undefined) || 
+                     (value.personality && typeof value.personality === 'object'))) {
+                  
+                  const bot = value;
+                  const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
+                  
+                  console.log(`✅ Found bot: ${key}`, bot);
+                  
+                  botsList.push({
+                    id: bot.id || key,
+                    username: displayName,
+                    balance: bot.balance || 0,
+                    joinDate: bot.joinDate || new Date().toISOString(),
+                    totalEarnings: bot.totalEarnings || 0,
+                    totalLosses: bot.totalLosses || 0,
+                    personality: bot.personality || {
+                      description: "A trading bot",
+                      activityFrequency: 100,
+                      betProbability: 0.5,
+                      buyProbability: 0.5
+                    },
+                    riskTolerance: bot.riskTolerance || 'moderate',
+                    tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
+                    lastActive: bot.lastActive || new Date().toISOString(),
+                    isActive: bot.isActive !== undefined ? bot.isActive : true,
+                    ...bot
+                  });
+                }
+              });
+            }
+          }
+          
+          // Also check if the document itself contains bot data
+          const docData = docSnap.data();
+          if (docData && typeof docData === 'object') {
+            Object.entries(docData).forEach(([key, value]: [string, any]) => {
+              if (typeof value === 'object' && value !== null && 
+                  (key.startsWith('bot_') || 
+                   (value.id && value.balance !== undefined) || 
+                   (value.personality && typeof value.personality === 'object'))) {
+                
+                const bot = value;
+                const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
+                
+                console.log(`✅ Found bot in main document: ${key}`, bot);
+                
+                botsList.push({
+                  id: bot.id || key,
+                  username: displayName,
+                  balance: bot.balance || 0,
+                  joinDate: bot.joinDate || new Date().toISOString(),
+                  totalEarnings: bot.totalEarnings || 0,
+                  totalLosses: bot.totalLosses || 0,
+                  personality: bot.personality || {
+                    description: "A trading bot",
+                    activityFrequency: 100,
+                    betProbability: 0.5,
+                    buyProbability: 0.5
+                  },
+                  riskTolerance: bot.riskTolerance || 'moderate',
+                  tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
+                  lastActive: bot.lastActive || new Date().toISOString(),
+                  isActive: bot.isActive !== undefined ? bot.isActive : true,
+                  ...bot
+                });
+              }
+            });
+          }
+        }
+        
+        console.log(`🎯 Total bots found: ${botsList.length}`);
+        setBots(botsList);
+      } catch (error) {
+        console.error("❌ Error loading bots:", error);
+        setBots([]);
+      }
+    };
+    
+    findAndLoadBots();
+  }, []);
+
   const loadOpinions = async () => {
     setLoading(true);
     try {
@@ -227,7 +434,19 @@ export default function HomePage() {
 
       const sorted = processed.sort((a, b) => b.createdAt - a.createdAt);
       setOpinions(sorted);
-      setFeaturedOpinions(sorted.filter(o => o.volume > 5 || Math.abs(o.priceChangePercent) > 10).slice(0, 3));
+      
+      // Featured opinions: always 2-4 opinions, prioritizing volume and price volatility
+      const qualifyingOpinions = sorted.filter(o => o.volume > 5 || Math.abs(o.priceChangePercent) > 10);
+      let featuredList = qualifyingOpinions.slice(0, 4); // Take up to 4 qualifying opinions
+      
+      // If we have less than 2, fill up to 2 with the next best opinions from the sorted list
+      if (featuredList.length < 2) {
+        const remainingOpinions = sorted.filter(o => !featuredList.includes(o));
+        const additionalNeeded = 2 - featuredList.length;
+        featuredList = [...featuredList, ...remainingOpinions.slice(0, additionalNeeded)];
+      }
+      
+      setFeaturedOpinions(featuredList);
       setTrendingOpinions(
         sorted
           .filter(o => o.trend !== 'neutral')
@@ -252,7 +471,7 @@ export default function HomePage() {
     };
   }, []);
 
-  // Leaderboard data subscriptions - only when authenticated
+  // Leaderboard data subscriptions
   useEffect(() => {
     // Market data is publicly readable, so we can always subscribe to it
     const unsubMarketData = onSnapshot(collection(db, "market-data"), (snap) => {
@@ -266,14 +485,85 @@ export default function HomePage() {
       setMarketDataMap(map);
     });
 
-    // For now, disable leaderboard subscriptions since they require special permissions
-    // TODO: Create a public leaderboard collection or adjust firestore rules
-    console.log("⚠️ Leaderboard subscriptions disabled due to auth requirements");
+    // Subscribe to public leaderboard for unauthorized users
+    const unsubPublicLeaderboard = publicLeaderboardService.subscribeToPublicLeaderboard((leaderboard) => {
+      console.log('📊 Public leaderboard updated:', leaderboard.length, 'traders');
+      setPublicLeaderboard(leaderboard);
+    });
+
+    // If authenticated, subscribe to full leaderboard data
+    if (user) {
+      // Subscribe to users and portfolios for authenticated users
+      const unsubUsers = onSnapshot(collection(db, "users"), (snap) => {
+        const usersList: UserDoc[] = [];
+        snap.docs.forEach((doc) => {
+          const data = doc.data();
+          usersList.push({
+            id: doc.id,
+            username: data.username,
+            joinDate: data.joinDate,
+            avatar: data.avatar
+          });
+        });
+        setUsers(usersList);
+      });
+
+      const unsubPortfolios = onSnapshot(collection(db, "user-portfolios"), (snap) => {
+        const portfoliosList: PortfolioDoc[] = [];
+        snap.docs.forEach((doc) => {
+          const data = doc.data();
+          portfoliosList.push({
+            userId: doc.id,
+            ownedOpinions: data.ownedOpinions || [],
+            shortExposure: data.shortExposure || 0,
+            betExposure: data.betExposure || 0
+          });
+        });
+        setPortfolios(portfoliosList);
+      });
+
+      // Subscribe to bot portfolios
+      const unsubBotPortfolios = onSnapshot(collection(db, "bot-portfolios"), (snap) => {
+        const botPortfoliosList: BotPortfolioDoc[] = [];
+        snap.docs.forEach((doc) => {
+          const data = doc.data();
+          botPortfoliosList.push({
+            botId: doc.id,
+            holdings: data.holdings || []
+          });
+        });
+        setBotPortfolios(botPortfoliosList);
+      });
+
+      return () => {
+        unsubMarketData();
+        unsubPublicLeaderboard();
+        unsubUsers();
+        unsubPortfolios();
+        unsubBotPortfolios();
+      };
+    }
     
     return () => {
       unsubMarketData();
+      unsubPublicLeaderboard();
     };
-  }, []);
+  }, [user]);
+
+  // Update public leaderboard when full leaderboard changes (for authenticated users)
+  useEffect(() => {
+    if (user && leaderboard.length > 0) {
+      const publicLeaderboardData = leaderboard.slice(0, 10).map(trader => ({
+        uid: trader.uid,
+        username: trader.username,
+        portfolioValue: trader.portfolioValue,
+        topHoldings: [], // We don't have top holdings data in this simplified version
+        isBot: trader.isBot || false
+      }));
+      
+      publicLeaderboardService.updatePublicLeaderboard(publicLeaderboardData);
+    }
+  }, [user, leaderboard]);
 
   /* ------------------------------------------------------------------
    * UI helpers (unchanged apart from imports)
@@ -281,7 +571,7 @@ export default function HomePage() {
   const handleOpinionClick = (op: OpinionWithPrice) => router.push(`/opinion/${op.id}`);
   const formatPriceChange = (c: number, p: number) => `${c >= 0 ? '+' : ''}$${c.toFixed(2)} (${c >= 0 ? '+' : ''}${p.toFixed(1)}%)`;
   const getTrendIcon = (t: 'up' | 'down' | 'neutral') =>
-    t === 'up' ? <ChartLineUp size={16} className="status-positive" /> : t === 'down' ? <ChartLineDown size={16} className="status-negative" /> : <Minus size={16} className="status-neutral" />;
+    t === 'up' ? <ChartLineUp size={16} style={{ color: 'var(--green)' }} /> : t === 'down' ? <ChartLineDown size={16} style={{ color: 'var(--red)' }} /> : <Minus size={16} style={{ color: 'var(--text-secondary)' }} />;
   const getVolatilityBadge = (v: 'high' | 'medium' | 'low') => {
     const map = {
       high: { l: 'High Vol', c: 'status-negative', bg: '#ef4444' },
@@ -312,7 +602,7 @@ export default function HomePage() {
     <div className="page-container">
       <Sidebar />
       
-      <main className="main-content">
+      <main className="main-content" style={{ paddingTop: '110px' }}>
         {/* Header */}
         <div className="header-section">
           <div className="user-header">
@@ -340,24 +630,45 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Hottest Opinions Header */}
+        <div style={{ marginTop: '30px', marginBottom: '16px', marginLeft: '20px' }}>
+          <h1 style={{ 
+            fontSize: 'var(--font-size-3xl)', 
+            fontWeight: '700', 
+            color: 'var(--text-primary)',
+            margin: '0'
+          }}>
+            Hottest Opinions
+          </h1>
+        </div>
+
         {/* Featured Opinions */}
         {featuredOpinions.length > 0 && (
-          <section className="section" style={{ marginLeft: 20 }}>
-            <h2 className="section-title">Featured Opinions</h2>
-            <div className="grid grid-3" style={{ marginLeft: 20 }}>
+          <section style={{ marginLeft: 20, marginRight: 20, marginBottom: '40px' }}>
+            <div className="grid grid-square" style={{ marginLeft: 20, marginRight: 20 }}>
               {featuredOpinions.map((opinion) => (
-                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
+                <div key={opinion.id} className="card-square" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
                     <div className="card-content">
-                      <p className="card-title">{opinion.text.slice(0, 80)}...</p>
+                      <p className="card-title">{opinion.text.slice(0, 120)}{opinion.text.length > 120 ? '...' : ''}</p>
                       <p className="card-subtitle">
                         Vol: {opinion.volume} • {opinion.author}
                       </p>
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice.toFixed(2)}</p>
-                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                        <p style={{ 
+                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '600'
+                        }}>
+                          ${opinion.currentPrice.toFixed(2)}
+                        </p>
+                        <p style={{ 
+                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '500'
+                        }}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>
                       </div>
@@ -373,7 +684,11 @@ export default function HomePage() {
 
         {/* Trending Opinions */}
         {trendingOpinions.length > 0 && (
-          <section className="section" style={{ marginLeft: 20 }}>
+          <section className="section" style={{ 
+            marginLeft: 20, 
+            borderTop: '2px solid var(--border-primary)', 
+            paddingTop: '40px' 
+          }}>
             <h2 className="section-title">Trending Opinions</h2>
             <div className="grid grid-2" style={{ marginLeft: 20 }}>
               {trendingOpinions.map((opinion) => (
@@ -387,8 +702,18 @@ export default function HomePage() {
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice.toFixed(2)}</p>
-                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                        <p style={{ 
+                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '600'
+                        }}>
+                          ${opinion.currentPrice.toFixed(2)}
+                        </p>
+                        <p style={{ 
+                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '500'
+                        }}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>
                       </div>
@@ -401,40 +726,47 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Leaderboard Preview */}
-        <section className="section" style={{ marginLeft: 20 }}>
-          <h2 className="section-title">
-            Top Traders
-            <a href="/users" style={{ 
-              fontSize: '14px', 
-              marginLeft: '16px', 
-              color: 'var(--text-secondary)',
-              textDecoration: 'none',
-              fontWeight: '400'
-            }}>
-              View All →
-            </a>
+        {/* Top Traders */}
+        <section className="section" style={{ 
+          marginLeft: 20, 
+          borderTop: '2px solid var(--border-primary)', 
+          paddingTop: '40px' 
+        }}>
+          <h2 className="section-title" style={{ 
+            fontSize: 'var(--font-size-2xl)', 
+            fontWeight: '700',
+            marginBottom: '24px'
+          }}>
+            🏆 Top Traders
           </h2>
           {topUsers.length === 0 ? (
             <div className="empty-state">
-              <p>Leaderboard temporarily unavailable</p>
-              <p style={{ fontSize: '14px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
-                Sign in to view trader rankings
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                gap: '12px',
+                marginBottom: '8px'
+              }}>
+                <div className="spinner" style={{ width: '16px', height: '16px' }}></div>
+                <p style={{ margin: 0 }}>Loading top traders...</p>
+              </div>
+              <p style={{ fontSize: '14px', color: 'var(--text-tertiary)', margin: 0 }}>
+                {user ? 'Loading full leaderboard data...' : 'Loading public leaderboard...'}
               </p>
-              <AuthButton />
             </div>
           ) : (
-            <div className="grid grid-3" style={{ marginLeft: 20 }}>
+            <div style={{ marginLeft: 20, marginRight: 20, display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {topUsers.map((trader, idx) => (
-                <div 
+                                  <div 
                   key={trader.uid} 
                   className="card" 
                   onClick={() => router.push(`/users/${trader.username}`)}
                   style={{ cursor: 'pointer' }}
                 >
-                  <div className="card-header">
-                    <div className="card-content">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="card-header" style={{ display: 'flex', alignItems: 'center', minHeight: '120px' }}>
+                    <div className="card-content" style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                         <div style={{
                           width: '32px',
                           height: '32px',
@@ -445,27 +777,102 @@ export default function HomePage() {
                           justifyContent: 'center',
                           fontWeight: 'bold',
                           fontSize: '14px',
-                          color: idx < 3 ? '#000' : 'var(--text-primary)'
+                          color: idx < 3 ? '#000' : 'var(--text-primary)',
+                          flexShrink: 0
                         }}>
                           #{idx + 1}
                         </div>
-                        <div>
-                          <p className="card-title" style={{ margin: 0 }}>{trader.username}</p>
-                          <p className="card-subtitle" style={{ margin: '2px 0 0 0' }}>
-                            {trader.opinionsCount} opinions
+                        <div style={{ flex: 1 }}>
+                          <p className="card-title" style={{ margin: 0 }}>
+                            {trader.username}
+                            {((user && trader.isBot) || (!user && publicLeaderboard.find(t => t.uid === trader.uid)?.isBot)) && (
+                              <span style={{ 
+                                fontSize: '12px', 
+                                marginLeft: '6px', 
+                                color: 'var(--text-secondary)',
+                                fontWeight: 'normal'
+                              }}>
+                                🤖 Bot
+                              </span>
+                            )}
                           </p>
+                          <p className="card-subtitle" style={{ margin: '2px 0 8px 0' }}>
+                            {trader.opinionsCount} {user ? 'opinions' : 'holdings'}
+                          </p>
+                          
+                          {/* P+L Percentage under username */}
+                          <div style={{ marginBottom: '4px' }}>
+                            <p style={{ 
+                              margin: 0,
+                              fontSize: 'var(--font-size-lg)',
+                              fontWeight: '600',
+                              fontFamily: 'var(--font-number)',
+                              color: trader.portfolioValue >= 1000 ? 'var(--green)' : trader.portfolioValue < 0 ? 'var(--red)' : 'var(--text-secondary)'
+                            }}>
+                              {trader.portfolioValue >= 1000 ? '+' : ''}
+                              {trader.portfolioValue >= 1000 ? (((trader.portfolioValue - 1000) / 1000) * 100).toFixed(1) : 
+                               trader.portfolioValue < 0 ? (((trader.portfolioValue) / 1000) * 100).toFixed(1) : '0.0'}%
+                            </p>
+                            <p style={{ 
+                              margin: 0,
+                              fontSize: '11px', 
+                              color: 'var(--text-tertiary)',
+                              fontWeight: '500'
+                            }}>
+                              P+L %
+                            </p>
+                          </div>
+                          
+                          {/* Exposure under P+L */}
+                          <div>
+                            <p style={{ 
+                              margin: 0,
+                              fontSize: 'var(--font-size-base)',
+                              fontWeight: '600',
+                              fontFamily: 'var(--font-number)',
+                              color: trader.exposure > 0 ? 'var(--red)' : 'var(--text-secondary)'
+                            }}>
+                              ${trader.exposure.toFixed(2)}
+                            </p>
+                            <p style={{ 
+                              margin: 0,
+                              fontSize: '11px', 
+                              color: 'var(--text-tertiary)',
+                              fontWeight: '500'
+                            }}>
+                              Exposure
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className={styles.opinionPricing}>
-                      <div className={styles.currentPricing}>
-                        <p className={trader.portfolioValue >= 0 ? 'status-positive' : 'status-negative'}>
-                          ${trader.portfolioValue.toFixed(2)}
-                        </p>
-                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                          Portfolio Value
-                        </p>
-                      </div>
+                    
+                    {/* Portfolio Value - larger and centered vertically */}
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      minWidth: '140px',
+                      height: '100%'
+                    }}>
+                      <p style={{ 
+                        margin: 0,
+                        fontSize: 'var(--font-size-3xl)',
+                        fontWeight: '800',
+                        fontFamily: 'var(--font-number)',
+                        color: trader.portfolioValue >= 0 ? 'var(--green)' : 'var(--red)'
+                      }}>
+                        ${trader.portfolioValue.toFixed(2)}
+                      </p>
+                      <p style={{ 
+                        margin: 0,
+                        fontSize: '12px', 
+                        color: 'var(--text-tertiary)',
+                        fontWeight: '500'
+                      }}>
+                        Portfolio Value
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -475,7 +882,12 @@ export default function HomePage() {
         </section>
 
         {/* All Opinions */}
-        <section className="section" style={{ marginLeft: 20 }}>
+        <section className="section" style={{ 
+          marginLeft: 20, 
+          marginRight: 20, 
+          borderTop: '2px solid var(--border-primary)', 
+          paddingTop: '40px' 
+        }}>
           <h2 className="section-title">All Opinions</h2>
           {opinions.length === 0 ? (
             <div className="empty-state">
@@ -485,7 +897,7 @@ export default function HomePage() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-2" style={{ marginLeft: 20 }}>
+            <div className="grid grid-2" style={{ marginLeft: 20, marginRight: 20 }}>
               {opinions.map((opinion) => (
                 <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
@@ -497,8 +909,18 @@ export default function HomePage() {
                     </div>
                     <div className={styles.opinionPricing}>
                       <div className={styles.currentPricing}>
-                        <p>${opinion.currentPrice.toFixed(2)}</p>
-                        <p className={opinion.trend === 'up' ? 'status-positive' : opinion.trend === 'down' ? 'status-negative' : 'status-neutral'}>
+                        <p style={{ 
+                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '600'
+                        }}>
+                          ${opinion.currentPrice.toFixed(2)}
+                        </p>
+                        <p style={{ 
+                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                          fontFamily: 'var(--font-number)',
+                          fontWeight: '500'
+                        }}>
                           {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                         </p>
                       </div>

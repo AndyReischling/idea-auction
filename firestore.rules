@@ -42,10 +42,52 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
+    /* ───────────── ADVANCED BETS ───────────── */
+    match /advanced-bets/{betId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bets for leaderboard
+      allow write: if request.auth != null; // Allow authenticated users to create/update bets
+    }
+
     /* ───────────── USER PORTFOLIOS ───────────── */
     match /user-portfolios/{userId} {
       allow read: if request.auth != null; // Allow authenticated users to read all portfolios for leaderboard
       allow write: if request.auth != null && request.auth.uid == userId; // Only allow writing to your own portfolio
+    }
+
+    /* ───────────── BOTS ───────────── */
+    match /bots/{botId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bot profiles for leaderboard
+      allow write: if request.auth != null // Allow system to manage bots
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+
+    /* ───────────── AUTONOMOUS BOTS ───────────── */
+    match /autonomous-bots/{botId} {
+      allow read: if true; // Allow public reads for bots
+      allow write: if true; // TEMPORARY: Allow all writes for bot creation
+    }
+    
+    /* ───────────── BOT SUBCOLLECTIONS (for migration) ───────────── */
+    match /autonomous-bots/{parentId}/bots/{botId} {
+      allow read: if true; // Allow public reads for bot subcollections
+      allow write: if true; // TEMPORARY: Allow all writes for bot creation
+    }
+
+    /* ───────────── BOT PORTFOLIOS ───────────── */
+    match /bot-portfolios/{botId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bot portfolios for leaderboard
+      allow write: if request.auth != null // Allow system to manage bot portfolios
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+
+    /* ───────────── BOT TRANSACTIONS ───────────── */
+    match /bot-transactions/{transactionId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bot transactions
+      allow write: if request.auth != null // Allow system to manage bot transactions
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
     }
 
     /* ───────────── ACTIVITY FEED ───────────── */
@@ -68,6 +110,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    /* ───────────── BOT SETTINGS ───────────── */
+    match /bot-settings/{settingId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bot settings
+      allow write: if request.auth != null; // Allow authenticated users to manage bot settings
+    }
+
     /* ───────────── ADMIN COLLECTIONS ───────────── */
     match /admin/{document=**} {
       allow read, write: if request.auth != null && request.auth.token.admin == true;
@@ -77,6 +125,12 @@ service cloud.firestore {
     match /system/{document=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    /* ───────────── PUBLIC LEADERBOARD ───────────── */
+    match /public-leaderboard/{document=**} {
+      allow read: if true;  // Public read access for top 5 traders
+      allow write: if request.auth != null; // Only authenticated users can update
     }
   }
 }
