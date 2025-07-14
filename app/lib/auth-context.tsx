@@ -57,7 +57,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async current => {
-      console.log('🔐 Auth state changed:', current ? 'signed in' : 'signed out');
+      console.log('🔐 Auth state changed:', current ? `signed in (${current.email})` : 'signed out');
       setUser(current);
       if (current) await loadUserProfile(current.uid);
       else setUserProfile(null);
@@ -129,9 +129,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const logout = async () => {
-    await signOut(auth);
-    setUser(null);
-    setUserProfile(null);
+    try {
+      await signOut(auth);
+      setUser(null);
+      setUserProfile(null);
+    } catch (error) {
+      console.error('❌ Logout error:', error);
+      // Even if signOut fails, clear local state
+      setUser(null);
+      setUserProfile(null);
+    }
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {

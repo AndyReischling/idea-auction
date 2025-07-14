@@ -33,6 +33,7 @@ import {
   getDoc,
   CollectionReference,
 } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth-context";
 import { Eye, Lightbulb, Rss, ChartLine } from "@phosphor-icons/react";
@@ -154,6 +155,7 @@ function useCollection<T = any>(ref: CollectionReference, deps: any[] = []) {
 /* ── Main Page component ────────────────────────────────────────────────── */
 export default function UsersPage() {
   const { user, userProfile } = useAuth();
+  const router = useRouter();
 
   /* 1️⃣  Fetch core collections */
   const users = useCollection<UserDoc>(collection(db, "users"));
@@ -606,10 +608,6 @@ export default function UsersPage() {
               View Traders
             </h1>
             <div className={styles.headerActions}>
-              <a href="/generate" className="nav-button">
-                <Lightbulb size={20} weight="regular" />
-                Generate Opinion
-              </a>
               <a href="/feed" className="nav-button">
                 <Rss size={20} weight="regular" />
                 Live Feed
@@ -672,6 +670,7 @@ export default function UsersPage() {
                     data={row}
                     isMe={row.uid === user?.uid}
                     onClick={() => setSelectedUid(row.uid)}
+                    onNavigate={() => router.push(`/users/${row.username}`)}
                   />
                 ))}
               </div>

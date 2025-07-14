@@ -178,16 +178,15 @@ export class RealtimeDataService {
   }
 
   // Get all public opinions (for home page/marketplace)
-  async getAllOpinions(): Promise<string[]> {
+  async getAllOpinions(): Promise<Array<{id: string, text: string, createdAt: any, author?: string, authorId?: string, source?: string, isBot?: boolean}>> {
     const cacheKey = "allOpinions";
     if (this.cache[cacheKey] && !this.cache[cacheKey].isStale) return this.cache[cacheKey].data;
 
     const q = query(this.collections.opinions, orderBy("createdAt", "desc"));
     const snap = await getDocs(q);
     const list = snap.docs
-      .map((d) => d.data())
-      .filter((d) => d.text)
-      .map((d: any) => d.text as string);
+      .map((d) => ({ id: d.id, ...d.data() } as any))
+      .filter((d) => d.text);
 
     this.updateCache(cacheKey, list);
     return list;
@@ -213,14 +212,13 @@ export class RealtimeDataService {
     return id;
   }
 
-  subscribeToAllOpinions(cb: (ops: string[]) => void) {
+  subscribeToAllOpinions(cb: (ops: Array<{id: string, text: string, createdAt: any, author?: string, authorId?: string, source?: string, isBot?: boolean}>) => void) {
     const id = "allOpinions";
     const q = query(this.collections.opinions, orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs
-        .map((d) => d.data())
-        .filter((d) => d.text)
-        .map((d: any) => d.text as string);
+        .map((d) => ({ id: d.id, ...d.data() } as any))
+        .filter((d) => d.text);
       this.updateCache(id, list);
       cb(list);
     });

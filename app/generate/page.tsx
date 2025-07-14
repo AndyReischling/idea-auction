@@ -10,6 +10,7 @@ import { Wallet } from '@phosphor-icons/react/dist/icons/Wallet';
 import { NotePencil } from '@phosphor-icons/react/dist/icons/NotePencil';
 import { PlayCircle } from '@phosphor-icons/react/dist/icons/PlayCircle';
 import AuthButton from '../components/AuthButton';
+import AuthStatusIndicator from '../components/AuthStatusIndicator';
 import { useRouter } from 'next/navigation';
 
 // Firebase
@@ -156,6 +157,7 @@ function GenerateOpinions() {
             <p className={styles.headerSubtitle}>Create and save opinions to trade in the marketplace</p>
           </div>
           <div className={styles.headerActions}>
+            <AuthStatusIndicator />
             <a href="/users" className="nav-button traders">
               <ScanSmiley size={24} /> View Traders
             </a>

@@ -6,6 +6,8 @@ import { useAuth } from './lib/auth-context';
 import AuthModal from './components/AuthModal';
 import Sidebar from './components/Sidebar';
 import AuthButton from './components/AuthButton';
+import AuthStatusIndicator from './components/AuthStatusIndicator';
+
 import { realtimeDataService } from './lib/realtime-data-service';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -399,19 +401,21 @@ export default function HomePage() {
   const loadOpinions = async () => {
     setLoading(true);
     try {
-      const opinionTexts = await realtimeDataService.getAllOpinions(); // returns string[]
+      const opinionDocs = await realtimeDataService.getAllOpinions(); // returns document objects with IDs
       const processed: OpinionWithPrice[] = [];
-      // Remove duplicates first to prevent duplicate IDs
-      const uniqueTexts = [...new Set(opinionTexts)];
+      // Remove duplicates by text first to prevent duplicate IDs
+      const uniqueOpinions = opinionDocs.filter((doc, index, self) => 
+        self.findIndex(d => d.text === doc.text) === index
+      );
       
-      for (const [idx, text] of uniqueTexts.entries()) {
-        const md = await getOpinionMarketData(text);
+      for (const [idx, doc] of uniqueOpinions.entries()) {
+        const md = await getOpinionMarketData(doc.text);
         const { trend, priceChange, priceChangePercent } = calculatePriceTrend(md);
-        const attr = await getOpinionAttribution(text);
+        const attr = await getOpinionAttribution(doc.text);
 
         processed.push({
-          id: `${btoa(text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 15)}_${idx}`, // generate unique ID from text + index
-          text: text,
+          id: doc.id, // Use the real Firestore document ID
+          text: doc.text,
           currentPrice: md.currentPrice,
           priceChange,
           priceChangePercent,
@@ -422,13 +426,13 @@ export default function HomePage() {
               : md.volatility && md.volatility > 1.2
               ? 'medium'
               : 'low',
-          createdAt: Date.now() - (idx * 1000 * 60 * 60), // mock timestamps
+          createdAt: doc.createdAt?.toDate?.()?.getTime() || Date.now() - (idx * 1000 * 60 * 60), // Use real timestamp or fallback
           originalIndex: idx,
           timesPurchased: md.timesPurchased,
           timesSold: md.timesSold,
           volume: md.timesPurchased + md.timesSold,
-          author: attr.author,
-          isBot: attr.isBot,
+          author: doc.author || attr.author,
+          isBot: doc.isBot || attr.isBot,
         });
       }
 
@@ -572,18 +576,6 @@ export default function HomePage() {
   const formatPriceChange = (c: number, p: number) => `${c >= 0 ? '+' : ''}$${c.toFixed(2)} (${c >= 0 ? '+' : ''}${p.toFixed(1)}%)`;
   const getTrendIcon = (t: 'up' | 'down' | 'neutral') =>
     t === 'up' ? <ChartLineUp size={16} style={{ color: 'var(--green)' }} /> : t === 'down' ? <ChartLineDown size={16} style={{ color: 'var(--red)' }} /> : <Minus size={16} style={{ color: 'var(--text-secondary)' }} />;
-  const getVolatilityBadge = (v: 'high' | 'medium' | 'low') => {
-    const map = {
-      high: { l: 'High Vol', c: 'status-negative', bg: '#ef4444' },
-      medium: { l: 'Med Vol', c: 'status-neutral', bg: '#6b7280' },
-      low: { l: 'Low Vol', c: 'status-positive', bg: '#22c55e' },
-    }[v];
-    return (
-      <span className={map.c} style={{ fontSize: 12, fontWeight: 500, padding: '2px 6px', borderRadius: 4, backgroundColor: map.bg, color: '#fff' }}>
-        {map.l}
-      </span>
-    );
-  };
 
   /* ------------------------------------------------------------------
    * RENDER — the long JSX remains largely unchanged
@@ -617,14 +609,12 @@ export default function HomePage() {
           </div>
 
           <div className="navigation-buttons">
+            <AuthStatusIndicator />
             <a href="/users" className="nav-button">
               <User size={20} /> Traders
             </a>
             <a href="/feed" className="nav-button">
               <Fire size={20} /> Feed
-            </a>
-            <a href="/generate" className="nav-button">
-              <Sparkle size={20} /> Generate
             </a>
             <AuthButton />
           </div>
@@ -649,33 +639,48 @@ export default function HomePage() {
               {featuredOpinions.map((opinion) => (
                 <div key={opinion.id} className="card-square" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
-                    <div className="card-content">
-                      <p className="card-title">{opinion.text.slice(0, 120)}{opinion.text.length > 120 ? '...' : ''}</p>
+                    <div className="card-content" style={{ paddingRight: '100px' }}>
+                      <p className="card-title">
+                        {opinion.text.slice(0, 120)}{opinion.text.length > 120 ? '...' : ''}
+                      </p>
                       <p className="card-subtitle">
                         Vol: {opinion.volume} • {opinion.author}
                       </p>
                     </div>
-                    <div className={styles.opinionPricing}>
-                      <div className={styles.currentPricing}>
-                        <p style={{ 
-                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '600'
-                        }}>
-                          ${opinion.currentPrice.toFixed(2)}
-                        </p>
-                        <p style={{ 
-                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '500'
-                        }}>
-                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                        </p>
-                      </div>
-                      {getTrendIcon(opinion.trend)}
-                    </div>
                   </div>
-                  {getVolatilityBadge(opinion.volatility)}
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '16px', 
+                    right: '16px',
+                    textAlign: 'right'
+                  }}>
+                    <p style={{ 
+                      color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                      fontFamily: 'var(--font-number)',
+                      fontWeight: '600',
+                      fontSize: 'var(--font-size-2xl)',
+                      margin: '0 0 4px 0'
+                    }}>
+                      ${opinion.currentPrice.toFixed(2)}
+                    </p>
+                    <div style={{ 
+                      width: '60px', 
+                      height: '1px', 
+                      backgroundColor: 'var(--border-primary)'
+                    }} />
+                  </div>
+                  <div style={{ 
+                    position: 'absolute', 
+                    bottom: '16px', 
+                    right: '16px',
+                    color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                    fontFamily: 'var(--font-number)',
+                    fontWeight: '500',
+                    fontSize: 'var(--font-size-sm)',
+                    textAlign: 'right'
+                  }}>
+                    {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
+                  </div>
                 </div>
               ))}
             </div>
@@ -694,31 +699,47 @@ export default function HomePage() {
               {trendingOpinions.map((opinion) => (
                 <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
-                    <div className="card-content">
-                      <p className="card-title">{opinion.text.slice(0, 60)}...</p>
+                    <div className="card-content" style={{ paddingRight: '100px' }}>
+                      <p className="card-title">
+                        {opinion.text.slice(0, 60)}...
+                      </p>
                       <p className="card-subtitle">
                         Vol: {opinion.volume} • {opinion.author}
                       </p>
                     </div>
-                    <div className={styles.opinionPricing}>
-                      <div className={styles.currentPricing}>
-                        <p style={{ 
-                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '600'
-                        }}>
-                          ${opinion.currentPrice.toFixed(2)}
-                        </p>
-                        <p style={{ 
-                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '500'
-                        }}>
-                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                        </p>
-                      </div>
-                      {getTrendIcon(opinion.trend)}
-                    </div>
+                  </div>
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '16px', 
+                    right: '16px',
+                    textAlign: 'right'
+                  }}>
+                    <p style={{ 
+                      color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                      fontFamily: 'var(--font-number)',
+                      fontWeight: '600',
+                      fontSize: 'var(--font-size-2xl)',
+                      margin: '0 0 4px 0'
+                    }}>
+                      ${opinion.currentPrice.toFixed(2)}
+                    </p>
+                    <div style={{ 
+                      width: '60px', 
+                      height: '1px', 
+                      backgroundColor: 'var(--border-primary)'
+                    }} />
+                  </div>
+                  <div style={{ 
+                    position: 'absolute', 
+                    bottom: '16px', 
+                    right: '16px',
+                    color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                    fontFamily: 'var(--font-number)',
+                    fontWeight: '500',
+                    fontSize: 'var(--font-size-sm)',
+                    textAlign: 'right'
+                  }}>
+                    {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                   </div>
                 </div>
               ))}
@@ -891,41 +912,54 @@ export default function HomePage() {
           <h2 className="section-title">All Opinions</h2>
           {opinions.length === 0 ? (
             <div className="empty-state">
-              <p>No opinions available yet. Be the first to share your thoughts!</p>
-              <button onClick={() => window.location.href = '/generate'} className="btn btn-primary">
-                <Sparkle size={16} /> Generate Opinion
-              </button>
+              <p>No opinions available yet. Check back soon!</p>
             </div>
           ) : (
             <div className="grid grid-2" style={{ marginLeft: 20, marginRight: 20 }}>
               {opinions.map((opinion) => (
                 <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
                   <div className="card-header">
-                    <div className="card-content">
-                      <p className="card-title">{opinion.text.slice(0, 100)}...</p>
+                    <div className="card-content" style={{ paddingRight: '100px' }}>
+                      <p className="card-title">
+                        {opinion.text.slice(0, 100)}...
+                      </p>
                       <p className="card-subtitle">
-                        Vol: {opinion.volume} • {opinion.author} • {getVolatilityBadge(opinion.volatility)}
+                        Vol: {opinion.volume} • {opinion.author}
                       </p>
                     </div>
-                    <div className={styles.opinionPricing}>
-                      <div className={styles.currentPricing}>
-                        <p style={{ 
-                          color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '600'
-                        }}>
-                          ${opinion.currentPrice.toFixed(2)}
-                        </p>
-                        <p style={{ 
-                          color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                          fontFamily: 'var(--font-number)',
-                          fontWeight: '500'
-                        }}>
-                          {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                        </p>
-                      </div>
-                      {getTrendIcon(opinion.trend)}
-                    </div>
+                  </div>
+                  <div style={{ 
+                    position: 'absolute', 
+                    top: '16px', 
+                    right: '16px',
+                    textAlign: 'right'
+                  }}>
+                    <p style={{ 
+                      color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                      fontFamily: 'var(--font-number)',
+                      fontWeight: '600',
+                      fontSize: 'var(--font-size-2xl)',
+                      margin: '0 0 4px 0'
+                    }}>
+                      ${opinion.currentPrice.toFixed(2)}
+                    </p>
+                    <div style={{ 
+                      width: '60px', 
+                      height: '1px', 
+                      backgroundColor: 'var(--border-primary)'
+                    }} />
+                  </div>
+                  <div style={{ 
+                    position: 'absolute', 
+                    bottom: '16px', 
+                    right: '16px',
+                    color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                    fontFamily: 'var(--font-number)',
+                    fontWeight: '500',
+                    fontSize: 'var(--font-size-sm)',
+                    textAlign: 'right'
+                  }}>
+                    {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                   </div>
                 </div>
               ))}

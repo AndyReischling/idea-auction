@@ -53,6 +53,16 @@ export interface UserProfile {
   joinDate: Date;
   createdAt: Date;
   updatedAt: Date;
+  ownedOpinions?: Array<{
+    opinionId?: string;
+    id?: string;
+    opinionText?: string;
+    text?: string;
+    quantity: number;
+    purchasePrice: number;
+    currentPrice?: number;
+    purchaseDate?: string;
+  }>;
 }
 
 export interface Opinion {
@@ -110,6 +120,16 @@ class FirebaseDataService {
     const ref = doc(db, 'users', uid);
     const snap = await getDoc(ref);
     return snap.exists() ? mapSnapshot<UserProfile>(snap) : null;
+  }
+
+  async getUserByUsername(username: string): Promise<UserProfile | null> {
+    const q = query(
+      collection(db, 'users'),
+      where('username', '==', username),
+      fsLimit(1)
+    );
+    const snap = await getDocs(q);
+    return snap.empty ? null : mapSnapshot<UserProfile>(snap.docs[0]);
   }
 
   async createUserProfile(uid: string, payload: Partial<UserProfile>) {
@@ -174,6 +194,70 @@ class FirebaseDataService {
     );
 
     return users.map((u) => ({ ...u, portfolioValue: portfolios[u.uid] }));
+  }
+
+  /* ------------------------------------------------------------------------
+   * USER PORTFOLIO & ACTIVITY DATA
+   * --------------------------------------------------------------------- */
+  async getUserPortfolio(uid: string) {
+    const ref = doc(db, 'user-portfolios', uid);
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  }
+
+  async getUserTransactions(uid: string, limit = 50) {
+    const q = query(
+      collection(db, 'transactions'),
+      where('userId', '==', uid),
+      fsLimit(limit)
+    );
+    const docs = (await getDocs(q)).docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort on client side to avoid requiring composite index
+    return docs.sort((a: any, b: any) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return dateB - dateA;
+    });
+  }
+
+  async getUserBets(uid: string, limit = 50) {
+    const q = query(
+      collection(db, 'advanced-bets'),
+      where('userId', '==', uid),
+      fsLimit(limit)
+    );
+    const docs = (await getDocs(q)).docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort on client side to avoid requiring composite index
+    return docs.sort((a: any, b: any) => {
+      const dateA = new Date(a.placedDate || 0).getTime();
+      const dateB = new Date(b.placedDate || 0).getTime();
+      return dateB - dateA;
+    });
+  }
+
+  async getUserShortPositions(uid: string, limit = 50) {
+    const q = query(
+      collection(db, 'short-positions'),
+      where('userId', '==', uid),
+      fsLimit(limit)
+    );
+    const docs = (await getDocs(q)).docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort on client side to avoid requiring composite index
+    return docs.sort((a: any, b: any) => {
+      const dateA = new Date(a.createdDate || 0).getTime();
+      const dateB = new Date(b.createdDate || 0).getTime();
+      return dateB - dateA;
+    });
+  }
+
+  async getMarketData(opinionText: string) {
+    if (!opinionText || typeof opinionText !== 'string') {
+      return null;
+    }
+    const id = `market_${opinionText.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 50)}`;
+    const ref = doc(db, 'market-data', id);
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
   }
 
   /* ------------------------------------------------------------------------

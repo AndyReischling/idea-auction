@@ -2,6 +2,7 @@
 
 import SemanticSearch from './SemanticSearch';
 import AuthButton from './AuthButton';
+import AuthStatusIndicator from './AuthStatusIndicator';
 
 export default function SearchHeader() {
   return (
@@ -32,7 +33,10 @@ export default function SearchHeader() {
           }}>
             🔍 Explore the Platform
           </h1>
-          <AuthButton />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <AuthStatusIndicator />
+            <AuthButton />
+          </div>
         </div>
         <SemanticSearch />
       </div>

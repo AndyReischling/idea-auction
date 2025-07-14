@@ -192,6 +192,22 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
 }
 
+/* Auth Status Indicator Pulse Animation */
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .nav-button {
   padding: 0px 24px;
   color: var(--text-black);
@@ -647,6 +663,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: var(--radius-md);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   cursor: pointer;
+  position: relative;
 }
 
 .card:hover {
@@ -728,6 +745,7 @@ a { color: inherit; text-decoration: none; }
   gap: 16px;
   min-height: 140px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
 }
 
 .card-square:hover {

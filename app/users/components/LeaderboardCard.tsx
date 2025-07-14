@@ -28,9 +28,10 @@ interface LeaderboardCardProps {
   };
   isMe: boolean;
   onClick: () => void;
+  onNavigate: () => void;
 }
 
-export default function LeaderboardCard({ rank, data, isMe, onClick }: LeaderboardCardProps) {
+export default function LeaderboardCard({ rank, data, isMe, onClick, onNavigate }: LeaderboardCardProps) {
   const formatCurrency = (value: number) => {
     return value >= 0 ? `$${value.toFixed(2)}` : `-$${Math.abs(value).toFixed(2)}`;
   };
@@ -152,7 +153,7 @@ export default function LeaderboardCard({ rank, data, isMe, onClick }: Leaderboa
           className={styles.detailsButton}
           onClick={(e) => {
             e.stopPropagation();
-            onClick();
+            onNavigate();
           }}
         >
           DETAILS

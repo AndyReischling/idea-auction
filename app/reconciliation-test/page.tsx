@@ -8,9 +8,9 @@
  */
 
 import { useState } from 'react';
-import { useAuth } from '@/lib/auth-context';
-import { dataReconciliationService } from '@/lib/data-reconciliation';
-import { marketDataSyncService } from '@/lib/market-data-sync';
+import { useAuth } from '../lib/auth-context';
+import { dataReconciliationService } from '../lib/data-reconciliation';
+import { marketDataSyncService } from '../lib/market-data-sync';
 import {
   collection,
   doc,
@@ -19,9 +19,10 @@ import {
   getDocs,
   limit,
   query,
-  Timestamp,
+  where,
+  serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db } from '../lib/firebase';
 
 export default function ReconciliationTestPage() {
   const { user } = useAuth();
@@ -170,7 +171,7 @@ export default function ReconciliationTestPage() {
         amount: 100,
         price: 10.5,
         quantity: 1,
-        timestamp: Timestamp.now(),
+        timestamp: serverTimestamp(),
       });
       addResult(`💸  Transaction written → ${txRef.id}`);
 
@@ -184,7 +185,7 @@ export default function ReconciliationTestPage() {
           timesSold: 0,
           currentPrice: 10.5,
           basePrice: 10,
-          lastUpdated: Timestamp.now(),
+          lastUpdated: serverTimestamp(),
         },
         { merge: true },
       );

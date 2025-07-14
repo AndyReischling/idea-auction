@@ -20,6 +20,7 @@ const AuthButton: React.FC = () => {
     }
   };
 
+  // Show loading state while auth is being determined
   if (loading) {
     return (
       <button className="auth-button" disabled>
@@ -28,7 +29,8 @@ const AuthButton: React.FC = () => {
     );
   }
 
-  if (user) {
+  // Show sign out button when user is authenticated
+  if (user && user.uid) {
     return (
       <button
         onClick={handleLogout}
@@ -40,6 +42,7 @@ const AuthButton: React.FC = () => {
     );
   }
 
+  // Show sign in button when user is not authenticated
   return (
     <>
       <button
