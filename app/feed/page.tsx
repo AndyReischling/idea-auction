@@ -272,11 +272,11 @@ export default function FeedPage() {
 
           <div className="navigation-buttons">
             <AuthStatusIndicator />
+            <a href="/profile" className="nav-button">
+              <User size={20} /> Profile
+            </a>
             <a href="/users" className="nav-button">
               <User size={20} /> Traders
-            </a>
-            <a href="/" className="nav-button">
-              <Eye size={20} /> Market
             </a>
             <AuthButton />
           </div>

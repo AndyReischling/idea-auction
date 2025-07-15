@@ -136,7 +136,21 @@ export default function OpinionsLogPage() {
         })
       );
       
-      setOwnedOpinions(transformedPortfolio);
+      // Deduplicate opinions by ID and combine quantities to prevent React key conflicts
+      const uniqueOpinions = transformedPortfolio.reduce((acc, opinion) => {
+        const existingIndex = acc.findIndex(o => o.id === opinion.id);
+        
+        if (existingIndex !== -1) {
+          // Combine quantities for the same opinion
+          acc[existingIndex].quantity += opinion.quantity;
+        } else {
+          acc.push(opinion);
+        }
+        
+        return acc;
+      }, [] as OpinionAsset[]);
+      
+      setOwnedOpinions(uniqueOpinions);
     };
 
     setLoading(false);

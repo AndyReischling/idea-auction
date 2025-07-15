@@ -162,7 +162,7 @@ export default function LeaderboardCard({ rank, data, isMe, onClick, onNavigate 
           className={styles.betButton}
           onClick={(e) => {
             e.stopPropagation();
-            // Handle bet action
+            window.location.href = `/bet/${data.username}`;
           }}
         >
           BET

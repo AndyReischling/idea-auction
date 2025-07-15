@@ -532,7 +532,7 @@ export default function OpinionPage() {
       const recentTransactionsSnap = await getDocs(recentTransactionsQuery);
       const recentBuys = recentTransactionsSnap.docs.length;
       
-      console.log('🔍 Anti-arbitrage check:', {
+      console.log('🔍 Opinion Detail Anti-arbitrage check:', {
         recentBuys,
         userPosition,
         canBuy: recentBuys < 4,
@@ -560,9 +560,6 @@ export default function OpinionPage() {
         recentBuys: recentBuys
       });
       
-      // Get display username using helper function
-      const displayUsername = getDisplayUsername();
-      
       // Update market data
       const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
       const updatedMarket = {
@@ -577,7 +574,7 @@ export default function OpinionPage() {
             timestamp: iso(), 
             action: 'buy' as const, 
             quantity: 1,
-            username: displayUsername,
+            username: getDisplayUsername(),
             userId: user.uid
           }
         ],
@@ -591,7 +588,7 @@ export default function OpinionPage() {
         id: transactionId,
         type: 'buy',
         userId: user.uid,
-        username: displayUsername,
+        username: getDisplayUsername(),
         amount: cost,
         opinionText: docData.text,
         opinionId: id,
@@ -707,9 +704,6 @@ export default function OpinionPage() {
         balance: profile.balance
       });
       
-      // Get display username using helper function
-      const displayUsername = getDisplayUsername();
-      
       // Update market data
       const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
       const updatedMarket = {
@@ -724,7 +718,7 @@ export default function OpinionPage() {
             timestamp: iso(), 
             action: 'sell' as const, 
             quantity: 1,
-            username: displayUsername,
+            username: getDisplayUsername(),
             userId: user.uid
           }
         ],
@@ -737,7 +731,7 @@ export default function OpinionPage() {
         id: transactionId,
         type: 'sell',
         userId: user.uid,
-        username: displayUsername,
+        username: getDisplayUsername(),
         amount: sellPrice,
         opinionText: docData.text,
         opinionId: id,

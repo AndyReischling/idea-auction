@@ -19,6 +19,7 @@ import Sidebar from '../components/Sidebar';
 import AuthGuard from '../components/AuthGuard';
 import AuthButton from '../components/AuthButton';
 import AuthStatusIndicator from '../components/AuthStatusIndicator';
+import RecentActivity from '../components/RecentActivity';
 import styles from '../page.module.css';
 import {
   ScanSmiley, RssSimple, Balloon, Wallet,
@@ -971,6 +972,9 @@ export default function ProfilePage() {
               </div>
             )}
           </section>
+
+          {/* Recent Activity Section */}
+          <RecentActivity userId={user?.uid} maxItems={15} title="My Recent Activity" />
         </main>
       </div>
     );

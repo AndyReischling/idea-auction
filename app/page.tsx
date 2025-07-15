@@ -610,6 +610,9 @@ export default function HomePage() {
 
           <div className="navigation-buttons">
             <AuthStatusIndicator />
+            <a href="/profile" className="nav-button">
+              <User size={20} /> Profile
+            </a>
             <a href="/users" className="nav-button">
               <User size={20} /> Traders
             </a>

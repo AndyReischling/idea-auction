@@ -36,7 +36,7 @@ import {
 import { useRouter } from "next/navigation";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth-context";
-import { Eye, Lightbulb, Rss, ChartLine } from "@phosphor-icons/react";
+import { Eye, Lightbulb, Rss, ChartLine, Balloon } from "@phosphor-icons/react";
 
 /* ── UI ─────────────────────────────────────────────────────────────────── */
 import Sidebar from "../components/Sidebar";
@@ -611,6 +611,10 @@ export default function UsersPage() {
               <a href="/feed" className="nav-button">
                 <Rss size={20} weight="regular" />
                 Live Feed
+              </a>
+              <a href="/generate" className="nav-button">
+                <Balloon size={20} weight="regular" />
+                Generate
               </a>
               <a href="/profile" className="nav-button">
                 <ChartLine size={20} weight="regular" />

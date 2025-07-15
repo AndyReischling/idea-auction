@@ -65,12 +65,14 @@ export default function ActivityDetailModal({
   const [marketData, setMarketData] = useState<OpinionMarketData | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [msg, setMsg] = useState('');
-  const [buyQuantity, setBuyQuantity] = useState(1);
+  const [sellQuantity, setSellQuantity] = useState(1);
   const [betAmount, setBetAmount] = useState(100);
   const [targetDrop, setTargetDrop] = useState(25);
   const [timeLimit, setTimeLimit] = useState(24);
   const [userPosition, setUserPosition] = useState(0);
   const [shortPositions, setShortPositions] = useState<any[]>([]);
+  const [buyLimitReached, setBuyLimitReached] = useState(false);
+  const [buyLimitMessage, setBuyLimitMessage] = useState('');
   
   // Bet-specific state
   const [portfolioBetAmount, setPortfolioBetAmount] = useState(100);
@@ -110,6 +112,16 @@ export default function ActivityDetailModal({
       default: return 'Activity Details';
     }
   };
+
+  // Reset sell quantity when user position changes
+  useEffect(() => {
+    setSellQuantity(Math.min(sellQuantity, userPosition));
+  }, [userPosition]);
+
+  // Check buy limit when user or activity changes (not when market data changes)
+  useEffect(() => {
+    checkBuyLimit();
+  }, [user, activity]);
 
   // Load market data and user profile
   useEffect(() => {
@@ -225,6 +237,50 @@ export default function ActivityDetailModal({
     setTimeout(() => setMsg(''), ms);
   };
 
+  // Check if user has reached buy limit
+  // NOTE: This limit is ONLY for BUY transactions and is NOT affected by sell operations
+  const checkBuyLimit = async () => {
+    if (!user?.uid || !activity?.opinionText) {
+      setBuyLimitReached(false);
+      setBuyLimitMessage('');
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      
+      // Only check BUY transactions - sell operations do not affect buy limits
+      const recentTransactionsQuery = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid),
+        where('opinionText', '==', activity.opinionText),
+        where('type', '==', 'buy'), // Only BUY transactions count toward limit
+        where('timestamp', '>=', tenMinutesAgo),
+        orderBy('timestamp', 'desc')
+      );
+      
+      const recentTransactionsSnap = await getDocs(recentTransactionsQuery);
+      const recentBuys = recentTransactionsSnap.docs.length;
+      
+      if (recentBuys >= 4) {
+        const earliestBuy = recentTransactionsSnap.docs[recentTransactionsSnap.docs.length - 1];
+        const nextAllowedTime = new Date(earliestBuy.data().timestamp.toDate().getTime() + 10 * 60 * 1000);
+        const minutesLeft = Math.ceil((nextAllowedTime.getTime() - now.getTime()) / (60 * 1000));
+        
+        setBuyLimitReached(true);
+        setBuyLimitMessage(`You've reached the limit of 4 shares in 10 minutes. Wait ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} before buying again.`);
+      } else {
+        setBuyLimitReached(false);
+        setBuyLimitMessage('');
+      }
+    } catch (error) {
+      console.error('Error checking buy limit:', error);
+      setBuyLimitReached(false);
+      setBuyLimitMessage('');
+    }
+  };
+
   const handleBuy = async () => {
     if (!user?.uid) {
       // Redirect to login if not authenticated
@@ -237,14 +293,14 @@ export default function ActivityDetailModal({
     try {
       setLoading(true);
       
-      // Check if user has enough balance
-      const cost = marketData.currentPrice * buyQuantity;
+      // Check if user has enough balance (1 share only)
+      const cost = marketData.currentPrice;
       if (cost > userProfile.balance) {
         popMsg(`Insufficient balance! Need ${formatCurrency(cost)}, have ${formatCurrency(userProfile.balance)}`);
         return;
       }
 
-      // Anti-arbitrage check
+      // Anti-arbitrage check: Max 4 shares per 10 minutes per opinion
       const now = new Date();
       const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
       
@@ -260,22 +316,33 @@ export default function ActivityDetailModal({
       const recentTransactionsSnap = await getDocs(recentTransactionsQuery);
       const recentBuys = recentTransactionsSnap.docs.length;
       
+      console.log('🔍 Feed Modal Anti-arbitrage check:', {
+        recentBuys,
+        userPosition,
+        canBuy: recentBuys < 4,
+        opinionText: activity.opinionText
+      });
+      
       if (recentBuys >= 4) {
-        popMsg('🚫 Anti-arbitrage limit: You\'ve bought 4 shares in the last 10 minutes.');
+        const earliestBuy = recentTransactionsSnap.docs[recentTransactionsSnap.docs.length - 1];
+        const nextAllowedTime = new Date(earliestBuy.data().timestamp.toDate().getTime() + 10 * 60 * 1000);
+        const minutesLeft = Math.ceil((nextAllowedTime.getTime() - now.getTime()) / (60 * 1000));
+        
+        popMsg(`🚫 Anti-arbitrage limit: You've bought 4 shares in the last 10 minutes. Wait ${minutesLeft} minutes before buying again. (You still own ${userPosition} shares)`);
         return;
       }
 
-      // Execute buy transaction
+      // Execute buy transaction (1 share only)
       const batch = writeBatch(db);
       
-      // Calculate new price
-      const newPrice = marketData.currentPrice * Math.pow(1.001, buyQuantity);
+      // Calculate new price (0.1% increase per share)
+      const newPrice = marketData.currentPrice * 1.001;
       
       // Update market data
       const marketDocId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
       const updatedMarket = {
         ...marketData,
-        timesPurchased: marketData.timesPurchased + buyQuantity,
+        timesPurchased: marketData.timesPurchased + 1,
         currentPrice: newPrice,
         lastUpdated: iso(),
         priceHistory: [
@@ -284,12 +351,12 @@ export default function ActivityDetailModal({
             price: newPrice,
             timestamp: iso(),
             action: 'buy' as const,
-            quantity: buyQuantity,
+            quantity: 1,
             username: userProfile.username,
             userId: user.uid
           }
         ],
-        dailyVolume: marketData.dailyVolume + buyQuantity,
+        dailyVolume: marketData.dailyVolume + 1,
       };
 
       batch.set(doc(db, 'market-data', marketDocId), updatedMarket);
@@ -300,7 +367,7 @@ export default function ActivityDetailModal({
         balance: userProfile.balance - cost,
         portfolio: {
           ...userProfile.portfolio,
-          [activity.opinionText]: userPosition + buyQuantity
+          [activity.opinionText]: userPosition + 1
         }
       };
 
@@ -316,7 +383,7 @@ export default function ActivityDetailModal({
         amount: cost,
         opinionText: activity.opinionText,
         timestamp: serverTimestamp(),
-        quantity: buyQuantity,
+        quantity: 1,
         price: newPrice
       });
 
@@ -324,9 +391,14 @@ export default function ActivityDetailModal({
       
       setMarketData(updatedMarket);
       setUserProfile(updatedProfile);
-      setUserPosition(userPosition + buyQuantity);
+      setUserPosition(userPosition + 1);
       
-      popMsg(`✅ Successfully bought ${buyQuantity} share${buyQuantity > 1 ? 's' : ''} for ${formatCurrency(cost)}`);
+      // Check buy limit after successful BUY (not sell) to update UI
+      setTimeout(() => {
+        checkBuyLimit();
+      }, 1000);
+      
+      popMsg(`✅ Successfully bought 1 share for ${formatCurrency(cost)}`);
       
     } catch (error) {
       console.error('Error buying shares:', error);
@@ -348,20 +420,24 @@ export default function ActivityDetailModal({
     try {
       setLoading(true);
       
-      // Calculate sell price (95% of market price)
-      const sellPrice = marketData.currentPrice * 0.95;
+      // Determine actual quantity to sell (can't sell more than owned)
+      const actualSellQuantity = Math.min(sellQuantity, userPosition);
+      
+      // Calculate sell price (95% of market price per share)
+      const sellPricePerShare = marketData.currentPrice * 0.95;
+      const totalSellValue = sellPricePerShare * actualSellQuantity;
       
       // Execute sell transaction
       const batch = writeBatch(db);
       
-      // Calculate new price
-      const newPrice = marketData.currentPrice * 0.999;
+      // Calculate new price (0.1% decrease per share sold)
+      const newPrice = marketData.currentPrice * Math.pow(0.999, actualSellQuantity);
       
       // Update market data
       const marketDocId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
       const updatedMarket = {
         ...marketData,
-        timesSold: marketData.timesSold + 1,
+        timesSold: marketData.timesSold + actualSellQuantity,
         currentPrice: newPrice,
         lastUpdated: iso(),
         priceHistory: [
@@ -370,12 +446,12 @@ export default function ActivityDetailModal({
             price: newPrice,
             timestamp: iso(),
             action: 'sell' as const,
-            quantity: 1,
+            quantity: actualSellQuantity,
             username: userProfile.username,
             userId: user.uid
           }
         ],
-        dailyVolume: marketData.dailyVolume + 1,
+        dailyVolume: marketData.dailyVolume + actualSellQuantity,
       };
 
       batch.set(doc(db, 'market-data', marketDocId), updatedMarket);
@@ -383,10 +459,10 @@ export default function ActivityDetailModal({
       // Update user profile
       const updatedProfile = {
         ...userProfile,
-        balance: userProfile.balance + sellPrice,
+        balance: userProfile.balance + totalSellValue,
         portfolio: {
           ...userProfile.portfolio,
-          [activity.opinionText]: userPosition - 1
+          [activity.opinionText]: userPosition - actualSellQuantity
         }
       };
 
@@ -399,20 +475,25 @@ export default function ActivityDetailModal({
         type: 'sell',
         userId: user.uid,
         username: userProfile.username,
-        amount: sellPrice,
+        amount: totalSellValue,
         opinionText: activity.opinionText,
         timestamp: serverTimestamp(),
-        quantity: 1,
-        price: sellPrice
+        quantity: actualSellQuantity,
+        price: sellPricePerShare
       });
 
       await batch.commit();
       
       setMarketData(updatedMarket);
       setUserProfile(updatedProfile);
-      setUserPosition(userPosition - 1);
+      setUserPosition(userPosition - actualSellQuantity);
       
-      popMsg(`✅ Successfully sold 1 share for ${formatCurrency(sellPrice)}`);
+      // Reset sell quantity if we sold all shares
+      if (actualSellQuantity === userPosition) {
+        setSellQuantity(1);
+      }
+      
+      popMsg(`✅ Successfully sold ${actualSellQuantity} share${actualSellQuantity > 1 ? 's' : ''} for ${formatCurrency(totalSellValue)}`);
       
     } catch (error) {
       console.error('Error selling shares:', error);
@@ -1275,68 +1356,6 @@ export default function ActivityDetailModal({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
-                      <label style={{
-                        display: 'block',
-                        fontSize: 'var(--font-size-sm)',
-                        fontWeight: '500',
-                        color: 'var(--text-primary)',
-                        marginBottom: '8px'
-                      }}>
-                        Quantity:
-                      </label>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}>
-                        <button
-                          onClick={() => setBuyQuantity(Math.max(1, buyQuantity - 1))}
-                          disabled={user === null}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: 'var(--bg-section)',
-                            border: '2px solid var(--border-primary)',
-                            borderRadius: 'var(--radius-sm)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: user === null ? 'not-allowed' : 'pointer',
-                            opacity: user === null ? '0.5' : '1',
-                            transition: 'var(--transition)'
-                          }}
-                        >
-                          <Minus size={16} />
-                        </button>
-                        <span style={{
-                          width: '48px',
-                          textAlign: 'center',
-                          fontWeight: '500',
-                          fontSize: 'var(--font-size-base)'
-                        }}>{buyQuantity}</span>
-                        <button
-                          onClick={() => setBuyQuantity(buyQuantity + 1)}
-                          disabled={user === null}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            backgroundColor: 'var(--bg-section)',
-                            border: '2px solid var(--border-primary)',
-                            borderRadius: 'var(--radius-sm)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: user === null ? 'not-allowed' : 'pointer',
-                            opacity: user === null ? '0.5' : '1',
-                            transition: 'var(--transition)'
-                          }}
-                        >
-                          <Plus size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div>
                       <p style={{
                         fontSize: 'var(--font-size-sm)',
                         color: 'var(--text-secondary)',
@@ -1348,30 +1367,50 @@ export default function ActivityDetailModal({
                         color: 'var(--text-primary)',
                         margin: '0'
                       }}>
-                        Total Cost: {formatCurrency(marketData.currentPrice * buyQuantity)}
+                        Cost per Share: {formatCurrency(marketData.currentPrice)}
+                      </p>
+                      <p style={{
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--text-secondary)',
+                        margin: '8px 0 0 0',
+                        fontStyle: 'italic'
+                      }}>
+                        One share per transaction (anti-arbitrage protection)
                       </p>
                     </div>
                     
                     <button
                       onClick={handleBuy}
-                      disabled={loading || Boolean(user && userProfile && userProfile.balance < marketData.currentPrice * buyQuantity)}
+                      disabled={loading || buyLimitReached || Boolean(user && userProfile && userProfile.balance < marketData.currentPrice)}
                       className="btn btn-primary"
                       style={{
                         width: '100%',
-                        backgroundColor: 'var(--green)',
+                        backgroundColor: (loading || buyLimitReached || (user && userProfile && userProfile.balance < marketData.currentPrice)) ? 'var(--medium-gray)' : 'var(--green)',
                         color: 'white',
                         padding: '12px 16px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '8px',
-                        opacity: (loading || (user && userProfile && userProfile.balance < marketData.currentPrice * buyQuantity)) ? '0.5' : '1',
-                        cursor: (loading || (user && userProfile && userProfile.balance < marketData.currentPrice * buyQuantity)) ? 'not-allowed' : 'pointer'
+                        opacity: (loading || buyLimitReached || (user && userProfile && userProfile.balance < marketData.currentPrice)) ? '0.5' : '1',
+                        cursor: (loading || buyLimitReached || (user && userProfile && userProfile.balance < marketData.currentPrice)) ? 'not-allowed' : 'pointer'
                       }}
                     >
                       <ShoppingCart size={20} />
-                      {loading ? 'Processing...' : user === null ? 'Sign in to Buy Shares' : 'Buy Shares'}
+                      {loading ? 'Processing...' : user === null ? 'Sign in to Buy 1 Share' : buyLimitReached ? 'Buy Limit Reached' : 'Buy 1 Share'}
                     </button>
+                    
+                    {buyLimitReached && (
+                      <div style={{
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--red)',
+                        marginTop: '8px',
+                        textAlign: 'center',
+                        fontStyle: 'italic'
+                      }}>
+                        {buyLimitMessage}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1416,15 +1455,82 @@ export default function ActivityDetailModal({
                         color: 'var(--text-secondary)',
                         margin: '0 0 8px 0'
                       }}>
-                        Sell Price: {formatCurrency(marketData.currentPrice * 0.95)} (5% spread)
+                        Sell Price: {formatCurrency(marketData.currentPrice * 0.95)} per share (5% spread)
                       </p>
+                    </div>
+                    
+                    {userPosition > 0 && (
+                      <div>
+                        <label style={{
+                          display: 'block',
+                          fontSize: 'var(--font-size-sm)',
+                          fontWeight: '500',
+                          color: 'var(--text-primary)',
+                          marginBottom: '8px'
+                        }}>
+                          Quantity to Sell:
+                        </label>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}>
+                          <button
+                            onClick={() => setSellQuantity(Math.max(1, sellQuantity - 1))}
+                            disabled={loading || !user}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              backgroundColor: 'var(--bg-section)',
+                              border: '2px solid var(--border-primary)',
+                              borderRadius: 'var(--radius-sm)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: (loading || !user) ? 'not-allowed' : 'pointer',
+                              opacity: (loading || !user) ? '0.5' : '1',
+                              transition: 'var(--transition)'
+                            }}
+                          >
+                            <Minus size={16} />
+                          </button>
+                          <span style={{
+                            width: '48px',
+                            textAlign: 'center',
+                            fontWeight: '500',
+                            fontSize: 'var(--font-size-base)'
+                          }}>{Math.min(sellQuantity, userPosition)}</span>
+                          <button
+                            onClick={() => setSellQuantity(Math.min(userPosition, sellQuantity + 1))}
+                            disabled={loading || !user}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              backgroundColor: 'var(--bg-section)',
+                              border: '2px solid var(--border-primary)',
+                              borderRadius: 'var(--radius-sm)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: (loading || !user) ? 'not-allowed' : 'pointer',
+                              opacity: (loading || !user) ? '0.5' : '1',
+                              transition: 'var(--transition)'
+                            }}
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div>
                       <p style={{
                         fontSize: 'var(--font-size-lg)',
                         fontWeight: '600',
                         color: 'var(--text-primary)',
                         margin: '0'
                       }}>
-                        Total Value: {formatCurrency(marketData.currentPrice * 0.95 * userPosition)}
+                        Total Value: {formatCurrency(marketData.currentPrice * 0.95 * Math.min(sellQuantity, userPosition))}
                       </p>
                     </div>
                     
@@ -1463,7 +1569,7 @@ export default function ActivityDetailModal({
                       ) : (
                         <>
                           <HandPeace size={20} />
-                          Sell All Shares
+                          Sell {Math.min(sellQuantity, userPosition)} Share{Math.min(sellQuantity, userPosition) > 1 ? 's' : ''}
                         </>
                       )}
                     </button>
