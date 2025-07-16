@@ -169,6 +169,16 @@ export default function UserDetailPage() {
   // All opinion texts → used for sidebar links
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
 
+  // Check if current user is viewing their own profile - only check when we have complete data
+  const isOwnProfile = !loading && user && profile && (
+    user.displayName === profile.username || 
+    user.email?.split('@')[0] === profile.username ||
+    user.uid === profile.uid ||
+    // Also check if the URL username matches the current user's username stored in their profile
+    (typeof username === 'string' && decodeURIComponent(username) === user.displayName) ||
+    (typeof username === 'string' && decodeURIComponent(username) === user.email?.split('@')[0])
+  );
+
   // ── Initial data load ──────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof username !== 'string') return;
@@ -485,7 +495,7 @@ export default function UserDetailPage() {
               color: 'var(--text-secondary)',
               fontWeight: '400',
             }}>
-              Active Bets
+              {isOwnProfile ? 'Total Opinions' : 'Active Bets'}
             </h3>
             <p style={{
               fontSize: 'var(--font-size-2xl)',
@@ -493,7 +503,7 @@ export default function UserDetailPage() {
               margin: '0',
               color: 'var(--text-primary)',
             }}>
-              {activeBets}
+              {isOwnProfile ? ownedOpinions.length : activeBets}
             </p>
           </div>
 
@@ -508,15 +518,15 @@ export default function UserDetailPage() {
               color: 'var(--text-secondary)',
               fontWeight: '400',
             }}>
-              Exposure
+              {isOwnProfile ? 'Total Earnings' : 'Exposure'}
             </h3>
             <p style={{
               fontSize: 'var(--font-size-2xl)',
               fontWeight: '700',
               margin: '0',
-              color: totalExposure > 0 ? 'var(--red)' : 'var(--text-primary)',
+              color: isOwnProfile ? 'var(--green)' : (totalExposure > 0 ? 'var(--red)' : 'var(--text-primary)'),
             }}>
-              ${totalExposure.toFixed(2)}
+              {isOwnProfile ? `$${(profile.totalEarnings || 0).toFixed(2)}` : `$${totalExposure.toFixed(2)}`}
             </p>
             </div>
 
@@ -700,21 +710,22 @@ export default function UserDetailPage() {
           )}
         </section>
 
-        {/* Portfolio Bets and Shorts */}
-        <section style={{ margin: '40px 0' }}>
-          <h2 style={{ 
-            fontSize: 'var(--font-size-xl)',
-            fontWeight: '700',
-            margin: '0 0 20px 0',
-            color: 'var(--text-primary)',
-            paddingLeft: '32px',
-          }}>
-            {profile.username}'s Portfolio Bets and Shorts
-          </h2>
+        {/* Portfolio Bets and Shorts - Only show for other users, not own profile */}
+        {!isOwnProfile && (
+          <section style={{ margin: '40px 0' }}>
+            <h2 style={{ 
+              fontSize: 'var(--font-size-xl)',
+              fontWeight: '700',
+              margin: '0 0 20px 0',
+              color: 'var(--text-primary)',
+              paddingLeft: '32px',
+            }}>
+              {profile.username}'s Portfolio Bets and Shorts
+            </h2>
 
-          {MOCK_PORTFOLIO_BETS.length === 0 && MOCK_SHORT_POSITIONS.length === 0 ? (
-            <div className="empty-state">{profile.username} doesn't have any bets or shorts yet.</div>
-          ) : (
+            {MOCK_PORTFOLIO_BETS.length === 0 && MOCK_SHORT_POSITIONS.length === 0 ? (
+              <div className="empty-state">{profile.username} doesn't have any bets or shorts yet.</div>
+            ) : (
             <div style={{
               background: 'var(--white)',
               paddingLeft: '32px',
@@ -964,55 +975,58 @@ export default function UserDetailPage() {
             </div>
           )}
         </section>
+        )}
 
         {/* Recent Activity Section */}
         <RecentActivity userId={profile?.uid} maxItems={15} title={`${profile?.username}'s Recent Activity`} />
 
-        {/* Floating BET Button */}
-        <div style={{
-          position: 'fixed',
-          bottom: '40px',
-          right: '40px',
-          zIndex: 1000,
-          padding: '3px',
-          background: 'var(--black)',
-          borderRadius: 'var(--radius-md)',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
-        }}>
-          <button
-            onClick={() => window.location.href = `/bet/${username}`}
-            style={{
-              width: '80px',
-              height: '80px',
-              background: 'var(--yellow)',
-              color: 'var(--black)',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all var(--transition)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '4px',
-              textTransform: 'uppercase',
-              letterSpacing: '1px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.background = 'var(--light-yellow)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.background = 'var(--yellow)';
-            }}
-          >
-            <Coins size={20} weight="bold" />
-            BET
-          </button>
-        </div>
+        {/* Floating BET Button - Only show for other users, not own profile */}
+        {!isOwnProfile && (
+          <div style={{
+            position: 'fixed',
+            bottom: '40px',
+            right: '40px',
+            zIndex: 1000,
+            padding: '3px',
+            background: 'var(--black)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
+          }}>
+            <button
+              onClick={() => window.location.href = `/bet/${username}`}
+              style={{
+                width: '80px',
+                height: '80px',
+                background: 'var(--yellow)',
+                color: 'var(--black)',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--font-size-sm)',
+                fontWeight: '700',
+                cursor: 'pointer',
+                transition: 'all var(--transition)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                textTransform: 'uppercase',
+                letterSpacing: '1px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.background = 'var(--light-yellow)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'var(--yellow)';
+              }}
+            >
+              <Coins size={20} weight="bold" />
+              BET
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );

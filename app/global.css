@@ -119,7 +119,7 @@ a { color: inherit; text-decoration: none; }
   flex: 1;
   max-width: 1200px;
   margin: 0 auto;
-  margin-top: 20px;
+  margin-top: 115px; /* Account for fixed header height (95px) + extra spacing */
 }
 
 /* 5️⃣  Header -------------------------------------------------------------- */

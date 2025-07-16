@@ -20,7 +20,7 @@ interface OpinionDoc {
   id: string;
   text: string;
   createdAt: number; // epoch ms for easy sorting
-  source?: 'ai' | 'user';
+  source?: 'ai' | 'user' | 'bot_generated';
 }
 
 /**
@@ -46,7 +46,7 @@ function Sidebar() {
           id: d.id,
           text: data.text ?? '',
           createdAt: ts ? ts.toMillis() : Date.now(),
-          source: data.source as 'ai' | 'user',
+          source: data.source as 'ai' | 'user' | 'bot_generated',
         };
       });
       setOpinions(docs);
@@ -59,9 +59,9 @@ function Sidebar() {
   /* ------------------------------------------------------------------
    * Render helpers.
    * ------------------------------------------------------------------ */
-  const attributionBadge = (source?: 'ai' | 'user') => (
-    <div className={`${styles.attributionBadge} ${styles[source ?? 'user']}`}>
-      {source === 'ai' ? 'AI' : 'User'}
+  const attributionBadge = (source?: 'ai' | 'user' | 'bot_generated') => (
+    <div className={`${styles.attributionBadge} ${styles[source === 'bot_generated' ? 'ai' : source ?? 'user']}`}>
+      {source === 'ai' || source === 'bot_generated' ? 'AI' : 'User'}
     </div>
   );
 
