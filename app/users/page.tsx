@@ -36,6 +36,8 @@ import {
 import { useRouter } from "next/navigation";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth-context";
+import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from "../lib/portfolio-utils";
+import { realtimeDataService } from "../lib/realtime-data-service";
 import { Eye, Lightbulb, Rss, ChartLine, Balloon } from "@phosphor-icons/react";
 
 /* ── UI ─────────────────────────────────────────────────────────────────── */
@@ -305,27 +307,45 @@ export default function UsersPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [opinionTextMap, setOpinionTextMap] = useState<Map<string, string>>(new Map());
 
-  // Helper function to get opinion text by ID
+  // FIXED: Helper function to get opinion text by ID with better fallbacks
   const getOpinionText = async (opinionId: string, fallbackText?: string): Promise<string> => {
-    if (fallbackText && fallbackText.trim()) {
-      return fallbackText;
+    // PRIORITY 1: Use fallbackText if it's valid and not empty
+    if (fallbackText && 
+        typeof fallbackText === 'string' && 
+        fallbackText.trim() && 
+        fallbackText !== 'Unknown Opinion' &&
+        fallbackText !== 'Opinion (Unknown)' &&
+        !fallbackText.startsWith('Opinion (')) {
+      return fallbackText.trim();
     }
     
+    // PRIORITY 2: Check our local cache
     if (opinionId && opinionTextMap.has(opinionId)) {
-      return opinionTextMap.get(opinionId)!;
+      const cachedText = opinionTextMap.get(opinionId)!;
+      if (cachedText && 
+          cachedText !== 'Unknown Opinion' && 
+          cachedText !== 'Opinion (Unknown)' &&
+          !cachedText.startsWith('Opinion (')) {
+        return cachedText;
+      }
     }
     
-    if (opinionId) {
+    // PRIORITY 3: Try to fetch from Firestore
+    if (opinionId && typeof opinionId === 'string' && opinionId.trim()) {
       try {
         const docRef = doc(db, "opinions", opinionId);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
           const text = data.text || data.opinionText || '';
-          if (text) {
+          if (text && 
+              typeof text === 'string' && 
+              text.trim() &&
+              text !== 'Unknown Opinion' &&
+              text !== 'Opinion (Unknown)') {
             // Update the map for future use
-            setOpinionTextMap(prev => new Map(prev).set(opinionId, text));
-            return text;
+            setOpinionTextMap(prev => new Map(prev).set(opinionId, text.trim()));
+            return text.trim();
           }
         }
       } catch (error) {
@@ -333,7 +353,9 @@ export default function UsersPage() {
       }
     }
     
-    return `Opinion (${opinionId?.slice(0, 8) || 'Unknown'})`;
+    // PRIORITY 4: Return empty string as fallback
+    console.warn('Unable to resolve opinion text for:', { opinionId, fallbackText });
+    return ''; // Return empty string instead of null to avoid type errors
   };
 
   // Calculate leaderboard
@@ -355,7 +377,22 @@ export default function UsersPage() {
         
         const portfolio = pf || defaultPortfolio;
         
-        const value = portfolio.ownedOpinions.reduce((sum, op) => {
+        // FIXED: Filter out holdings with invalid opinion text before calculations
+        const validOpinions = [];
+        for (const op of portfolio.ownedOpinions) {
+          if (!op.opinionText || 
+              typeof op.opinionText !== 'string' || 
+              !op.opinionText.trim() ||
+              op.opinionText === 'Unknown Opinion' ||
+              op.opinionText === 'Opinion (Unknown)' ||
+              op.opinionText.startsWith('Opinion (')) {
+            console.warn('Skipping invalid opinion:', op);
+            continue;
+          }
+          validOpinions.push(op);
+        }
+        
+        const value = validOpinions.reduce((sum, op) => {
           const md = priceMap.get(op.opinionText);
           return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
         }, 0);
@@ -374,8 +411,8 @@ export default function UsersPage() {
         const volatility: 'Low' | 'Medium' | 'High' = exposure > portfolioValue * 0.5 ? 'High' : 
                           exposure > portfolioValue * 0.2 ? 'Medium' : 'Low';
         
-        // Get top holdings
-        const sortedOpinions = portfolio.ownedOpinions
+        // Get top holdings - only use valid opinions
+        const sortedOpinions = validOpinions
           .sort((a, b) => {
             const aValue = (priceMap.get(a.opinionText)?.currentPrice ?? a.purchasePrice) * a.quantity;
             const bValue = (priceMap.get(b.opinionText)?.currentPrice ?? b.purchasePrice) * b.quantity;
@@ -383,23 +420,29 @@ export default function UsersPage() {
           })
           .slice(0, 2);
         
-        const topHoldings = await Promise.all(sortedOpinions.map(async (op) => {
+        // FIXED: Process top holdings with better validation
+        const topHoldings = [];
+        for (const op of sortedOpinions) {
+          const opinionText = await getOpinionText(op.opinionId, op.opinionText);
+          
+          // Skip if we couldn't resolve valid opinion text
+          if (!opinionText) {
+            continue;
+          }
+          
           const currentPrice = priceMap.get(op.opinionText)?.currentPrice ?? op.purchasePrice;
           const value = currentPrice * op.quantity;
           const percentChange = op.purchasePrice > 0 ? ((currentPrice - op.purchasePrice) / op.purchasePrice) * 100 : 0;
           
-          // Get the actual opinion text
-          const opinionText = await getOpinionText(op.opinionId, op.opinionText);
-          
-          return {
+          topHoldings.push({
             text: opinionText,
             value: value,
             currentPrice: currentPrice,
             purchasePrice: op.purchasePrice,
             percentChange: percentChange,
             quantity: op.quantity
-          };
-        }));
+          });
+        }
         
         return {
           uid: u.id,
@@ -407,12 +450,12 @@ export default function UsersPage() {
           joinDate: u.joinDate,
           portfolioValue,
           exposure,
-          opinionsCount: portfolio.ownedOpinions.length,
+          opinionsCount: validOpinions.length, // Use valid opinions count
           betsCount: userBets.length,
           performanceChange,
           performancePercent,
           volatility,
-          holdings: portfolio.ownedOpinions.length,
+          holdings: validOpinions.length, // Use valid opinions count
           topHoldings,
           isBot: false
         };
@@ -431,7 +474,22 @@ export default function UsersPage() {
         
         const portfolio = botPf || defaultBotPortfolio;
         
-        const value = portfolio.holdings.reduce((sum, op) => {
+        // FIXED: Filter out holdings with invalid opinion text before calculations
+        const validBotHoldings = [];
+        for (const op of portfolio.holdings) {
+          if (!op.opinionText || 
+              typeof op.opinionText !== 'string' || 
+              !op.opinionText.trim() ||
+              op.opinionText === 'Unknown Opinion' ||
+              op.opinionText === 'Opinion (Unknown)' ||
+              op.opinionText.startsWith('Opinion (')) {
+            console.warn('Skipping invalid bot holding:', op);
+            continue;
+          }
+          validBotHoldings.push(op);
+        }
+        
+        const value = validBotHoldings.reduce((sum, op) => {
           const md = priceMap.get(op.opinionText);
           return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
         }, 0);
@@ -450,8 +508,8 @@ export default function UsersPage() {
           bot.riskTolerance === 'aggressive' ? 'High' : 
           bot.riskTolerance === 'moderate' ? 'Medium' : 'Low';
         
-        // Get top holdings (use existing opinionText for bots)
-        const sortedBotOpinions = portfolio.holdings
+        // Get top holdings (use existing opinionText for bots) - only use valid holdings
+        const sortedBotOpinions = validBotHoldings
           .sort((a, b) => {
             const aValue = (priceMap.get(a.opinionText)?.currentPrice ?? a.purchasePrice) * a.quantity;
             const bValue = (priceMap.get(b.opinionText)?.currentPrice ?? b.purchasePrice) * b.quantity;
@@ -459,23 +517,29 @@ export default function UsersPage() {
           })
           .slice(0, 2);
         
-        const topHoldings = await Promise.all(sortedBotOpinions.map(async (op) => {
+        // FIXED: Process bot top holdings with better validation
+        const topHoldings = [];
+        for (const op of sortedBotOpinions) {
+          const opinionText = await getOpinionText(op.opinionId, op.opinionText);
+          
+          // Skip if we couldn't resolve valid opinion text
+          if (!opinionText) {
+            continue;
+          }
+          
           const currentPrice = priceMap.get(op.opinionText)?.currentPrice ?? op.purchasePrice;
           const value = currentPrice * op.quantity;
           const percentChange = op.purchasePrice > 0 ? ((currentPrice - op.purchasePrice) / op.purchasePrice) * 100 : 0;
           
-          // Get the actual opinion text
-          const opinionText = await getOpinionText(op.opinionId, op.opinionText);
-          
-          return {
+          topHoldings.push({
             text: opinionText,
             value: value,
             currentPrice: currentPrice,
             purchasePrice: op.purchasePrice,
             percentChange: percentChange,
             quantity: op.quantity
-          };
-        }));
+          });
+        }
         
         return {
           uid: bot.id,
@@ -483,12 +547,12 @@ export default function UsersPage() {
           joinDate: bot.joinDate,
           portfolioValue,
           exposure,
-          opinionsCount: portfolio.holdings.length,
+          opinionsCount: validBotHoldings.length, // Use valid holdings count
           betsCount: botBets.length,
           performanceChange,
           performancePercent,
           volatility,
-          holdings: portfolio.holdings.length,
+          holdings: validBotHoldings.length, // Use valid holdings count
           topHoldings,
           isBot: true
         };
@@ -524,7 +588,13 @@ export default function UsersPage() {
         regularUsersProcessed: regularUsers.length,
         botUsersProcessed: botUsers.length,
         finalResults: sortedResults.length,
-        first10Results: sortedResults.slice(0, 10).map(r => ({ username: r.username, isBot: r.isBot, portfolioValue: r.portfolioValue }))
+        first10Results: sortedResults.slice(0, 10).map(r => ({ 
+          username: r.username, 
+          isBot: r.isBot, 
+          portfolioValue: r.portfolioValue,
+          opinionsCount: r.opinionsCount,
+          topHoldings: r.topHoldings.length
+        }))
       });
       
       // Limit results to prevent performance issues (show top 100)
@@ -570,8 +640,12 @@ export default function UsersPage() {
       snap.docs.forEach((doc) => {
         const data = doc.data() as any;
         const text = data.text || data.opinionText || '';
-        if (text) {
-          textMap.set(doc.id, text);
+        if (text && 
+            typeof text === 'string' && 
+            text.trim() &&
+            text !== 'Unknown Opinion' &&
+            text !== 'Opinion (Unknown)') {
+          textMap.set(doc.id, text.trim());
         }
       });
       setOpinionTextMap(textMap);

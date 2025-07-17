@@ -578,99 +578,104 @@ export default function UserDetailPage() {
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateRows: 'repeat(2, 1fr)',
                 gap: '20px',
               }}>
-                {ownedOpinions.slice(0, 6).map((o, index) => {
-                  const gain = (o.currentPrice - o.purchasePrice) * o.quantity;
-                  const pct = ((o.currentPrice - o.purchasePrice) / o.purchasePrice) * 100;
-                  return (
-                    <a
-                      key={`${o.id}-${index}`}
-                      href={`/opinion/${o.id}`}
-                      style={{
-                        background: 'var(--white)',
-                        padding: '20px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '16px',
-                        minHeight: '200px',
-                        textDecoration: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        transition: 'background var(--transition)',
-                        border: '1px solid var(--border-secondary)',
-                        borderRadius: 'var(--radius-md)',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--bg-light)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--white)';
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <p style={{
-                          fontSize: 'var(--font-size-md)',
-                          fontWeight: '500',
-                          margin: '0 0 8px 0',
-                          color: 'var(--text-primary)',
-                          lineHeight: '1.4',
-                        }}>
-                          {o.text}
-                        </p>
-                        <p style={{
-                          fontSize: 'var(--font-size-xs)',
-                          color: 'var(--text-secondary)',
-                          margin: '0',
-                        }}>
-                          Purchased: {new Date(o.purchaseDate).toLocaleDateString()} | Qty: {o.quantity}
-                        </p>
-                    </div>
-                      
-                      <div style={{ 
-                        borderTop: '1px solid var(--border-secondary)',
-                        paddingTop: '12px',
-                        marginTop: 'auto',
-                      }}>
-                        <div style={{
+                {/* Grid items ordered by: most recent (top-left), 2nd most recent (top-middle), 3rd most recent (top-right), 4th most recent (bottom-left), 5th most recent (bottom-middle), 6th most recent (bottom-right) */}
+                {ownedOpinions
+                  .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime())
+                  .slice(0, 6)
+                  .map((o, index) => {
+                    const gain = (o.currentPrice - o.purchasePrice) * o.quantity;
+                    const pct = ((o.currentPrice - o.purchasePrice) / o.purchasePrice) * 100;
+                    return (
+                      <a
+                        key={`${o.id}-${index}`}
+                        href={`/opinion/${o.id}`}
+                        style={{
+                          background: 'var(--white)',
+                          padding: '20px',
                           display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-end',
-                          gap: '8px',
+                          flexDirection: 'column',
+                          gap: '16px',
+                          minHeight: '200px',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          transition: 'background var(--transition)',
+                          border: '1px solid var(--border-secondary)',
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--bg-light)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'var(--white)';
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <p style={{
+                            fontSize: 'var(--font-size-md)',
+                            fontWeight: '500',
+                            margin: '0 0 8px 0',
+                            color: 'var(--text-primary)',
+                            lineHeight: '1.4',
+                          }}>
+                            {o.text}
+                          </p>
+                          <p style={{
+                            fontSize: 'var(--font-size-xs)',
+                            color: 'var(--text-secondary)',
+                            margin: '0',
+                          }}>
+                            Purchased: {new Date(o.purchaseDate).toLocaleDateString()} | Qty: {o.quantity}
+                          </p>
+                      </div>
+                        
+                        <div style={{ 
+                          borderTop: '1px solid var(--border-secondary)',
+                          paddingTop: '12px',
+                          marginTop: 'auto',
                         }}>
-                          <div>
-                            <p style={{
-                              fontSize: 'var(--font-size-xs)',
-                              color: 'var(--text-secondary)',
-                              margin: '0',
-                            }}>
-                              Bought: ${o.purchasePrice.toFixed(2)}
-                            </p>
-                            <p style={{
-                              fontSize: 'var(--font-size-lg)',
-                              fontWeight: '700',
-                              margin: '4px 0 0 0',
-                              color: 'var(--text-primary)',
-                            }}>
-                              ${o.currentPrice.toFixed(2)}
-                            </p>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <p style={{
-                              fontSize: 'var(--font-size-sm)',
-                              margin: '0',
-                              color: pct >= 0 ? 'var(--green)' : 'var(--red)',
-                              fontWeight: '600',
-                            }}>
-                              {pct >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(1)}%)
-                            </p>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-end',
+                            gap: '8px',
+                          }}>
+                            <div>
+                              <p style={{
+                                fontSize: 'var(--font-size-xs)',
+                                color: 'var(--text-secondary)',
+                                margin: '0',
+                              }}>
+                                Bought: ${o.purchasePrice.toFixed(2)}
+                              </p>
+                              <p style={{
+                                fontSize: 'var(--font-size-lg)',
+                                fontWeight: '700',
+                                margin: '4px 0 0 0',
+                                color: 'var(--text-primary)',
+                              }}>
+                                ${o.currentPrice.toFixed(2)}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{
+                                fontSize: 'var(--font-size-sm)',
+                                margin: '0',
+                                color: pct >= 0 ? 'var(--green)' : 'var(--red)',
+                                fontWeight: '600',
+                              }}>
+                                {pct >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(1)}%)
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </a>
-                  );
-                })}
+                      </a>
+                    );
+                  })}
               </div>
               
               {/* View All Opinions Button */}
@@ -734,243 +739,252 @@ export default function UserDetailPage() {
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateRows: 'repeat(2, 1fr)',
                 gap: '20px',
               }}>
-                {/* Portfolio Bets */}
-                {MOCK_PORTFOLIO_BETS.map((bet: PortfolioBet, index: number) => {
-                  const isWinning = bet.status === 'won' || bet.status === 'active';
-                  const potentialReturn = bet.potentialPayout - bet.amount;
-                  
-                  return (
-                    <a
-                      key={`bet-${bet.id}-${index}`}
-                      href={`/users/${bet.targetUser}`}
-                      style={{
-                        background: 'var(--white)',
-                        padding: '20px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '16px',
-                        minHeight: '200px',
-                        textDecoration: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        transition: 'background var(--transition)',
-                        border: '1px solid var(--border-secondary)',
-                        borderRadius: 'var(--radius-md)',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--bg-light)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--white)';
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          marginBottom: '8px',
-                        }}>
-                          <p style={{
-                            fontSize: 'var(--font-size-md)',
-                            fontWeight: '500',
-                            margin: '0',
-                            color: 'var(--text-primary)',
-                            lineHeight: '1.4',
-                            flex: 1,
-                            paddingRight: '8px',
-                          }}>
-                            {bet.targetUser}'s portfolio {bet.betType === 'increase' ? '↗' : '↘'} {bet.targetPercentage}%
-                          </p>
-                          <span style={{
-                            fontSize: 'var(--font-size-xs)',
-                            fontWeight: '600',
-                            padding: '4px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: bet.betType === 'increase' ? 'var(--green)' : 'var(--red)',
-                            color: 'var(--white)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            flexShrink: 0,
-                          }}>
-                            BET
-                          </span>
-                    </div>
-                        <p style={{
-                          fontSize: 'var(--font-size-xs)',
-                          color: 'var(--text-secondary)',
-                          margin: '0',
-                        }}>
-                          Placed: {bet.placedDate} | {bet.timeframe} days | {bet.riskMultiplier}x multiplier
-                        </p>
-                    </div>
+                {/* Grid items ordered by: most recent (top-left), 2nd most recent (top-middle), 3rd most recent (top-right), 4th most recent (bottom-left), 5th most recent (bottom-middle), 6th most recent (bottom-right) */}
+                {/* Combine Portfolio Bets and Shorts, then sort by most recent activity */}
+                {[
+                  ...MOCK_PORTFOLIO_BETS.map(bet => ({ ...bet, itemType: 'bet' as const, activityDate: bet.placedDate })),
+                  ...MOCK_SHORT_POSITIONS.map(short => ({ ...short, itemType: 'short' as const, activityDate: short.createdDate }))
+                ]
+                  .sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime())
+                  .slice(0, 6)
+                  .map((item, index) => {
+                    if (item.itemType === 'bet') {
+                      const bet = item as PortfolioBet & { itemType: 'bet', activityDate: string };
+                      const isWinning = bet.status === 'won' || bet.status === 'active';
+                      const potentialReturn = bet.potentialPayout - bet.amount;
                       
-                      <div style={{
-                        borderTop: '1px solid var(--border-secondary)',
-                        paddingTop: '12px',
-                        marginTop: 'auto',
-                      }}>
-                    <div style={{ 
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-end',
-                          gap: '8px',
-                        }}>
-                          <div>
-                            <p style={{
-                              fontSize: 'var(--font-size-xs)',
-                      color: 'var(--text-secondary)',
-                              margin: '0',
+                      return (
+                        <a
+                          key={`bet-${bet.id}-${index}`}
+                          href={`/users/${bet.targetUser}`}
+                          style={{
+                            background: 'var(--white)',
+                            padding: '20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '16px',
+                            minHeight: '200px',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            transition: 'background var(--transition)',
+                            border: '1px solid var(--border-secondary)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--bg-light)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'var(--white)';
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-start',
+                              marginBottom: '8px',
                             }}>
-                              Wagered: ${bet.amount.toFixed(2)}
-                            </p>
-                            <p style={{
-                              fontSize: 'var(--font-size-lg)',
-                              fontWeight: '700',
-                              margin: '4px 0 0 0',
-                              color: 'var(--text-primary)',
-                            }}>
-                              ${bet.potentialPayout.toFixed(2)}
-                            </p>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <p style={{
-                              fontSize: 'var(--font-size-sm)',
-                              margin: '0',
-                              color: isWinning ? 'var(--green)' : 'var(--red)',
-                              fontWeight: '600',
-                            }}>
-                              {bet.status === 'active' ? `+$${potentialReturn.toFixed(2)} potential` : 
-                               bet.status === 'won' ? `+$${potentialReturn.toFixed(2)} won` :
-                               `-$${bet.amount.toFixed(2)} lost`}
-                            </p>
-                          </div>
-                    </div>
-                  </div>
-                    </a>
-                  );
-                })}
-                
-                {/* Short Positions */}
-                {MOCK_SHORT_POSITIONS.map((short: ShortPosition, index: number) => {
-                  const isWinning = short.progress > 0;
-                  const potentialReturn = short.potentialWinnings - short.betAmount;
-                  
-                  return (
-                    <a
-                      key={`short-${short.id}-${index}`}
-                      href={`/opinion/${short.opinionId}`}
-                      style={{
-                        background: 'var(--white)',
-                        padding: '20px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '16px',
-                        minHeight: '200px',
-                        textDecoration: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        transition: 'background var(--transition)',
-                        border: '1px solid var(--border-secondary)',
-                        borderRadius: 'var(--radius-md)',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--bg-light)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--white)';
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          marginBottom: '8px',
-                        }}>
-                          <p style={{
-                            fontSize: 'var(--font-size-md)',
-                            fontWeight: '500',
-                            margin: '0',
-                            color: 'var(--text-primary)',
-                            lineHeight: '1.4',
-                            flex: 1,
-                            paddingRight: '8px',
-                          }}>
-                            {short.opinionText}
-                          </p>
-                          <span style={{
-                            fontSize: 'var(--font-size-xs)',
-                            fontWeight: '600',
-                            padding: '4px 8px',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: 'var(--red)',
-                            color: 'var(--white)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px',
-                            flexShrink: 0,
-                          }}>
-                            SHORT
-                          </span>
-                        </div>
-                        <p style={{
-                          fontSize: 'var(--font-size-xs)',
-                          color: 'var(--text-secondary)',
-                          margin: '0',
-                        }}>
-                          Shorted: {short.createdDate} | {short.targetDropPercentage}% drop target | {short.progress.toFixed(1)}% progress
-                        </p>
-                      </div>
-                      
-                      <div style={{
-                        borderTop: '1px solid var(--border-secondary)',
-                        paddingTop: '12px',
-                        marginTop: 'auto',
-                      }}>
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-end',
-                          gap: '8px',
-                        }}>
-                          <div>
+                              <p style={{
+                                fontSize: 'var(--font-size-md)',
+                                fontWeight: '500',
+                                margin: '0',
+                                color: 'var(--text-primary)',
+                                lineHeight: '1.4',
+                                flex: 1,
+                                paddingRight: '8px',
+                              }}>
+                                {bet.targetUser}'s portfolio {bet.betType === 'increase' ? '↗' : '↘'} {bet.targetPercentage}%
+                              </p>
+                              <span style={{
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: '600',
+                                padding: '4px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: bet.betType === 'increase' ? 'var(--green)' : 'var(--red)',
+                                color: 'var(--white)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                flexShrink: 0,
+                              }}>
+                                BET
+                              </span>
+                            </div>
                             <p style={{
                               fontSize: 'var(--font-size-xs)',
                               color: 'var(--text-secondary)',
                               margin: '0',
                             }}>
-                              Entry: ${short.startingPrice.toFixed(2)}
-                            </p>
-                            <p style={{
-                              fontSize: 'var(--font-size-lg)',
-                              fontWeight: '700',
-                              margin: '4px 0 0 0',
-                              color: 'var(--text-primary)',
-                            }}>
-                              ${short.currentPrice.toFixed(2)}
+                              Placed: {bet.placedDate} | {bet.timeframe} days | {bet.riskMultiplier}x multiplier
                             </p>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
+                          
+                          <div style={{
+                            borderTop: '1px solid var(--border-secondary)',
+                            paddingTop: '12px',
+                            marginTop: 'auto',
+                          }}>
+                            <div style={{ 
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-end',
+                              gap: '8px',
+                            }}>
+                              <div>
+                                <p style={{
+                                  fontSize: 'var(--font-size-xs)',
+                                  color: 'var(--text-secondary)',
+                                  margin: '0',
+                                }}>
+                                  Wagered: ${bet.amount.toFixed(2)}
+                                </p>
+                                <p style={{
+                                  fontSize: 'var(--font-size-lg)',
+                                  fontWeight: '700',
+                                  margin: '4px 0 0 0',
+                                  color: 'var(--text-primary)',
+                                }}>
+                                  ${bet.potentialPayout.toFixed(2)}
+                                </p>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <p style={{
+                                  fontSize: 'var(--font-size-sm)',
+                                  margin: '0',
+                                  color: isWinning ? 'var(--green)' : 'var(--red)',
+                                  fontWeight: '600',
+                                }}>
+                                  {bet.status === 'active' ? `+$${potentialReturn.toFixed(2)} potential` : 
+                                   bet.status === 'won' ? `+$${potentialReturn.toFixed(2)} won` :
+                                   `-$${bet.amount.toFixed(2)} lost`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </a>
+                      );
+                    } else {
+                      const short = item as ShortPosition & { itemType: 'short', activityDate: string };
+                      const isWinning = short.progress > 0;
+                      const potentialReturn = short.potentialWinnings - short.betAmount;
+                      
+                      return (
+                        <a
+                          key={`short-${short.id}-${index}`}
+                          href={`/opinion/${short.opinionId}`}
+                          style={{
+                            background: 'var(--white)',
+                            padding: '20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '16px',
+                            minHeight: '200px',
+                            textDecoration: 'none',
+                            color: 'inherit',
+                            cursor: 'pointer',
+                            transition: 'background var(--transition)',
+                            border: '1px solid var(--border-secondary)',
+                            borderRadius: 'var(--radius-md)',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--bg-light)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'var(--white)';
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-start',
+                              marginBottom: '8px',
+                            }}>
+                              <p style={{
+                                fontSize: 'var(--font-size-md)',
+                                fontWeight: '500',
+                                margin: '0',
+                                color: 'var(--text-primary)',
+                                lineHeight: '1.4',
+                                flex: 1,
+                                paddingRight: '8px',
+                              }}>
+                                {short.opinionText}
+                              </p>
+                              <span style={{
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: '600',
+                                padding: '4px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: 'var(--red)',
+                                color: 'var(--white)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                flexShrink: 0,
+                              }}>
+                                SHORT
+                              </span>
+                            </div>
                             <p style={{
-                              fontSize: 'var(--font-size-sm)',
+                              fontSize: 'var(--font-size-xs)',
+                              color: 'var(--text-secondary)',
                               margin: '0',
-                              color: isWinning ? 'var(--green)' : 'var(--red)',
-                              fontWeight: '600',
                             }}>
-                              {short.status === 'active' ? `${short.sharesObligation} shares obligation` : 
-                               short.status === 'won' ? `+$${potentialReturn.toFixed(2)} won` :
-                               `-$${short.betAmount.toFixed(2)} lost`}
+                              Shorted: {short.createdDate} | {short.targetDropPercentage}% drop target | {short.progress.toFixed(1)}% progress
                             </p>
                           </div>
-                  </div>
-                </div>
-                    </a>
-                  );
-                })}
+                          
+                          <div style={{
+                            borderTop: '1px solid var(--border-secondary)',
+                            paddingTop: '12px',
+                            marginTop: 'auto',
+                          }}>
+                            <div style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-end',
+                              gap: '8px',
+                            }}>
+                              <div>
+                                <p style={{
+                                  fontSize: 'var(--font-size-xs)',
+                                  color: 'var(--text-secondary)',
+                                  margin: '0',
+                                }}>
+                                  Entry: ${short.startingPrice.toFixed(2)}
+                                </p>
+                                <p style={{
+                                  fontSize: 'var(--font-size-lg)',
+                                  fontWeight: '700',
+                                  margin: '4px 0 0 0',
+                                  color: 'var(--text-primary)',
+                                }}>
+                                  ${short.currentPrice.toFixed(2)}
+                                </p>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <p style={{
+                                  fontSize: 'var(--font-size-sm)',
+                                  margin: '0',
+                                  color: isWinning ? 'var(--green)' : 'var(--red)',
+                                  fontWeight: '600',
+                                }}>
+                                  {short.status === 'active' ? `${short.sharesObligation} shares obligation` : 
+                                   short.status === 'won' ? `+$${potentialReturn.toFixed(2)} won` :
+                                   `-$${short.betAmount.toFixed(2)} lost`}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </a>
+                      );
+                    }
+                  })}
               </div>
             </div>
           )}

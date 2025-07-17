@@ -14,6 +14,7 @@ import { useAuth } from '../lib/auth-context';
 import { realtimeDataService } from '../lib/realtime-data-service';
 import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../lib/portfolio-utils';
 import Sidebar from '../components/Sidebar';
 import AuthGuard from '../components/AuthGuard';
 import AuthButton from '../components/AuthButton';
@@ -81,91 +82,45 @@ export default function ProfilePage() {
       }
     );
 
-    // 2️⃣  Portfolio data (fetch from user profile's portfolio field)
+    // 2️⃣  Portfolio data (using new portfolio structure)
     const fetchPortfolioData = async (userProfile: any) => {
-      if (!userProfile?.portfolio) {
-        setOwnedOpinions([]);
-        return;
-      }
-
-      // Get market data to get current prices
-      const marketData = await realtimeDataService.getMarketData();
-      
-      // Fetch actual opinion document IDs from Firestore
-      const portfolioEntries = await Promise.all(
-        Object.entries(userProfile.portfolio).map(async ([opinionKey, portfolioData]) => {
-          try {
-            // Extract text and quantity from portfolio data
-            // opinionKey is now the sanitized field name, we need to find the original opinion text
-            let opinionText = opinionKey;
-            let quantity = typeof portfolioData === 'object' && portfolioData !== null
-              ? Object.values(portfolioData)[0] as number
-              : portfolioData as number;
-            
-            // Try to find the original opinion text by querying the opinions collection
-            const q = query(
-              collection(db, 'opinions'),
-              where('text', '>=', opinionText.slice(0, 10)),
-              limit(50)
-            );
-            
-            const snap = await getDocs(q);
-            let foundOpinion: any = null;
-            
-            // Search for exact match or close match
-            snap.docs.forEach(doc => {
-              const data = doc.data();
-              if (data.text && (
-                data.text === opinionText || 
-                data.text.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === opinionKey.toLowerCase() ||
-                opinionKey.includes(data.text.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '').toLowerCase())
-              )) {
-                foundOpinion = { id: doc.id, ...data };
-              }
-            });
-
-            if (foundOpinion) {
-              opinionText = foundOpinion.text;
-            }
-
-            // Get current market price
-            const marketInfo = marketData[opinionText];
-            const currentPrice = marketInfo?.currentPrice || 10.0;
-
-            return {
-              id: foundOpinion?.id || opinionKey,
-              text: opinionText,
-              purchasePrice: 10.0, // Default purchase price
-              currentPrice,
-              purchaseDate: userProfile.joinDate?.toDate?.()?.toLocaleDateString?.() || 'Unknown',
-              quantity,
-            };
-          } catch (error) {
-            console.error('Error processing portfolio entry:', error);
-            return null;
-          }
-        })
-      );
-
-      const validOpinions = portfolioEntries.filter(Boolean) as OpinionAsset[];
-      
-      // Remove duplicates by text content
-      const uniqueOpinions = validOpinions.reduce((acc, current) => {
-        const existing = acc.find(item => item.text === current.text);
-        if (existing) {
-          // If duplicate found, keep the one with higher quantity
-          if (current.quantity > existing.quantity) {
-            return acc.map(item => item.text === current.text ? current : item);
-          }
-          return acc;
-        } else {
-          return [...acc, current];
+      try {
+        // Try to get the new portfolio structure first
+        let portfolio: Portfolio;
+        
+        try {
+          portfolio = await getUserPortfolio(user.uid);
+        } catch (error) {
+          console.warn('Failed to load new portfolio, trying migration...');
+          await migrateUserPortfolio(user.uid);
+          portfolio = await getUserPortfolio(user.uid);
         }
         
-        return acc;
-      }, [] as OpinionAsset[]);
-      
-      setOwnedOpinions(uniqueOpinions);
+        // If no items in new portfolio but old portfolio exists, migrate
+        if (portfolio.items.length === 0 && userProfile?.portfolio) {
+          console.log('🔄 Migrating portfolio data...');
+          await migrateUserPortfolio(user.uid);
+          portfolio = await getUserPortfolio(user.uid);
+        }
+        
+        // Get market data for current prices
+        const marketData = await realtimeDataService.getMarketData();
+        
+        // Transform portfolio items to the expected format
+        const transformedOpinions = portfolio.items.map(item => ({
+          id: item.opinionId,
+          text: item.opinionText,
+          purchasePrice: item.averagePrice,
+          currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+          purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+          quantity: item.quantity,
+        }));
+        
+        setOwnedOpinions(transformedOpinions);
+      } catch (error) {
+        console.error('Error fetching portfolio data:', error);
+        setOwnedOpinions([]);
+      }
     };
 
     // 3️⃣  Transactions snapshot listener
@@ -193,6 +148,67 @@ export default function ProfilePage() {
   // ── Derived stats ──────────────────────────────────────────────────────────
   if (loading || !profile) return <div className="loading">Loading…</div>;
 
+
+
+  // Mock bet positions data
+  const mockBetPositions = [
+    {
+      id: '1',
+      title: "trading_maven's portfolio",
+      type: 'BET',
+      percentage: 15,
+      placedDate: '12/15/2024',
+      daysHeld: 7,
+      multiplier: '1.75x',
+      wagered: 250.00,
+      currentValue: 437.50,
+      potential: 187.50
+    },
+    {
+      id: '2',
+      title: "crypto_bull's portfolio",
+      type: 'BET',
+      percentage: 10,
+      placedDate: '12/12/2024',
+      daysHeld: 3,
+      multiplier: '2.071428571428571x',
+      wagered: 100.00,
+      currentValue: 207.14,
+      potential: 107.14
+    }
+  ];
+
+  // Mock short positions data
+  const mockShortPositions = [
+    {
+      id: '1',
+      title: "Cryptocurrency will replace traditional banking by 2026",
+      type: 'SHORT',
+      shortedDate: '12/10/2024',
+      dropTarget: 20,
+      progress: 55.6,
+      entry: 25.00,
+      currentValue: 22.50,
+      shares: 20,
+      obligation: true
+    },
+    {
+      id: '2',
+      title: "Remote work will become less popular post-pandemic",
+      type: 'SHORT',
+      shortedDate: '12/5/2024',
+      dropTarget: 15,
+      progress: 46.3,
+      entry: 18.00,
+      currentValue: 16.50,
+      shares: 15,
+      obligation: true
+    }
+  ];
+
+
+
+  // Keep real data for owned opinions display
   const portfolioValue = ownedOpinions.reduce((sum, o) => sum + o.currentPrice * o.quantity, 0);
   const portfolioGainLoss = ownedOpinions.reduce((sum, o) => sum + (o.currentPrice - o.purchasePrice) * o.quantity, 0);
   const totalOpinions = ownedOpinions.length;
@@ -557,7 +573,7 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* Recent Activity */}
+        {/* My Portfolio Bets and Shorts */}
         <section style={{ margin: '40px 0' }}>
           <h2 style={{
             fontSize: 'var(--font-size-xl)',
@@ -566,7 +582,7 @@ export default function ProfilePage() {
             color: 'var(--text-primary)',
             paddingLeft: '32px',
           }}>
-            Recent Activity
+            My Portfolio Bets and Shorts
           </h2>
 
           <div style={{
@@ -574,6 +590,204 @@ export default function ProfilePage() {
             paddingLeft: '32px',
             paddingRight: '32px',
             paddingBottom: '20px',
+          }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+              gap: '20px',
+            }}>
+              {/* BET Positions */}
+              {mockBetPositions.map((position) => (
+                <div key={position.id} style={{
+                  background: 'var(--white)',
+                  padding: '20px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-secondary)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
+                  }}>
+                    <h3 style={{
+                      fontSize: 'var(--font-size-md)',
+                      fontWeight: '600',
+                      margin: '0',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.4',
+                      maxWidth: '70%',
+                    }}>
+                      {position.title}
+                    </h3>
+                    <div style={{
+                      background: 'var(--green)',
+                      color: 'var(--white)',
+                      padding: '4px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: '700',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {position.type}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '16px',
+                  }}>
+                    Placed: {position.placedDate} | {position.daysHeld} days | {position.multiplier} multiplier
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '4px',
+                      }}>
+                        Wagered: ${position.wagered.toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-lg)',
+                        fontWeight: '700',
+                        color: 'var(--text-primary)',
+                      }}>
+                        ${position.currentValue.toFixed(2)}
+                      </div>
+                    </div>
+                    <div style={{
+                      textAlign: 'right',
+                    }}>
+                      <div style={{
+                        fontSize: 'var(--font-size-sm)',
+                        fontWeight: '600',
+                        color: 'var(--green)',
+                      }}>
+                        +${position.potential.toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--green)',
+                      }}>
+                        (+{position.percentage.toFixed(1)}%)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* SHORT Positions */}
+              {mockShortPositions.map((position) => (
+                <div key={position.id} style={{
+                  background: 'var(--white)',
+                  padding: '20px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-secondary)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
+                  }}>
+                    <h3 style={{
+                      fontSize: 'var(--font-size-md)',
+                      fontWeight: '600',
+                      margin: '0',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.4',
+                      maxWidth: '70%',
+                    }}>
+                      {position.title}
+                    </h3>
+                    <div style={{
+                      background: 'var(--red)',
+                      color: 'var(--white)',
+                      padding: '4px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: '700',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {position.type}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '16px',
+                  }}>
+                    Shorted: {position.shortedDate} | {position.dropTarget}% drop target | {position.progress}% progress
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '4px',
+                      }}>
+                        Entry: ${position.entry.toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-lg)',
+                        fontWeight: '700',
+                        color: 'var(--text-primary)',
+                      }}>
+                        ${position.currentValue.toFixed(2)}
+                      </div>
+                    </div>
+                    <div style={{
+                      textAlign: 'right',
+                    }}>
+                      <div style={{
+                        fontSize: 'var(--font-size-sm)',
+                        fontWeight: '600',
+                        color: 'var(--text-secondary)',
+                      }}>
+                        {position.shares} shares obligation
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Recent Activity */}
+        <section style={{ margin: '20px 0' }}>
+          <div style={{
+            background: 'var(--white)',
+            paddingLeft: '32px',
+            paddingRight: '32px',
+            paddingBottom: '20px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-secondary)',
+            transition: 'all var(--transition)',
+            cursor: 'pointer',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.boxShadow = 'none';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}>
             <RecentActivity userId={user?.uid} maxItems={15} title="My Recent Activity" />
           </div>

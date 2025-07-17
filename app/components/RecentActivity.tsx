@@ -259,7 +259,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
   if (loading) {
     return (
       <div style={{
-        background: 'var(--bg-card)',
+        background: 'var(--white)',
         borderRadius: 'var(--radius-lg)',
         padding: '40px',
         margin: '40px 32px 20px',
@@ -284,7 +284,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
   if (error) {
     return (
       <div style={{
-        background: 'var(--bg-card)',
+        background: 'var(--white)',
         borderRadius: 'var(--radius-lg)',
         padding: '40px',
         margin: '40px 32px 20px',
@@ -308,7 +308,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
 
   return (
     <div style={{
-      background: 'var(--bg-card)',
+      background: 'var(--white)',
       borderRadius: 'var(--radius-lg)',
       padding: '40px',
       margin: '40px 32px 20px',
@@ -352,7 +352,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
             <div
               key={activity.id}
               style={{
-                background: 'var(--bg-card)',
+                background: 'var(--white)',
                 padding: '16px 20px',
                 display: 'flex',
                 alignItems: 'center',
@@ -364,7 +364,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
                 e.currentTarget.style.backgroundColor = 'var(--bg-light)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--bg-card)';
+                e.currentTarget.style.backgroundColor = 'var(--white)';
               }}
             >
               <div style={{

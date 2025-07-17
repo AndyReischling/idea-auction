@@ -4,11 +4,13 @@
 
 'use client';
 
+
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/auth-context';
 import { realtimeDataService } from '../../lib/realtime-data-service';
 import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../../lib/portfolio-utils';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import AuthButton from '../../components/AuthButton';
@@ -43,6 +45,47 @@ export default function OpinionsLogPage() {
     if (!user?.uid) return;
     setLoading(true);
 
+    // Fetch portfolio data using new structure
+    const fetchPortfolioData = async (userProfile: any) => {
+      try {
+        // Try to get the new portfolio structure first
+        let portfolio: Portfolio;
+        
+        try {
+          portfolio = await getUserPortfolio(user.uid);
+        } catch (error) {
+          console.warn('Failed to load new portfolio, trying migration...');
+          await migrateUserPortfolio(user.uid);
+          portfolio = await getUserPortfolio(user.uid);
+        }
+        
+        // If no items in new portfolio but old portfolio exists, migrate
+        if (portfolio.items.length === 0 && userProfile?.portfolio) {
+          console.log('🔄 Migrating portfolio data...');
+          await migrateUserPortfolio(user.uid);
+          portfolio = await getUserPortfolio(user.uid);
+        }
+        
+        // Get market data for current prices
+        const marketData = await realtimeDataService.getMarketData();
+        
+        // Transform portfolio items to the expected format
+        const transformedOpinions = portfolio.items.map(item => ({
+          id: item.opinionId,
+          text: item.opinionText,
+          purchasePrice: item.averagePrice,
+          currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+          purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+          quantity: item.quantity,
+        }));
+        
+        setOwnedOpinions(transformedOpinions);
+      } catch (error) {
+        console.error('Error fetching portfolio data:', error);
+        setOwnedOpinions([]);
+      }
+    };
+
     // Get user profile and portfolio data
     const unsubProfile = realtimeDataService.subscribeToUserProfile(
       user.uid,
@@ -58,100 +101,6 @@ export default function OpinionsLogPage() {
         fetchPortfolioData(p);
       }
     );
-
-    // Fetch portfolio data
-    const fetchPortfolioData = async (userProfile: any) => {
-      if (!userProfile?.portfolio) {
-        setOwnedOpinions([]);
-        return;
-      }
-
-      const marketData = await realtimeDataService.getMarketData();
-      
-      const transformedPortfolio = await Promise.all(
-        Object.entries(userProfile.portfolio).map(async ([opinionKey, portfolioData]) => {
-          try {
-            // Extract text and quantity from portfolio data
-            // opinionKey is now the sanitized field name, we need to find the original opinion text
-            let opinionText = opinionKey;
-            let quantity = typeof portfolioData === 'object' && portfolioData !== null
-              ? Object.values(portfolioData)[0] as number
-              : portfolioData as number;
-            
-            // If the key looks sanitized (contains underscores), try to find the original opinion text
-            if (opinionKey.includes('_')) {
-              // Query all opinions to find the one whose sanitized version matches this key
-              const sanitizeFieldName = (text: string): string => {
-                return text.replace(/[.#$[\]]/g, '_').replace(/\s+/g, '_').slice(0, 100);
-              };
-              
-              const allOpinionsSnap = await getDocs(collection(db, 'opinions'));
-              const matchingOpinion = allOpinionsSnap.docs.find(doc => 
-                sanitizeFieldName(doc.data().text) === opinionKey
-              );
-              
-              if (matchingOpinion) {
-                opinionText = matchingOpinion.data().text;
-              }
-            }
-
-            const q = query(
-              collection(db, 'opinions'),
-              where('text', '==', opinionText),
-              limit(1)
-            );
-            const querySnapshot = await getDocs(q);
-            
-            let opinionId = btoa(String(opinionText)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
-            if (!querySnapshot.empty) {
-              opinionId = querySnapshot.docs[0].id;
-            }
-
-            return {
-              id: opinionId,
-              text: String(opinionText), // Ensure it's a string
-              purchasePrice: marketData[opinionText]?.basePrice || 10.00,
-              currentPrice: marketData[opinionText]?.currentPrice || 10.00,
-              purchaseDate: new Date().toLocaleDateString(),
-              quantity: Number(quantity) || 1,
-            };
-          } catch (error) {
-            console.error('Error fetching opinion ID for:', opinionKey, error);
-            const fallbackText = typeof portfolioData === 'object' && portfolioData !== null 
-              ? Object.keys(portfolioData)[0] || opinionKey 
-              : opinionKey;
-            const fallbackQuantity = typeof portfolioData === 'object' && portfolioData !== null
-              ? Object.values(portfolioData)[0] as number
-              : portfolioData as number;
-            
-            return {
-              id: btoa(String(fallbackText)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100),
-              text: String(fallbackText), // Ensure it's a string
-              purchasePrice: marketData[fallbackText]?.basePrice || 10.00,
-              currentPrice: marketData[fallbackText]?.currentPrice || 10.00,
-              purchaseDate: new Date().toLocaleDateString(),
-              quantity: Number(fallbackQuantity) || 1,
-            };
-          }
-        })
-      );
-      
-      // Deduplicate opinions by ID and combine quantities to prevent React key conflicts
-      const uniqueOpinions = transformedPortfolio.reduce((acc, opinion) => {
-        const existingIndex = acc.findIndex(o => o.id === opinion.id);
-        
-        if (existingIndex !== -1) {
-          // Combine quantities for the same opinion
-          acc[existingIndex].quantity += opinion.quantity;
-        } else {
-          acc.push(opinion);
-        }
-        
-        return acc;
-      }, [] as OpinionAsset[]);
-      
-      setOwnedOpinions(uniqueOpinions);
-    };
 
     setLoading(false);
     return () => {
@@ -238,107 +187,215 @@ export default function OpinionsLogPage() {
           ) : (
             <div style={{ paddingLeft: '16px', paddingRight: '16px' }}>
               <div style={{
-                background: 'var(--white)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-secondary)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
-                overflow: 'hidden',
-              }}>
-              {/* Table Header */}
-              <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 120px 120px 120px 120px',
-                gap: '16px',
-                padding: '16px 20px',
-                background: 'var(--bg-light)',
-                borderBottom: '1px solid var(--border-secondary)',
-                fontWeight: '600',
-                fontSize: 'var(--font-size-sm)',
-                color: 'var(--text-secondary)',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateRows: 'repeat(2, 1fr)',
+                gap: '20px',
+                background: 'var(--white)',
               }}>
-                <div>Opinion</div>
-                <div>Shares</div>
-                <div>Buy Price</div>
-                <div>Current Price</div>
-                <div>P&L</div>
+                {/* Grid items ordered by: most recent (top-left), 2nd most recent (top-middle), 3rd most recent (top-right), 4th most recent (bottom-left), 5th most recent (bottom-middle), 6th most recent (bottom-right) */}
+                {ownedOpinions
+                  .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime())
+                  .slice(0, 6)
+                  .map((opinion, index) => {
+                    const gain = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
+                    const pct = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
+                    
+                    return (
+                      <a
+                        key={opinion.id}
+                        href={`/opinion/${opinion.id}`}
+                        style={{
+                          background: 'var(--white)',
+                          padding: '20px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '16px',
+                          minHeight: '200px',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          transition: 'background var(--transition)',
+                          border: '1px solid var(--border-secondary)',
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--bg-light)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'var(--white)';
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <p style={{
+                            fontSize: 'var(--font-size-md)',
+                            fontWeight: '500',
+                            margin: '0 0 8px 0',
+                            color: 'var(--text-primary)',
+                            lineHeight: '1.4',
+                          }}>
+                            {opinion.text}
+                          </p>
+                          <p style={{
+                            fontSize: 'var(--font-size-xs)',
+                            color: 'var(--text-secondary)',
+                            margin: '0',
+                          }}>
+                            Purchased: {new Date(opinion.purchaseDate).toLocaleDateString()} | Qty: {opinion.quantity}
+                          </p>
+                        </div>
+                        
+                        <div style={{
+                          borderTop: '1px solid var(--border-secondary)',
+                          paddingTop: '12px',
+                          marginTop: 'auto',
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-end',
+                            gap: '8px',
+                          }}>
+                            <div>
+                              <p style={{
+                                fontSize: 'var(--font-size-xs)',
+                                color: 'var(--text-secondary)',
+                                margin: '0',
+                              }}>
+                                Bought: ${opinion.purchasePrice.toFixed(2)}
+                              </p>
+                              <p style={{
+                                fontSize: 'var(--font-size-lg)',
+                                fontWeight: '700',
+                                margin: '4px 0 0 0',
+                                color: 'var(--text-primary)',
+                              }}>
+                                ${opinion.currentPrice.toFixed(2)}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{
+                                fontSize: 'var(--font-size-sm)',
+                                margin: '0',
+                                color: gain >= 0 ? 'var(--green)' : 'var(--red)',
+                                fontWeight: '600',
+                              }}>
+                                {gain >= 0 ? '+' : ''}${gain.toFixed(2)}
+                              </p>
+                              <p style={{
+                                fontSize: 'var(--font-size-xs)',
+                                margin: '0',
+                                color: pct >= 0 ? 'var(--green)' : 'var(--red)',
+                              }}>
+                                ({pct.toFixed(1)}%)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </a>
+                    );
+                  })}
               </div>
-
-              {/* Table Rows */}
-              {ownedOpinions.map((opinion) => {
-                const gain = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
-                const pct = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
-                
-                return (
-                  <a
-                    key={opinion.id}
-                    href={`/opinion/${opinion.id}`}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 120px 120px 120px 120px',
-                      gap: '16px',
-                      padding: '16px 20px',
-                      borderBottom: '1px solid var(--border-secondary)',
-                      textDecoration: 'none',
-                      color: 'inherit',
-                      transition: 'background var(--transition)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--bg-section)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    <div style={{
-                      fontSize: 'var(--font-size-sm)',
-                      fontWeight: '500',
-                      color: 'var(--text-primary)',
-                      lineHeight: '1.4',
-                    }}>
-                      {opinion.text}
-                    </div>
-                    
-                    <div style={{
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'var(--text-primary)',
-                      fontWeight: '600',
-                    }}>
-                      {opinion.quantity}
-                    </div>
-                    
-                    <div style={{
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'var(--text-secondary)',
-                    }}>
-                      ${opinion.purchasePrice.toFixed(2)}
-                    </div>
-                    
-                    <div style={{
-                      fontSize: 'var(--font-size-sm)',
-                      color: 'var(--text-primary)',
-                      fontWeight: '600',
-                    }}>
-                      ${opinion.currentPrice.toFixed(2)}
-                    </div>
-                    
-                    <div style={{
-                      fontSize: 'var(--font-size-sm)',
-                      color: gain >= 0 ? 'var(--green)' : 'var(--red)',
-                      fontWeight: '600',
-                    }}>
-                      {gain >= 0 ? '+' : ''}${gain.toFixed(2)}
-                      <br />
-                      <span style={{
-                        fontSize: 'var(--font-size-xs)',
-                        opacity: 0.8,
-                      }}>
-                        ({pct.toFixed(1)}%)
-                      </span>
-                    </div>
-                  </a>
-                );
-              })}
-              </div>
+              
+              {/* Show remaining opinions in a list below the grid if there are more than 6 */}
+              {ownedOpinions.length > 6 && (
+                <div style={{ marginTop: '40px' }}>
+                  <h3 style={{
+                    fontSize: 'var(--font-size-lg)',
+                    fontWeight: '600',
+                    margin: '0 0 20px 0',
+                    color: 'var(--text-primary)',
+                  }}>
+                    Additional Opinions ({ownedOpinions.length - 6} more)
+                  </h3>
+                  <div style={{
+                    background: 'var(--white)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-secondary)',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                    overflow: 'hidden',
+                  }}>
+                    {ownedOpinions
+                      .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime())
+                      .slice(6)
+                      .map((opinion) => {
+                        const gain = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
+                        const pct = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
+                        
+                        return (
+                          <a
+                            key={opinion.id}
+                            href={`/opinion/${opinion.id}`}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 120px 120px 120px 120px',
+                              gap: '16px',
+                              padding: '16px 20px',
+                              borderBottom: '1px solid var(--border-secondary)',
+                              textDecoration: 'none',
+                              color: 'inherit',
+                              transition: 'background var(--transition)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'var(--bg-section)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'transparent';
+                            }}
+                          >
+                            <div style={{
+                              fontSize: 'var(--font-size-sm)',
+                              fontWeight: '500',
+                              color: 'var(--text-primary)',
+                              lineHeight: '1.4',
+                            }}>
+                              {opinion.text}
+                            </div>
+                            
+                            <div style={{
+                              fontSize: 'var(--font-size-sm)',
+                              color: 'var(--text-primary)',
+                              fontWeight: '600',
+                            }}>
+                              {opinion.quantity}
+                            </div>
+                            
+                            <div style={{
+                              fontSize: 'var(--font-size-sm)',
+                              color: 'var(--text-secondary)',
+                            }}>
+                              ${opinion.purchasePrice.toFixed(2)}
+                            </div>
+                            
+                            <div style={{
+                              fontSize: 'var(--font-size-sm)',
+                              color: 'var(--text-primary)',
+                              fontWeight: '600',
+                            }}>
+                              ${opinion.currentPrice.toFixed(2)}
+                            </div>
+                            
+                            <div style={{
+                              fontSize: 'var(--font-size-sm)',
+                              color: gain >= 0 ? 'var(--green)' : 'var(--red)',
+                              fontWeight: '600',
+                            }}>
+                              {gain >= 0 ? '+' : ''}${gain.toFixed(2)}
+                              <br />
+                              <span style={{
+                                fontSize: 'var(--font-size-xs)',
+                                opacity: 0.8,
+                              }}>
+                                ({pct.toFixed(1)}%)
+                              </span>
+                            </div>
+                          </a>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
