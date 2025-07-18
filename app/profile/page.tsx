@@ -17,12 +17,11 @@ import { db } from '../lib/firebase';
 import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../lib/portfolio-utils';
 import Sidebar from '../components/Sidebar';
 import AuthGuard from '../components/AuthGuard';
-import AuthButton from '../components/AuthButton';
-import AuthStatusIndicator from '../components/AuthStatusIndicator';
+import Navigation from '../components/Navigation';
 import RecentActivity from '../components/RecentActivity';
 import styles from '../page.module.css';
 import {
-  ScanSmiley, RssSimple, Balloon, Wallet,
+  Wallet, ScanSmiley, RssSimple, Balloon, SignOut,
 } from '@phosphor-icons/react';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -106,15 +105,37 @@ export default function ProfilePage() {
         // Get market data for current prices
         const marketData = await realtimeDataService.getMarketData();
         
-        // Transform portfolio items to the expected format
-        const transformedOpinions = portfolio.items.map(item => ({
-          id: item.opinionId,
-          text: item.opinionText,
-          purchasePrice: item.averagePrice,
-          currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
-          purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
-          quantity: item.quantity,
-        }));
+        // Transform portfolio items to the expected format and get actual opinion IDs
+        const transformedOpinions = await Promise.all(
+          portfolio.items.map(async (item) => {
+            // Query Firestore to get the actual document ID for this opinion text
+            let actualOpinionId = item.opinionId; // fallback to original ID
+            try {
+              const q = query(
+                collection(db, 'opinions'),
+                where('text', '==', item.opinionText),
+                limit(1)
+              );
+              const querySnapshot = await getDocs(q);
+              
+              if (!querySnapshot.empty) {
+                actualOpinionId = querySnapshot.docs[0].id; // Use actual Firestore document ID
+              }
+            } catch (error) {
+              console.error('Error fetching actual opinion ID for:', item.opinionText, error);
+              // Keep fallback ID if query fails
+            }
+
+            return {
+              id: actualOpinionId, // Use actual Firestore document ID
+              text: item.opinionText,
+              purchasePrice: item.averagePrice,
+              currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+              purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+              quantity: item.quantity,
+            };
+          })
+        );
         
         setOwnedOpinions(transformedOpinions);
       } catch (error) {
@@ -226,27 +247,91 @@ export default function ProfilePage() {
       <main className="main-content">
         {/* Header */}
         <div className="header-section">
-          <div className="user-header">
-            <div className="user-avatar">{profile.username[0]}</div>
-            <div className="user-info">
-              <div className="user-name">{profile.username}</div>
-              <p>🤖 Bots: Active Globally</p>
-              <p>Member since {new Date(profile.joinDate).toLocaleDateString()} | Opinion Trader & Collector</p>
+          <div style={{ flex: 1 }}></div>
+          
+          <div className="navigation-buttons" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0px',
+            flexWrap: 'nowrap',
+            justifyContent: 'flex-start',
+            minWidth: 'max-content',
+            overflow: 'visible',
+            order: -1,
+          }}>
+            {/* Username Section */}
+            <div className="nav-button" style={{
+              padding: '0px 20px',
+              color: 'var(--text-black)',
+              borderRight: '1px solid var(--border-primary)',
+              fontSize: 'var(--font-size-md)',
+              fontWeight: '400',
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-number)',
+              gap: '12px',
+              background: 'transparent',
+              cursor: 'default',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <div className="user-avatar">{profile.username[0]}</div>
+              <div>
+                <div className="user-name">{profile.username}</div>
+                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>🤖 Bots: Active Globally</p>
+                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>Member since {new Date(profile.joinDate).toLocaleDateString()} | Opinion Trader & Collector</p>
+              </div>
             </div>
-          </div>
 
-          <div className="navigation-buttons">
-            <AuthStatusIndicator />
-            <a href="/users" className="nav-button traders">
-              <ScanSmiley size={20} /> View Traders
+            {/* Signed In */}
+            <div className="nav-button" style={{
+              padding: '0px 20px',
+              color: 'var(--text-black)',
+              borderRight: '1px solid var(--border-primary)',
+              fontSize: 'var(--font-size-md)',
+              fontWeight: '400',
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-number)',
+              gap: '12px',
+              background: 'transparent',
+              cursor: 'default',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--green)',
+              }} />
+              Signed In
+            </div>
+
+            {/* View Traders */}
+            <a href="/users" className="nav-button">
+              <ScanSmiley size={24} />
+              View Traders
             </a>
-            <a href="/feed" className="nav-button feed">
-              <RssSimple size={20} /> Live Feed
+
+            {/* Live Feed */}
+            <a href="/feed" className="nav-button">
+              <RssSimple size={24} />
+              Live Feed
             </a>
-            <a href="/generate" className="nav-button generate">
-              <Balloon size={20} /> Generate
+
+            {/* Generate */}
+            <a href="/generate" className="nav-button">
+              <Balloon size={24} />
+              Generate
             </a>
-            <AuthButton />
+
+            {/* Sign Out */}
+            <button className="auth-button" onClick={() => window.location.href = '/auth'}>
+              <SignOut size={24} />
+              Sign Out
+            </button>
           </div>
         </div>
 
