@@ -32,6 +32,11 @@ cd idea-auction
 npm install
 ```
 
+Tailwind CSS is preconfigured. The `tailwind.config.js` file scans the `app`,
+`components`, and `hooks` directories and the global stylesheet imports the
+Tailwind layers. You can immediately use Tailwind classes across the
+application without additional setup.
+
 3. Set up Firebase:
    - Create a new Firebase project at [Firebase Console](https://console.firebase.google.com/)
    - Enable Authentication > Sign-in method > Email link (passwordless sign-in)
