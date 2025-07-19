@@ -1,400 +1,132 @@
-// components/GlobalActivityTracker.ts
-// Unified system that works with your existing feed architecture
+'use client';
 
-import { firebaseDataService, UserProfile } from '../lib/firebase-data-service';
-import { FirebaseActivityService } from '../lib/firebase-activity';
-import { realtimeDataService } from '../lib/realtime-data-service';
+import { db } from '../lib/firebase';
+import { createActivityId } from '../lib/document-id-utils';
+import {
+  collection,
+  query,
+  onSnapshot,
+  Unsubscribe,
+} from 'firebase/firestore';
 
-interface ActivityTracker {
-  id: string;
-  type: string;
+interface UserData {
+  uid: string;
   username: string;
-  opinionText?: string;
-  targetUser?: string;
-  betType?: string;
-  targetPercentage?: number;
-  amount?: number;
-  quantity?: number;
-  timestamp: Date;
-  isBot?: boolean;
+  balance: number;
+  totalEarnings: number;
+  totalLosses: number;
+  joinDate: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
+/**
+ * Singleton service that manages global activity tracking
+ * Subscribes to Firestore changes and tracks user activity
+ */
 class GlobalActivityTracker {
   private static instance: GlobalActivityTracker;
-  private currentUser: UserProfile | null = null;
-  private subscribers: Map<string, (activity: ActivityTracker) => void> = new Map();
-  private isInitialized: boolean = false;
+  private unsubscribe: Unsubscribe | null = null;
+  private currentUser: UserData | null = null;
+  private isInitialized = false;
 
-  private constructor() {
-    // Don't initialize immediately - wait for auth context to be ready
-  }
+  private constructor() {}
 
-  public static getInstance(): GlobalActivityTracker {
+  static getInstance(): GlobalActivityTracker {
     if (!GlobalActivityTracker.instance) {
       GlobalActivityTracker.instance = new GlobalActivityTracker();
     }
     return GlobalActivityTracker.instance;
   }
 
-  // Initialize user from Firebase via auth context (called when auth context is ready)
-  public async initializeWithAuthContext() {
-    if (typeof window === 'undefined' || this.isInitialized) return;
+  /**
+   * Initialize the tracker with auth context
+   */
+  initializeWithAuthContext(): void {
+    if (this.isInitialized) return;
+    
+    console.log('🔧 GlobalActivityTracker: Initializing with auth context...');
+    this.isInitialized = true;
+    
+    // Set up global activity subscription
+    this.setupGlobalSubscription();
+  }
 
-    try {
-      // Wait for auth context to be available
-      const authContext = (window as any).authContext;
-      if (authContext?.user?.uid) {
-        this.currentUser = authContext.userProfile;
-        console.log('🔄 GlobalActivityTracker: Initialized with Firebase user:', this.currentUser?.username);
-        this.isInitialized = true;
-      } else {
-        console.log('⚠️ GlobalActivityTracker: No authenticated user found');
-        this.isInitialized = false;
-      }
-    } catch (error) {
-      console.error('❌ Error initializing global user:', error);
-      this.isInitialized = false;
+  /**
+   * Update the current user being tracked
+   */
+  updateCurrentUser(userData: UserData): void {
+    this.currentUser = userData;
+    console.log('👤 GlobalActivityTracker: Updated current user →', userData.username);
+    
+    // If not initialized yet, initialize now
+    if (!this.isInitialized) {
+      this.initializeWithAuthContext();
     }
   }
 
-  // Update current user (called by auth context when user changes)
-  public updateCurrentUser(user: UserProfile | null) {
-    this.currentUser = user;
-    this.isInitialized = !!user;
-    console.log('👤 GlobalActivityTracker: User updated:', user?.username || 'None');
-  }
-
-  // Add Firebase sync for balance updates
-  private async syncBalanceToFirebase() {
-    if (!this.currentUser || typeof window === 'undefined') return;
-
-    try {
-      // Get auth user if available
-      const authContext = (window as any).authContext;
-      if (!authContext?.user?.uid) {
-        // console.log('⚠️ No authenticated user found for Firebase sync');
-        return;
-      }
-
-      const userId = authContext.user.uid;
-      
-      console.log('🔄 Syncing balance to Firebase:', this.currentUser.balance);
-      
-      // Update Firebase directly using the auth context methods
-      if (authContext.updateBalance) {
-        await authContext.updateBalance(this.currentUser.balance);
-      }
-      
-      // Update earnings if needed
-      if (authContext.updateEarnings) {
-        await authContext.updateEarnings(
-          this.currentUser.totalEarnings || 0,
-          this.currentUser.totalLosses || 0
-        );
-      }
-      
-      console.log('✅ Balance synced to Firebase successfully');
-    } catch (error) {
-      console.error('❌ Error syncing balance to Firebase:', error);
-    }
-  }
-
-  // Track user activity and persist to Firebase
-  async trackActivity(
-    type: string,
-    details: {
-      opinionText?: string;
-      targetUser?: string;
-      betType?: string;
-      targetPercentage?: number;
-      amount?: number;
-      quantity?: number;
-      isBot?: boolean;
-    }
-  ) {
-    if (!this.currentUser) {
-      console.warn('⚠️ Cannot track activity: No current user');
-      return;
+  /**
+   * Set up global Firestore subscription
+   */
+  private setupGlobalSubscription(): void {
+    // Clean up any existing subscription
+    if (this.unsubscribe) {
+      this.unsubscribe();
     }
 
-    try {
-      const activity: ActivityTracker = {
-        id: `activity_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-        type,
-        username: this.currentUser.username,
-        timestamp: new Date(),
-        ...details
-      };
-
-      console.log('📊 Tracking activity:', activity);
-
-      // Add to Firebase activity feed
-      const activityService = FirebaseActivityService.getInstance();
-      await activityService.addActivity({
-        userId: this.currentUser.uid,
-        type: activity.type as any,
-        username: activity.username,
-        opinionText: activity.opinionText,
-        targetUser: activity.targetUser,
-        betType: activity.betType as any,
-        targetPercentage: activity.targetPercentage,
-        amount: activity.amount || 0,
-        quantity: activity.quantity,
-        isBot: activity.isBot || false
+    const q = query(collection(db, 'users'));
+    this.unsubscribe = onSnapshot(q, (snap) => {
+      snap.docChanges().forEach((change) => {
+        console.log(`[Activity] ${change.type}`, change.doc.data());
+        
+        // Additional activity tracking logic can be added here
+        this.processActivityChange(change);
       });
-
-      // Notify subscribers
-      this.notifySubscribers(activity);
-
-      console.log('✅ Activity tracked and saved to Firebase');
-    } catch (error) {
-      console.error('❌ Error tracking activity:', error);
-    }
-  }
-
-  // Track transaction-specific activities
-  async trackTransaction(
-    type: 'buy' | 'sell' | 'earn',
-    opinionText: string,
-    amount: number,
-    price: number,
-    quantity: number = 1,
-    isBot: boolean = false
-  ) {
-    await this.trackActivity(type, {
-      opinionText,
-      amount,
-      quantity,
-      isBot
-    });
-
-    // Also create the transaction record in Firebase
-    if (this.currentUser) {
-      try {
-        // Create transaction record
-        await realtimeDataService.addTransaction({
-          id: `${type}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          userId: this.currentUser.uid,
-          type,
-          opinionText,
-          amount,
-          price,
-          quantity,
-          timestamp: new Date(),
-          isBot: isBot || false
-        });
-
-        console.log('✅ Transaction record created in Firebase');
-      } catch (error) {
-        console.error('❌ Error creating transaction record:', error);
-      }
-    }
-  }
-
-  // Track betting activities
-  async trackBet(
-    type: 'bet_place' | 'bet_win' | 'bet_loss',
-    targetUser: string,
-    betType: 'gain' | 'loss',
-    targetPercentage: number,
-    amount: number,
-    isBot: boolean = false
-  ) {
-    await this.trackActivity(type, {
-      targetUser,
-      betType,
-      targetPercentage,
-      amount,
-      isBot
     });
   }
 
-  // Track short position activities
-  async trackShort(
-    type: 'short_place' | 'short_win' | 'short_loss',
-    opinionText: string,
-    amount: number,
-    isBot: boolean = false
-  ) {
-    await this.trackActivity(type, {
-      opinionText,
-      amount,
-      isBot
+  /**
+   * Process activity changes
+   */
+  private processActivityChange(change: any): void {
+    // This is where you can add logic to process different types of activity changes
+    // For example, updating UI, logging, analytics, etc.
+    
+    const data = change.doc.data();
+    const changeType = change.type;
+    
+    // Log activity for debugging
+    console.log(`🔄 Activity ${changeType}:`, {
+      docId: change.doc.id,
+      data: data,
+      user: this.currentUser?.username || 'unknown'
     });
   }
 
-  // Track opinion generation
-  async trackOpinionGeneration(opinionText: string, isBot: boolean = false) {
-    await this.trackActivity(isBot ? 'bot_generate' : 'generate', {
-      opinionText,
-      isBot
-    });
-  }
-
-  // Update user balance and sync to Firebase
-  async updateBalance(newBalance: number) {
-    if (!this.currentUser) {
-      console.warn('⚠️ Cannot update balance: No current user');
-      return;
+  /**
+   * Clean up subscriptions
+   */
+  cleanup(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
     }
-
-    const oldBalance = this.currentUser.balance;
-    this.currentUser.balance = newBalance;
-
-    // Calculate earnings/losses
-    const change = newBalance - oldBalance;
-    if (change > 0) {
-      this.currentUser.totalEarnings = (this.currentUser.totalEarnings || 0) + change;
-    } else if (change < 0) {
-      this.currentUser.totalLosses = (this.currentUser.totalLosses || 0) + Math.abs(change);
-    }
-
-    console.log('💰 Balance updated:', { oldBalance, newBalance, change });
-
-    // Sync to Firebase
-    await this.syncBalanceToFirebase();
+    this.isInitialized = false;
+    this.currentUser = null;
   }
 
-  // Get current user balance from Firebase
-  async getCurrentBalance(): Promise<number> {
-    if (!this.currentUser) return 10000;
-
-    try {
-      // Get fresh data from Firebase
-      const authContext = (window as any).authContext;
-      if (authContext?.user?.uid) {
-        const profile = await firebaseDataService.getUserProfile(authContext.user.uid);
-        if (profile) {
-          this.currentUser = profile;
-          return profile.balance;
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error getting current balance from Firebase:', error);
-    }
-
-    return this.currentUser.balance;
-  }
-
-  // Get user activity feed from Firebase
-  async getUserActivityFeed(limit: number = 50): Promise<ActivityTracker[]> {
-    if (!this.currentUser) return [];
-
-    try {
-      const activities = await realtimeDataService.getActivityFeed(limit);
-      return activities.map((activity: any) => ({
-        id: activity.id,
-        type: activity.type,
-        username: activity.username,
-        opinionText: activity.opinionText,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        amount: activity.amount,
-        quantity: activity.quantity,
-        timestamp: activity.timestamp,
-        isBot: activity.isBot
-      }));
-    } catch (error) {
-      console.error('❌ Error getting user activity feed:', error);
-      return [];
-    }
-  }
-
-  // Get global activity feed from Firebase
-  async getGlobalActivityFeed(limit: number = 100): Promise<ActivityTracker[]> {
-    try {
-      const activityService = FirebaseActivityService.getInstance();
-      const activities = await activityService.getRecentActivities(limit);
-      return activities.map((activity: any) => ({
-        id: activity.id,
-        type: activity.type,
-        username: activity.username,
-        opinionText: activity.opinionText,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        amount: activity.amount,
-        quantity: activity.quantity,
-        timestamp: activity.timestamp,
-        isBot: activity.isBot
-      }));
-    } catch (error) {
-      console.error('❌ Error getting global activity feed:', error);
-      return [];
-    }
-  }
-
-  // Subscribe to activity updates
-  subscribe(callback: (activity: ActivityTracker) => void): string {
-    const id = `activity_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    this.subscribers.set(id, callback);
-    return id;
-  }
-
-  // Unsubscribe from activity updates
-  unsubscribe(id: string) {
-    this.subscribers.delete(id);
-  }
-
-  // Notify subscribers of new activity
-  private notifySubscribers(activity: ActivityTracker) {
-    this.subscribers.forEach(callback => {
-      try {
-        callback(activity);
-      } catch (error) {
-        console.error('❌ Error notifying activity subscriber:', error);
-      }
-    });
-  }
-
-  // Get current user info
-  getCurrentUser(): UserProfile | null {
+  /**
+   * Get current user data
+   */
+  getCurrentUser(): UserData | null {
     return this.currentUser;
   }
 
-  // Real-time activity feed subscription
-  subscribeToGlobalActivityFeed(callback: (activities: ActivityTracker[]) => void, limit: number = 100): string {
-    const subscriptionId = `global_activity_${Date.now()}`;
-    const activityService = FirebaseActivityService.getInstance();
-    const unsub = activityService.subscribeToActivities((activities: any[]) => {
-      const trackerActivities = activities.map((activity: any) => ({
-        id: activity.id,
-        type: activity.type,
-        username: activity.username,
-        opinionText: activity.opinionText,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        amount: activity.amount,
-        quantity: activity.quantity,
-        timestamp: activity.timestamp,
-        isBot: activity.isBot
-      }));
-      callback(trackerActivities);
-    }, limit);
-    
-    this.subscribers.set(subscriptionId, unsub);
-    return subscriptionId;
-  }
-
-  // Unsubscribe from Firebase subscriptions
-  unsubscribeFromFirebase(subscriptionId: string) {
-    const unsub = this.subscribers.get(subscriptionId);
-    if (unsub && typeof unsub === 'function') {
-      unsub();
-      this.subscribers.delete(subscriptionId);
-    }
-  }
-
-  // Clean up all subscriptions
-  cleanup() {
-    this.subscribers.forEach((unsub) => {
-      if (typeof unsub === 'function') {
-        unsub();
-      }
-    });
-    this.subscribers.clear();
+  /**
+   * Check if tracker is initialized
+   */
+  getIsInitialized(): boolean {
+    return this.isInitialized;
   }
 }
 

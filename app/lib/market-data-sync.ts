@@ -13,6 +13,7 @@ import {
   FirestoreError,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { createMarketDataDocId } from './document-id-utils';
 
 // -----------------------------------------------------------------------------
 // 🏷️  Types
@@ -67,7 +68,7 @@ export class MarketDataSyncService {
   }
 
   private createDocId(text: string) {
-    return btoa(text.slice(0, 100)).replace(/[^A-Za-z0-9]/g, '').slice(0, 100);
+    return createMarketDataDocId(text);
   }
 
   // ---------------------------------------------------------------------------

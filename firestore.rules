@@ -19,7 +19,9 @@ service cloud.firestore {
     /* ───────────── OPINIONS ───────────── */
     match /opinions/{opinionId} {
       allow read: if true;                 // opinions are publicly readable
-      allow write: if request.auth != null; // authenticated users can create/update opinions
+      allow write: if request.auth != null // authenticated users can create/update opinions
+        || (request.resource.data.isBot == true)                    // allow bot-generated opinions
+        || (request.resource.data.source in ['bot_generation', 'bot_system']);  // allow bot sources
     }
 
     /* ───────────── MARKET DATA ───────────── */
@@ -39,14 +41,18 @@ service cloud.firestore {
 
     /* ───────────── SHORT POSITIONS ───────────── */
     match /short-positions/{positionId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow write: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId
+        || (resource.data.botId != null);  // allow reading bot short positions
+      allow write: if (request.auth != null && request.auth.uid == resource.data.userId)
+        || (request.resource.data.botId != null);  // allow bots to create short positions
     }
 
     /* ───────────── ADVANCED BETS ───────────── */
     match /advanced-bets/{betId} {
-      allow read: if request.auth != null; // Allow authenticated users to read bets for leaderboard
-      allow write: if request.auth != null; // Allow authenticated users to create/update bets
+      allow read: if request.auth != null // Allow authenticated users to read bets for leaderboard
+        || (resource.data.botId != null);  // allow reading bot bets
+      allow write: if request.auth != null // Allow authenticated users to create/update bets
+        || (request.resource.data.botId != null);  // allow bots to place bets
     }
 
     /* ───────────── USER PORTFOLIOS ───────────── */
@@ -55,25 +61,17 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == userId; // Only allow writing to your own portfolio
     }
 
-    /* ───────────── BOTS ───────────── */
-    match /bots/{botId} {
-      allow read: if request.auth != null; // Allow authenticated users to read bot profiles for leaderboard
-      allow write: if request.auth != null // Allow system to manage bots
-        || (request.resource.data.isBot == true)
-        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
-    }
+
 
     /* ───────────── AUTONOMOUS BOTS ───────────── */
     match /autonomous-bots/{botId} {
       allow read: if true; // Allow public reads for bots
-      allow write: if true; // TEMPORARY: Allow all writes for bot creation
+      allow write: if request.auth != null // Allow authenticated users to manage bots
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
     }
     
-    /* ───────────── BOT SUBCOLLECTIONS (for migration) ───────────── */
-    match /autonomous-bots/{parentId}/bots/{botId} {
-      allow read: if true; // Allow public reads for bot subcollections
-      allow write: if true; // TEMPORARY: Allow all writes for bot creation
-    }
+
 
     /* ───────────── BOT PORTFOLIOS ───────────── */
     match /bot-portfolios/{botId} {
@@ -113,8 +111,9 @@ service cloud.firestore {
 
     /* ───────────── BOT SETTINGS ───────────── */
     match /bot-settings/{settingId} {
-      allow read: if request.auth != null; // Allow authenticated users to read bot settings
-      allow write: if request.auth != null; // Allow authenticated users to manage bot settings
+      allow read: if true; // Allow public read for bot system initialization
+      allow write: if request.auth != null // Allow authenticated users to manage bot settings
+        || (request.resource.data.source in ['bot_system', 'bot_manager']); // Allow bot system writes
     }
 
     /* ───────────── ADMIN COLLECTIONS ───────────── */

@@ -7,6 +7,7 @@ import AuthModal from './components/AuthModal';
 import Sidebar from './components/Sidebar';
 import AuthButton from './components/AuthButton';
 import AuthStatusIndicator from './components/AuthStatusIndicator';
+import Navigation from './components/Navigation';
 
 import { realtimeDataService } from './lib/realtime-data-service';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -281,113 +282,54 @@ export default function HomePage() {
   useEffect(() => {
     const findAndLoadBots = async () => {
       try {
-        console.log("🔍 Searching for bots in autonomous-bots collection...");
+        console.log("🔍 Loading bots from autonomous-bots collection...");
         
         const autonomousBotsRef = collection(db, "autonomous-bots");
         const autonomousBotsSnap = await getDocs(autonomousBotsRef);
         
-        console.log(`📁 Found ${autonomousBotsSnap.size} documents in autonomous-bots collection`);
+        console.log(`📁 Found ${autonomousBotsSnap.size} bot documents in autonomous-bots collection`);
         
         if (autonomousBotsSnap.empty) {
-          console.log("❌ No documents found in autonomous-bots collection");
+          console.log("❌ No bot documents found in autonomous-bots collection");
           setBots([]);
           return;
         }
         
         const botsList: BotDoc[] = [];
         
-        // Try each document in autonomous-bots
+        // Load each bot document directly
         for (const docSnap of autonomousBotsSnap.docs) {
-          console.log(`📄 Checking document: ${docSnap.id}`);
+          const botData = docSnap.data();
           
-          // Check if this document has a 'bots' subcollection
-          const botsSubRef = collection(docSnap.ref, "bots");
-          const botsSubSnap = await getDocs(botsSubRef);
-          
-          if (!botsSubSnap.empty) {
-            console.log(`🎯 Found bots subcollection in ${docSnap.id} with ${botsSubSnap.size} documents`);
+          // Validate that this is a bot document
+          if (botData && (botData.id || botData.username || botData.balance !== undefined)) {
+            const displayName = botData.personality?.name || botData.username || `Bot_${docSnap.id}`;
             
-            // Check each document in the bots subcollection
-            for (const botDocSnap of botsSubSnap.docs) {
-              console.log(`🤖 Checking bot document: ${botDocSnap.id}`);
-              const botData = botDocSnap.data();
-              
-              // Extract all bot objects from this document
-              Object.entries(botData).forEach(([key, value]: [string, any]) => {
-                // Check if this field looks like a bot object
-                if (typeof value === 'object' && value !== null && 
-                    (key.startsWith('bot_') || 
-                     (value.id && value.balance !== undefined) || 
-                     (value.personality && typeof value.personality === 'object'))) {
-                  
-                  const bot = value;
-                  const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
-                  
-                  console.log(`✅ Found bot: ${key}`, bot);
-                  
-                  botsList.push({
-                    id: bot.id || key,
-                    username: displayName,
-                    balance: bot.balance || 0,
-                    joinDate: bot.joinDate || new Date().toISOString(),
-                    totalEarnings: bot.totalEarnings || 0,
-                    totalLosses: bot.totalLosses || 0,
-                    personality: bot.personality || {
-                      description: "A trading bot",
-                      activityFrequency: 100,
-                      betProbability: 0.5,
-                      buyProbability: 0.5
-                    },
-                    riskTolerance: bot.riskTolerance || 'moderate',
-                    tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
-                    lastActive: bot.lastActive || new Date().toISOString(),
-                    isActive: bot.isActive !== undefined ? bot.isActive : true,
-                    ...bot
-                  });
-                }
-              });
-            }
-          }
-          
-          // Also check if the document itself contains bot data
-          const docData = docSnap.data();
-          if (docData && typeof docData === 'object') {
-            Object.entries(docData).forEach(([key, value]: [string, any]) => {
-              if (typeof value === 'object' && value !== null && 
-                  (key.startsWith('bot_') || 
-                   (value.id && value.balance !== undefined) || 
-                   (value.personality && typeof value.personality === 'object'))) {
-                
-                const bot = value;
-                const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
-                
-                console.log(`✅ Found bot in main document: ${key}`, bot);
-                
-                botsList.push({
-                  id: bot.id || key,
-                  username: displayName,
-                  balance: bot.balance || 0,
-                  joinDate: bot.joinDate || new Date().toISOString(),
-                  totalEarnings: bot.totalEarnings || 0,
-                  totalLosses: bot.totalLosses || 0,
-                  personality: bot.personality || {
-                    description: "A trading bot",
-                    activityFrequency: 100,
-                    betProbability: 0.5,
-                    buyProbability: 0.5
-                  },
-                  riskTolerance: bot.riskTolerance || 'moderate',
-                  tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
-                  lastActive: bot.lastActive || new Date().toISOString(),
-                  isActive: bot.isActive !== undefined ? bot.isActive : true,
-                  ...bot
-                });
-              }
+            console.log(`✅ Found bot: ${docSnap.id} - ${displayName}`);
+            
+            botsList.push({
+              id: botData.id || docSnap.id,
+              username: displayName,
+              balance: botData.balance || 0,
+              joinDate: botData.joinDate || new Date().toISOString(),
+              totalEarnings: botData.totalEarnings || 0,
+              totalLosses: botData.totalLosses || 0,
+              personality: botData.personality || {
+                description: "A trading bot",
+                activityFrequency: 100,
+                betProbability: 0.5,
+                buyProbability: 0.5
+              },
+              riskTolerance: botData.riskTolerance || 'moderate',
+              tradingStrategy: botData.tradingStrategy || { type: 'balanced' },
+              lastActive: botData.lastActive || new Date().toISOString(),
+              isActive: botData.isActive !== undefined ? botData.isActive : true,
+              ...botData
             });
           }
         }
         
-        console.log(`🎯 Total bots found: ${botsList.length}`);
+        console.log(`🎯 Total bots loaded: ${botsList.length}`);
         setBots(botsList);
       } catch (error) {
         console.error("❌ Error loading bots:", error);
@@ -608,19 +550,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="navigation-buttons">
-            <AuthStatusIndicator />
-            <a href="/profile" className="nav-button">
-              <User size={20} /> Profile
-            </a>
-            <a href="/users" className="nav-button">
-              <User size={20} /> Traders
-            </a>
-            <a href="/feed" className="nav-button">
-              <Fire size={20} /> Feed
-            </a>
-            <AuthButton />
-          </div>
+          <Navigation currentPage="home" />
         </div>
 
         {/* Hottest Opinions Header */}

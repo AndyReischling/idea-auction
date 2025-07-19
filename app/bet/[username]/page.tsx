@@ -18,10 +18,12 @@ import {
 } from 'firebase/firestore';
 import { calculateMultiplier, calculatePayout } from '../../lib/multiplier-utils';
 import { realtimeDataService } from '../../lib/realtime-data-service';
+import { createMarketDataDocId, createBetId, createTransactionId, createActivityId } from '../../lib/document-id-utils';
 import Sidebar from '../../components/Sidebar';
 import AuthGuard from '../../components/AuthGuard';
 import AuthButton from '../../components/AuthButton';
 import AuthStatusIndicator from '../../components/AuthStatusIndicator';
+import Navigation from '../../components/Navigation';
 import { 
   User, 
   TrendUp, 
@@ -32,10 +34,7 @@ import {
   ArrowLeft,
   Target,
   Timer,
-  Coins,
-  ScanSmiley,
-  RssSimple,
-  Balloon
+  Coins
 } from '@phosphor-icons/react';
 import '../../page.module.css';
 
@@ -165,7 +164,7 @@ export default function BetPage() {
                 );
                 const querySnapshot = await getDocs(q);
                 
-                let opinionId = btoa(opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+                let opinionId = createMarketDataDocId(opinionText);
                 if (!querySnapshot.empty) {
                   opinionId = querySnapshot.docs[0].id;
                 }
@@ -188,7 +187,7 @@ export default function BetPage() {
                   : portfolioData as number;
                 
                 return {
-                  id: btoa(String(fallbackText)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100),
+                  id: createMarketDataDocId(String(fallbackText)),
                   text: String(fallbackText),
                   purchasePrice: marketData[fallbackText]?.basePrice || 10.00,
                   currentPrice: marketData[fallbackText]?.currentPrice || 10.00,
@@ -331,7 +330,7 @@ export default function BetPage() {
 
     setSubmitting(true);
     try {
-      const betId = `bet_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const betId = createBetId();
       const expiryDate = new Date(Date.now() + betForm.timeframe * 60 * 60 * 1000);
       
       const portfolioBet = {
@@ -364,7 +363,7 @@ export default function BetPage() {
       }, { merge: true });
       
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       batch.set(doc(db, 'transactions', transactionId), {
         id: transactionId,
         type: 'bet',
@@ -382,7 +381,7 @@ export default function BetPage() {
       });
 
       // Add to activity feed
-      const activityId = `activity_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const activityId = createActivityId();
       batch.set(doc(db, 'activity-feed', activityId), {
         id: activityId,
         type: 'bet',
@@ -489,22 +488,7 @@ export default function BetPage() {
           </div>
             </div>
 
-            <div className="navigation-buttons">
-              <AuthStatusIndicator />
-              <a href="/profile" className="nav-button">
-                <User size={20} /> Profile
-              </a>
-              <a href="/users" className="nav-button">
-                <ScanSmiley size={20} /> View Traders
-              </a>
-              <a href="/feed" className="nav-button">
-                <RssSimple size={20} /> Live Feed
-              </a>
-              <a href="/generate" className="nav-button">
-                <Balloon size={20} /> Generate
-              </a>
-              <AuthButton />
-            </div>
+            <Navigation currentPage="bet" />
           </div>
 
           {/* Bet Form */}

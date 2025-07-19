@@ -13,16 +13,15 @@ import { firebaseDataService } from '../../lib/firebase-data-service';
 import { UnifiedMarketDataManager } from '../../lib/unified-system';
 import { doc as fsDoc, getDoc, collection, query, where, limit, getDocs, orderBy, setDoc, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { createMarketDataDocId, createTransactionId } from '../../lib/document-id-utils';
 
 // UI components & assets
 import Sidebar from '../../components/Sidebar';
 import AuthModal from '../../components/AuthModal';
+import Navigation from '../../components/Navigation';
 import {
   ArrowLeft,
   PiggyBank,
-  ScanSmiley,
-  RssSimple,
-  Balloon,
   TrendUp,
   TrendDown,
   ChartLineUp,
@@ -70,6 +69,11 @@ const ts = (x: any): string => {
   return iso();
 };
 
+// Helper function to create consistent document IDs for market data
+const createDocId = (text: string) => {
+  return createMarketDataDocId(text);
+};
+
 // Sanitize opinion text to create valid Firestore field names
 const sanitizeFieldName = (text: string): string => {
   // Replace periods and other invalid characters with underscores
@@ -86,7 +90,7 @@ const formatPercent = (change: number, base: number) => {
 export default function OpinionPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
 
   // Client-only gate
   const [ready, setReady] = useState(false);
@@ -145,22 +149,20 @@ export default function OpinionPage() {
 
   // Helper function to get display username with fallbacks
   const getDisplayUsername = () => {
-    console.log('🔍 Getting display username:', {
-      hasUser: !!user,
-      userId: user?.uid,
-      userEmail: user?.email,
-      hasProfile: !!profile,
-      profileUsername: profile?.username,
-      userDisplayName: user?.displayName
-    });
-
     if (!user) {
-      console.log('❌ No user found, using Anonymous');
       return 'Anonymous';
     }
 
-    const displayUsername = profile?.username || user.email?.split('@')[0] || user.displayName || 'Anonymous';
-    console.log('✅ Display username resolved to:', displayUsername);
+    // Use auth context userProfile first, then fall back to local profile, then user data
+    const candidates = [
+      userProfile?.username,
+      profile?.username,
+      user.email?.split('@')[0],
+      user.displayName,
+      'Anonymous'
+    ];
+
+    const displayUsername = candidates.find(name => name && name !== 'Anonymous') || 'Anonymous';
     return displayUsername;
   };
 
@@ -261,18 +263,12 @@ export default function OpinionPage() {
           setAuthorUsername(d.author?.split('@')[0] || 'Anonymous');
         }
 
-        // 2. Fetch or create market data
-        const marketQuery = query(
-          collection(db, 'market-data'),
-          where('opinionText', '==', d.text),
-          limit(1)
-        );
-        const marketSnap = await getDocs(marketQuery);
-        
-        if (!marketSnap.empty) {
-          const mkt = marketSnap.docs[0].data();
+        // 2. Market data
+        const marketDataSnap = await getDoc(doc(db, 'market-data', createDocId(d.text)));
+        if (marketDataSnap.exists()) {
+          const mkt = marketDataSnap.data();
           setMarket({
-            opinionText: mkt.opinionText || d.text,
+            opinionText: d.text,
             timesPurchased: mkt.timesPurchased || 0,
             timesSold: mkt.timesSold || 0,
             currentPrice: mkt.currentPrice || 10.0,
@@ -283,6 +279,8 @@ export default function OpinionPage() {
               timestamp: ts(p.timestamp),
               action: p.action,
               quantity: p.quantity || 1,
+              username: p.username || 'Anonymous',
+              userId: p.userId || null,
             })),
             liquidityScore: mkt.liquidityScore || 1.0,
             dailyVolume: (mkt.timesPurchased || 0) + (mkt.timesSold || 0),
@@ -301,7 +299,7 @@ export default function OpinionPage() {
             dailyVolume: 0,
           };
           
-          const docId = btoa(d.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+          const docId = createDocId(d.text);
           await setDoc(doc(db, 'market-data', docId), initialMarket);
           setMarket(initialMarket);
         }
@@ -465,7 +463,33 @@ export default function OpinionPage() {
     // Filter out any invalid prices
     const validHistory = history.filter(h => h.price && !isNaN(h.price) && h.price > 0);
     
-    if (validHistory.length === 0) {
+    // Fix usernames for historical data - replace Anonymous with actual username for current user's trades
+    const fixedHistory = validHistory.map(h => {
+      // If this trade belongs to the current user but shows as Anonymous, fix it
+      if (user?.uid && h.userId === user.uid && (!h.username || h.username === 'Anonymous')) {
+        return {
+          ...h,
+          username: getDisplayUsername()
+        };
+      }
+      return h;
+    });
+    
+    // Always start with the base price ($10) as the leftmost point if we have trading history
+    let processedHistory = fixedHistory;
+    if (fixedHistory.length > 0) {
+      // Check if the first point is already at base price
+      const firstPoint = fixedHistory[0];
+      if (firstPoint.price !== 10.0) {
+        // Add the base price as the starting point
+        processedHistory = [
+          { price: 10.0, timestamp: firstPoint.timestamp, action: 'create' as const },
+          ...fixedHistory
+        ];
+      }
+    }
+    
+    if (processedHistory.length === 0) {
       // Fallback if no valid price data
       return {
         history: [{ price: 10.0, timestamp: iso(), action: 'create' as const }],
@@ -475,7 +499,7 @@ export default function OpinionPage() {
       };
     }
     
-    const prices = validHistory.map(h => h.price);
+    const prices = processedHistory.map(h => h.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const range = maxPrice - minPrice;
@@ -484,20 +508,22 @@ export default function OpinionPage() {
     const safeRange = range > 0 ? range : Math.max(minPrice * 0.1, 1.0);
     
     return { 
-      history: validHistory, 
+      history: processedHistory, 
       minPrice, 
       maxPrice, 
       range: safeRange 
     };
-  }, [market]);
+  }, [market, user?.uid, getDisplayUsername]);
 
   // Helper function to safely calculate SVG coordinates
   const getChartCoordinates = (index: number, price: number, totalPoints: number) => {
-    const x = totalPoints > 1 ? (index / (totalPoints - 1)) * 700 + 80 : 430; // Center single point with more left padding
+    // Always start at leftmost position (x=80) and proceed left to right
+    // For a single point, place it at the leftmost position to show the starting price
+    const x = totalPoints > 1 ? (index / (totalPoints - 1)) * 700 + 80 : 80;
     const y = chartData ? 250 - ((price - chartData.minPrice) / chartData.range) * 200 : 150;
     return {
-      x: isNaN(x) ? 430 : Math.max(80, Math.min(780, x)), // Clamp to valid range with more padding
-      y: isNaN(y) ? 150 : Math.max(50, Math.min(250, y))  // Clamp to valid range with more padding
+      x: isNaN(x) ? 80 : Math.max(80, Math.min(780, x)), // Clamp to valid range, starting from left
+      y: isNaN(y) ? 150 : Math.max(50, Math.min(250, y))  // Clamp to valid range
     };
   };
 
@@ -561,7 +587,7 @@ export default function OpinionPage() {
       });
       
       // Update market data
-      const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const docId = createDocId(docData.text);
       const updatedMarket = {
         ...market,
         timesPurchased: market.timesPurchased + 1,
@@ -582,7 +608,7 @@ export default function OpinionPage() {
       };
       
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       
       const transaction = {
         id: transactionId,
@@ -705,7 +731,7 @@ export default function OpinionPage() {
       });
       
       // Update market data
-      const docId = btoa(docData.text).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const docId = createDocId(docData.text);
       const updatedMarket = {
         ...market,
         timesSold: market.timesSold + 1,
@@ -726,7 +752,7 @@ export default function OpinionPage() {
       };
       
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       const transaction = {
         id: transactionId,
         type: 'sell',
@@ -890,9 +916,7 @@ export default function OpinionPage() {
           </div>
 
           <div className={styles.headerActions}>
-            <a href="/users" className="nav-button traders"><ScanSmiley size={24} /> Traders</a>
-            <a href="/feed" className="nav-button feed"><RssSimple size={24} /> Feed</a>
-            <a href="/generate" className="nav-button generate"><Balloon size={24} /> Generate</a>
+            <Navigation currentPage="opinion" />
             <div className={styles.walletDisplay}>
               <PiggyBank size={28} weight="fill" /> {!user ? 'Sign in to trade' : formatCurrency(profile.balance)}
             </div>
@@ -1099,6 +1123,8 @@ export default function OpinionPage() {
           </div>
         )}
 
+        
+
         {/* Trading Actions */}
         <div className={styles.tradingActions}>
           <button 
@@ -1112,7 +1138,7 @@ export default function OpinionPage() {
           <button 
             className={`${styles.tradingButton} ${styles.sellButton}`}
             onClick={handleSell}
-            disabled={loading || (!user ? false : userPosition === 0)}
+            disabled={loading || !user || userPosition === 0}
           >
             {userPosition > 0 ? `Sell 1 for ${formatCurrency((market?.currentPrice || 0) * 0.95)}` : `No shares owned`}
           </button>
@@ -1120,7 +1146,7 @@ export default function OpinionPage() {
           <button 
             className={`${styles.tradingButton} ${styles.shortButton}`}
             onClick={handleShort}
-            disabled={!user ? false : userPosition > 0}
+            disabled={!user || userPosition > 0}
           >
             {userPosition > 0 ? "Own Shares (Can't Short)" : "Short Position"}
           </button>

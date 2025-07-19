@@ -26,6 +26,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { firebaseActivityService } from "./firebase-activity";
+import { createMarketDataDocId, createTransactionId } from "./document-id-utils";
 
 // ---------------------------------------------------------------------------
 // 1.  PRICE CALCULATION (unchanged)
@@ -66,7 +67,7 @@ class FSMarketDataManager {
 
   // Helper → deterministic doc id from opinion text
   private docId(text: string) {
-    return btoa(text).replace(/[^a-zA-Z0-9]/g, "").slice(0, 100);
+    return createMarketDataDocId(text);
   }
 
   /** Fetch (or lazily create) an opinion market‑data doc. */
@@ -175,7 +176,7 @@ class FSTransactionManager {
   }
 
   private generateId() {
-    return `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    return createTransactionId();
   }
 
   create(
@@ -198,13 +199,32 @@ class FSTransactionManager {
     const ref = doc(collection(db, "transactions"), tx.id);
     await setDoc(ref, { ...tx, timestamp: serverTimestamp() });
 
+    // Determine username: for bots, look up by botId, otherwise use userId
+    let username = tx.userId ?? "anon";
+    if (tx.botId && !tx.userId) {
+      // For bot transactions, look up the bot username
+      try {
+        const botDoc = await getDoc(doc(db, "autonomous-bots", tx.botId));
+        if (botDoc.exists()) {
+          username = botDoc.data().username || `bot_${tx.botId}`;
+        } else {
+          username = `bot_${tx.botId}`; // Fallback if bot not found
+        }
+      } catch (error) {
+        console.warn(`Failed to lookup bot username for ${tx.botId}:`, error);
+        username = `bot_${tx.botId}`; // Fallback
+      }
+    }
+
     // Push to global activity feed
     firebaseActivityService.addActivity({
       type: tx.type,
-      username: tx.userId ?? "anon",
+      username: username,
       amount: tx.amount,
       opinionText: tx.opinionText,
+      opinionId: tx.opinionId,
       isBot: !!tx.botId,
+      botId: tx.botId,
       metadata: { source: "unified-system" },
     });
   }

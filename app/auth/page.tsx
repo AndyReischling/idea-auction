@@ -17,10 +17,15 @@ export default function AuthPage() {
   const { signIn, signUp, checkUsernameAvailability, user } = useAuth();
   const router = useRouter();
 
-  // Redirect to profile if already logged in
+  // Redirect to profile if already logged in (with delay to prevent immediate redirects)
   useEffect(() => {
     if (user) {
-      router.push('/profile');
+      // Add a delay to prevent immediate redirects from auth state changes
+      const redirectTimer = setTimeout(() => {
+        router.push('/profile');
+      }, 1000); // 1 second delay
+      
+      return () => clearTimeout(redirectTimer);
     }
   }, [user, router]);
 

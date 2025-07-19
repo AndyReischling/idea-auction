@@ -91,8 +91,8 @@ export default function AdminPage() {
      --------------------------------------------------------------*/
     const loadBotData = async () => {
     try {
-      // Fetch bots from subcollections
-      const botsQuery = collectionGroup(db, 'bots');
+      // Fetch bots from autonomous-bots collection
+      const botsQuery = collection(db, 'autonomous-bots');
       const botsSnap = await getDocs(botsQuery);
       setBots(botsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as BotProfile[]);
 
@@ -209,8 +209,8 @@ export default function AdminPage() {
         for (const botInfo of batchBots) {
           const botData = botInfo.data;
           
-          // Create subcollection document reference
-          const subcollectionRef = doc(db, 'autonomous-bots', parentDocId, 'bots', processed.toString());
+          // Create top-level autonomous-bots document reference
+          const botDocRef = doc(db, 'autonomous-bots', botData.id || `bot_${processed}`);
           
           // Clean bot data (remove migration metadata)
           const cleanBotData = {
@@ -234,8 +234,8 @@ export default function AdminPage() {
             }
           });
           
-          // Add to subcollection
-          batch.set(subcollectionRef, cleanBotData);
+          // Add to autonomous-bots collection
+          batch.set(botDocRef, cleanBotData);
           
           // Delete the old top-level document
           batch.delete(doc(db, 'autonomous-bots', botInfo.id));
@@ -281,11 +281,11 @@ export default function AdminPage() {
     setRecoveryStatus('🚨 Starting emergency bot recovery...');
     
     try {
-      // Check if bots exist in subcollections first
-      const botsQuery = collectionGroup(db, 'bots');
+      // Check if bots exist in autonomous-bots collection first
+      const botsQuery = collection(db, 'autonomous-bots');
       const botsSnapshot = await getDocs(botsQuery);
       
-      setRecoveryStatus(`📋 Checking for existing bots... Found ${botsSnapshot.size} in subcollections`);
+      setRecoveryStatus(`📋 Checking for existing bots... Found ${botsSnapshot.size} in autonomous-bots collection`);
       
       if (botsSnapshot.size > 0) {
         setRecoveryStatus('✅ Bots found in subcollections! No recovery needed. Try refreshing the app.');
@@ -348,8 +348,8 @@ export default function AdminPage() {
             _recreatedAt: new Date().toISOString()
           };
           
-          // Add to subcollection
-          const botRef = doc(db, 'autonomous-bots', parentDocId, 'bots', botIndex.toString());
+          // Add to autonomous-bots collection
+          const botRef = doc(db, 'autonomous-bots', `bot_${botIndex}`);
           batch.set(botRef, botData);
           created++;
         }

@@ -24,6 +24,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { User } from "firebase/auth";
+import { createMarketDataDocId } from "./document-id-utils";
 
 // -----------------------------------------------------------------------------
 // 🔖  Types
@@ -362,7 +363,7 @@ export class RealtimeDataService {
 
   async addOpinion(text: string) {
     if (!this.currentUser) throw new Error("Not signed in");
-    const id = btoa(text).replace(/[^a-zA-Z0-9]/g, "");
+    const id = createMarketDataDocId(text);
     await setDoc(doc(this.collections.opinions, id), {
       text,
       createdBy: this.currentUser.uid,

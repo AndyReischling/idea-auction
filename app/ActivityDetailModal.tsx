@@ -6,6 +6,7 @@ import { useAuth } from './lib/auth-context';
 import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { calculateMultiplier, calculatePayout } from './lib/multiplier-utils';
+import { createMarketDataDocId, createTransactionId, createShortPositionId, createBetId } from './lib/document-id-utils';
 import { 
   X, 
   ShoppingCart, 
@@ -130,7 +131,7 @@ export default function ActivityDetailModal({
 
       try {
         // Load market data
-        const marketDocId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+        const marketDocId = createMarketDataDocId(activity.opinionText);
         const marketDoc = await getDoc(doc(db, 'market-data', marketDocId));
         
         if (marketDoc.exists()) {
@@ -339,7 +340,7 @@ export default function ActivityDetailModal({
       const newPrice = marketData.currentPrice * 1.001;
       
       // Update market data
-      const marketDocId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const marketDocId = createMarketDataDocId(activity.opinionText);
       const updatedMarket = {
         ...marketData,
         timesPurchased: marketData.timesPurchased + 1,
@@ -374,7 +375,7 @@ export default function ActivityDetailModal({
       batch.set(doc(db, 'users', user.uid), updatedProfile);
 
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       batch.set(doc(db, 'transactions', transactionId), {
         id: transactionId,
         type: 'buy',
@@ -434,7 +435,7 @@ export default function ActivityDetailModal({
       const newPrice = marketData.currentPrice * Math.pow(0.999, actualSellQuantity);
       
       // Update market data
-      const marketDocId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const marketDocId = createMarketDataDocId(activity.opinionText);
       const updatedMarket = {
         ...marketData,
         timesSold: marketData.timesSold + actualSellQuantity,
@@ -469,7 +470,7 @@ export default function ActivityDetailModal({
       batch.set(doc(db, 'users', user.uid), updatedProfile);
 
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       batch.set(doc(db, 'transactions', transactionId), {
         id: transactionId,
         type: 'sell',
@@ -546,7 +547,7 @@ export default function ActivityDetailModal({
       
       // Create short position
       const batch = writeBatch(db);
-      const shortId = `short_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const shortId = createShortPositionId();
       
       // Create short position document
       batch.set(doc(db, 'short-positions', shortId), {
@@ -576,7 +577,7 @@ export default function ActivityDetailModal({
       batch.set(doc(db, 'users', user.uid), updatedProfile);
       
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       batch.set(doc(db, 'transactions', transactionId), {
         id: transactionId,
         type: 'short',
@@ -636,7 +637,7 @@ export default function ActivityDetailModal({
 
   const navigateToOpinion = () => {
     if (activity.opinionText) {
-      const opinionId = btoa(activity.opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100);
+      const opinionId = createMarketDataDocId(activity.opinionText);
       router.push(`/opinion/${opinionId}`);
       onClose();
     }
@@ -655,7 +656,7 @@ export default function ActivityDetailModal({
 
     setLoading(true);
     try {
-      const betId = `bet_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const betId = createBetId();
       const expiryDate = new Date(Date.now() + portfolioTimeLimit * 60 * 60 * 1000);
       
       const portfolioBet = {
@@ -687,7 +688,7 @@ export default function ActivityDetailModal({
       }, { merge: true });
       
       // Create transaction record
-      const transactionId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const transactionId = createTransactionId();
       batch.set(doc(db, 'transactions', transactionId), {
         id: transactionId,
         type: 'bet',

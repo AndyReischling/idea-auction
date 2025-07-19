@@ -6,12 +6,14 @@ import setupUnifiedSystem from './lib/unified-system';
 import { AuthProvider } from './lib/auth-context';
 import MigrationUI from './components/MigrationUI';
 import { useMigration } from './hooks/useMigration';
+import BotManager from './components/BotManager';
 
 function MigrationWrapper({ children }: { children: React.ReactNode }) {
   const migration = useMigration();
 
   return (
     <>
+      <BotManager />
       {children}
       {migration.showUI && (
         <MigrationUI onClose={migration.hideMigrationUI} autoStart={false} />

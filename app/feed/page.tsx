@@ -44,10 +44,13 @@ import { HandPeace } from '@phosphor-icons/react';
 import { DiceSix } from '@phosphor-icons/react';
 import { ChartLineDown } from '@phosphor-icons/react';
 import AuthButton from '../components/AuthButton';
+import Navigation from '../components/Navigation';
 import { useAuth } from '../lib/auth-context';
 import { firebaseActivityService, LocalActivityItem } from '../lib/firebase-activity';
 import { dataReconciliationService } from '../lib/data-reconciliation';
 import { realtimeDataService } from '../lib/realtime-data-service';
+import { createActivityId } from '../lib/document-id-utils';
+import { AuthProvider } from '../lib/auth-context';
 
 // REAL-TIME FEED: Global Event System for Instant Updates
 class RealTimeFeedManager {
@@ -76,7 +79,7 @@ class RealTimeFeedManager {
   pushActivity(activity: Omit<ActivityFeedItem, 'id' | 'relativeTime'>) {
     const fullActivity: ActivityFeedItem = {
       ...activity,
-      id: `live_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: createActivityId(),
       relativeTime: 'just now'
     };
 
@@ -1808,18 +1811,46 @@ export default function FeedPage() {
     }
   }, []);
 
-  // Helper functions
-  const getRelativeTime = useCallback((timestamp: string): string => {
+  // Helper functions - Fixed to handle Firestore Timestamp objects
+  const getRelativeTime = useCallback((timestamp: any): string => {
     try {
       const now = new Date();
-      const time = new Date(timestamp);
+      let time: Date;
+      
+      // Handle Firestore Timestamp objects
+      if (timestamp && typeof timestamp === 'object' && timestamp.toDate) {
+        time = timestamp.toDate();
+      } 
+      // Handle Firestore Timestamp seconds/nanoseconds format
+      else if (timestamp && typeof timestamp === 'object' && timestamp.seconds) {
+        time = new Date(timestamp.seconds * 1000);
+      }
+      // Handle string timestamps
+      else if (typeof timestamp === 'string') {
+        time = new Date(timestamp);
+      }
+      // Handle number timestamps
+      else if (typeof timestamp === 'number') {
+        time = new Date(timestamp);
+      }
+      else {
+        console.warn('Invalid timestamp format:', timestamp);
+        return 'Unknown time';
+      }
+
+      if (isNaN(time.getTime())) {
+        console.warn('Invalid date from timestamp:', timestamp);
+        return 'Unknown time';
+      }
+
       const diffInSeconds = Math.floor((now.getTime() - time.getTime()) / 1000);
 
       if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
       if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
       if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
       return `${Math.floor(diffInSeconds / 86400)}d ago`;
-    } catch {
+    } catch (error) {
+      console.error('Error in getRelativeTime:', error, 'timestamp:', timestamp);
       return 'Unknown time';
     }
   }, []);
@@ -1874,24 +1905,45 @@ export default function FeedPage() {
         console.log('📊 Sample activity:', firebaseActivities[0]);
       }
       
-      // Convert Firebase activities to our format
-      const formattedActivities: ActivityFeedItem[] = firebaseActivities.map(activity => ({
-        id: activity.id,
-        type: activity.type,
-        username: activity.username,
-        opinionText: activity.opinionText,
-        opinionId: activity.opinionId,
-        amount: activity.amount,
-        price: activity.price,
-        quantity: activity.quantity,
-        targetUser: activity.targetUser,
-        betType: activity.betType,
-        targetPercentage: activity.targetPercentage,
-        timeframe: activity.timeframe,
-        timestamp: activity.timestamp,
-        relativeTime: getRelativeTime(activity.timestamp),
-        isBot: activity.isBot
-      }));
+      // Convert Firebase activities to our format - Fixed timestamp handling
+      const formattedActivities: ActivityFeedItem[] = firebaseActivities.map(activity => {
+        // Ensure timestamp is properly converted to string for storage
+        let timestampString: string;
+        try {
+          if (activity.timestamp && typeof activity.timestamp === 'object' && activity.timestamp.toDate) {
+            timestampString = activity.timestamp.toDate().toISOString();
+          } else if (activity.timestamp && typeof activity.timestamp === 'object' && activity.timestamp.seconds) {
+            timestampString = new Date(activity.timestamp.seconds * 1000).toISOString();
+          } else if (typeof activity.timestamp === 'string') {
+            timestampString = activity.timestamp;
+          } else if (typeof activity.timestamp === 'number') {
+            timestampString = new Date(activity.timestamp).toISOString();
+          } else {
+            timestampString = new Date().toISOString();
+          }
+        } catch (error) {
+          console.error('Error converting timestamp:', error, activity.timestamp);
+          timestampString = new Date().toISOString();
+        }
+
+        return {
+          id: activity.id || 'unknown',
+          type: activity.type || 'unknown',
+          username: activity.username || 'Unknown User',
+          opinionText: activity.opinionText,
+          opinionId: activity.opinionId,
+          amount: typeof activity.amount === 'number' ? activity.amount : 0,
+          price: activity.price,
+          quantity: activity.quantity,
+          targetUser: activity.targetUser,
+          betType: activity.betType,
+          targetPercentage: activity.targetPercentage,
+          timeframe: activity.timeframe,
+          timestamp: timestampString,
+          relativeTime: getRelativeTime(activity.timestamp), // Use original timestamp for calculation
+          isBot: !!activity.isBot
+        };
+      });
       
       console.log(`✅ Formatted ${formattedActivities.length} activities for display`);
       setActivityFeed(formattedActivities);
@@ -2090,28 +2142,7 @@ export default function FeedPage() {
           </div>
 
           {/* Navigation Buttons */}
-          <div className="navigation-buttons" style={{
-            display: 'flex',
-            gap: '0px',
-            flexWrap: 'wrap',
-            padding: '24px 0',
-            justifyContent: 'flex-start',
-            alignItems: 'center'
-          }}>
-            <a href="/users" className="nav-button">
-              <ScanSmiley size={24} /> View Traders
-            </a>
-            <button className="nav-button">
-              <Rss size={24} /> Live Feed
-            </button>
-            <a href="/generate" className="nav-button">
-              <Balloon size={24} /> Generate Opinion
-            </a>
-            <a href="/profile" className="nav-button">
-              <Wallet size={24} /> My Portfolio
-            </a>
-            <AuthButton />
-          </div>
+          <Navigation currentPage="feed" />
         </div>
 
         {/* Loading Status */}

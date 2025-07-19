@@ -41,11 +41,36 @@ function Sidebar() {
     const unsubscribe = onSnapshot(q, (snap) => {
       const docs: OpinionDoc[] = snap.docs.map((d) => {
         const data = d.data();
-        const ts = data.createdAt as Timestamp | undefined;
+        const ts = data.createdAt;
+        
+        // Handle different timestamp formats from Firestore
+        let createdAtMs: number;
+        try {
+          if (ts && typeof ts === 'object' && ts.toDate) {
+            // Firestore Timestamp with toDate() method
+            createdAtMs = ts.toDate().getTime();
+          } else if (ts && typeof ts === 'object' && ts.seconds) {
+            // Firestore Timestamp with seconds/nanoseconds
+            createdAtMs = ts.seconds * 1000;
+          } else if (typeof ts === 'string') {
+            // ISO string timestamp
+            createdAtMs = new Date(ts).getTime();
+          } else if (typeof ts === 'number') {
+            // Already a timestamp
+            createdAtMs = ts;
+          } else {
+            // Fallback to current time
+            createdAtMs = Date.now();
+          }
+        } catch (error) {
+          console.error('Error converting timestamp in Sidebar:', error, ts);
+          createdAtMs = Date.now();
+        }
+        
         return {
           id: d.id,
           text: data.text ?? '',
-          createdAt: ts ? ts.toMillis() : Date.now(),
+          createdAt: createdAtMs,
           source: data.source as 'ai' | 'user' | 'bot_generated',
         };
       });

@@ -23,9 +23,9 @@ import {
   UnifiedTransactionManager,
   type UnifiedOpinionMarketData,
   type UnifiedTransaction,
-} from '@/lib/unified-system';
+} from '../lib/unified-system';
 
-import { firebaseConfig } from '@/lib/firebase-config';
+import { firebaseConfig } from '../lib/firebase-config';
 
 // -----------------------------------------------------------------------------
 // 🔥 Firestore helpers
@@ -33,7 +33,7 @@ import { firebaseConfig } from '@/lib/firebase-config';
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
-const colBots = collection(db, 'bots');              // ⇢ /bots/{botId}
+const colBots = collection(db, 'autonomous-bots');   // ⇢ /autonomous-bots/{botId}
 const colBotPortfolios = collection(db, 'bot-portfolios'); // ⇢ /bot-portfolios/{botId}/{holdingId}
 const colBotTransactions = collection(db, 'bot-transactions');
 

@@ -4,6 +4,7 @@
 
 import { doc, writeBatch, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, collection, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
+import { createMarketDataDocId } from './document-id-utils';
 
 // Portfolio item structure
 export interface PortfolioItem {
@@ -174,7 +175,7 @@ export async function migrateUserPortfolio(userId: string): Promise<void> {
       
       // Create portfolio item
       const item: PortfolioItem = {
-        opinionId: btoa(opinionText).replace(/[^a-zA-Z0-9]/g, '').slice(0, 100),
+        opinionId: createMarketDataDocId(opinionText),
         opinionText,
         quantity,
         totalCost: quantity * 10, // Assume $10 base price for migrated items

@@ -46,6 +46,7 @@ import LeaderboardCard from "./components/LeaderboardCard"; // (extract‑ed)
 import UserDetailModal from "../components/UserDetailModal"; // (extract‑ed)
 import AuthGuard from "../components/AuthGuard";
 import ActivityIntegration from "../components/ActivityIntegration";
+import Navigation from "../components/Navigation";
 import { publicLeaderboardService } from "../lib/public-leaderboard";
 import styles from "./page.module.css";
 
@@ -152,8 +153,6 @@ function useCollection<T = any>(ref: CollectionReference, deps: any[] = []) {
   return docs;
 }
 
-
-
 /* ── Main Page component ────────────────────────────────────────────────── */
 export default function UsersPage() {
   const { user, userProfile } = useAuth();
@@ -163,8 +162,29 @@ export default function UsersPage() {
   const users = useCollection<UserDoc>(collection(db, "users"));
   const portfolios = useCollection<PortfolioDoc>(collection(db, "user-portfolios"));
   const botPortfolios = useCollection<BotPortfolioDoc>(collection(db, "bot-portfolios"));
-  const marketData = useCollection<{ opinionText: string } & OpinionPrice>(collection(db, "market-data"));
   const bets = useCollection<BetDoc>(collection(db, "advanced-bets"));
+
+  // 🔄 FIX 4: Market Data Sync - Load realtime market data using same service as profile
+  const [marketData, setMarketData] = useState<Record<string, any>>({});
+  const [marketDataLoaded, setMarketDataLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadMarketData = async () => {
+      try {
+        console.log('📈 Loading market data...');
+        const data = await realtimeDataService.getMarketData();
+        setMarketData(data);
+        setMarketDataLoaded(true);
+        console.log('✅ Market data loaded:', Object.keys(data).length, 'opinions');
+      } catch (error) {
+        console.error('❌ Failed to load market data:', error);
+        setMarketData({});
+        setMarketDataLoaded(true);
+      }
+    };
+
+    loadMarketData();
+  }, []);
 
   // Fetch bots from the specific document path
   const [bots, setBots] = useState<BotDoc[]>([]);
@@ -172,110 +192,49 @@ export default function UsersPage() {
     useEffect(() => {
     const findAndLoadBots = async () => {
       try {
-        console.log("🔍 Searching for bots in autonomous-bots collection...");
+        console.log("🔍 Loading bots from autonomous-bots collection...");
         
-        // First, let's try to find the autonomous-bots collection
         const autonomousBotsRef = collection(db, "autonomous-bots");
         const autonomousBotsSnap = await getDocs(autonomousBotsRef);
         
-        console.log(`📁 Found ${autonomousBotsSnap.size} documents in autonomous-bots collection`);
+        console.log(`📁 Found ${autonomousBotsSnap.size} bot documents in autonomous-bots collection`);
         
         if (autonomousBotsSnap.empty) {
-          console.log("❌ No documents found in autonomous-bots collection");
+          console.log("❌ No bot documents found in autonomous-bots collection");
           setBots([]);
           return;
         }
         
         let botsList: BotDoc[] = [];
         
-        // Try each document in autonomous-bots
+        // Load each bot document directly
         for (const docSnap of autonomousBotsSnap.docs) {
-          console.log(`📄 Checking document: ${docSnap.id}`);
+          const botData = docSnap.data();
           
-          // Check if this document has a 'bots' subcollection
-          const botsSubRef = collection(docSnap.ref, "bots");
-          const botsSubSnap = await getDocs(botsSubRef);
-          
-          if (!botsSubSnap.empty) {
-            console.log(`🎯 Found bots subcollection in ${docSnap.id} with ${botsSubSnap.size} documents`);
+          // Validate that this is a bot document
+          if (botData && (botData.id || botData.username || botData.balance !== undefined)) {
+            const displayName = botData.personality?.name || botData.username || `Bot_${docSnap.id}`;
             
-            // Check each document in the bots subcollection
-            for (const botDocSnap of botsSubSnap.docs) {
-              console.log(`🤖 Checking bot document: ${botDocSnap.id}`);
-              const botData = botDocSnap.data();
-              console.log(`📊 Bot document data:`, botData);
-              
-              // Extract all bot objects from this document
-              Object.entries(botData).forEach(([key, value]: [string, any]) => {
-                // Check if this field looks like a bot object
-                if (typeof value === 'object' && value !== null && 
-                    (key.startsWith('bot_') || 
-                     (value.id && value.balance !== undefined) || 
-                     (value.personality && typeof value.personality === 'object'))) {
-                  
-                  const bot = value;
-                  const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
-                  
-                  console.log(`✅ Found bot: ${key}`, bot);
-                  
-                  botsList.push({
-                    id: bot.id || key,
-                    username: displayName,
-                    balance: bot.balance || 0,
-                    joinDate: bot.joinDate || new Date().toISOString(),
-                    totalEarnings: bot.totalEarnings || 0,
-                    totalLosses: bot.totalLosses || 0,
-                    personality: bot.personality || {
-                      description: "A trading bot",
-                      activityFrequency: 100,
-                      betProbability: 0.5,
-                      buyProbability: 0.5
-                    },
-                    riskTolerance: bot.riskTolerance || 'moderate',
-                    tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
-                    lastActive: bot.lastActive || new Date().toISOString(),
-                    isActive: bot.isActive !== undefined ? bot.isActive : true,
-                    ...bot
-                  });
-                }
-              });
-            }
-          }
-          
-          // Also check if the document itself contains bot data
-          const docData = docSnap.data();
-          if (docData && typeof docData === 'object') {
-            Object.entries(docData).forEach(([key, value]: [string, any]) => {
-              if (typeof value === 'object' && value !== null && 
-                  (key.startsWith('bot_') || 
-                   (value.id && value.balance !== undefined) || 
-                   (value.personality && typeof value.personality === 'object'))) {
-                
-                const bot = value;
-                const displayName = bot.personality?.name || bot.username || `Bot_${bot.id || key}`;
-                
-                console.log(`✅ Found bot in main document: ${key}`, bot);
-                
-                botsList.push({
-                  id: bot.id || key,
-                  username: displayName,
-                  balance: bot.balance || 0,
-                  joinDate: bot.joinDate || new Date().toISOString(),
-                  totalEarnings: bot.totalEarnings || 0,
-                  totalLosses: bot.totalLosses || 0,
-                  personality: bot.personality || {
-                    description: "A trading bot",
-                    activityFrequency: 100,
-                    betProbability: 0.5,
-                    buyProbability: 0.5
-                  },
-                  riskTolerance: bot.riskTolerance || 'moderate',
-                  tradingStrategy: bot.tradingStrategy || { type: 'balanced' },
-                  lastActive: bot.lastActive || new Date().toISOString(),
-                  isActive: bot.isActive !== undefined ? bot.isActive : true,
-                  ...bot
-                });
-              }
+            console.log(`✅ Found bot: ${docSnap.id} - ${displayName}`);
+            
+            botsList.push({
+              id: botData.id || docSnap.id,
+              username: displayName,
+              balance: botData.balance || 0,
+              joinDate: botData.joinDate || new Date().toISOString(),
+              totalEarnings: botData.totalEarnings || 0,
+              totalLosses: botData.totalLosses || 0,
+              personality: botData.personality || {
+                description: "A trading bot",
+                activityFrequency: 100,
+                betProbability: 0.5,
+                buyProbability: 0.5
+              },
+              riskTolerance: botData.riskTolerance || 'moderate',
+              tradingStrategy: botData.tradingStrategy || { type: 'balanced' },
+              lastActive: botData.lastActive || new Date().toISOString(),
+              isActive: botData.isActive !== undefined ? botData.isActive : true,
+              ...botData
             });
           }
         }
@@ -295,13 +254,6 @@ export default function UsersPage() {
   /* 2️⃣  Sorting state */
   const [sortBy, setSortBy] = useState<SortOption>('portfolio');
   const [lastUpdated, setLastUpdated] = useState<string>('');
-
-  /* 3️⃣  Derived helpers */
-  const priceMap = useMemo(() => {
-    const m = new Map<string, OpinionPrice>();
-    marketData.forEach((d) => m.set(d.opinionText, d));
-    return m;
-  }, [marketData]);
 
   // State for leaderboard and opinion text mapping
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -358,51 +310,154 @@ export default function UsersPage() {
     return ''; // Return empty string instead of null to avoid type errors
   };
 
+  // 🔄 FIX 2: Enhanced Portfolio Loading - Process user portfolios with migration support
+  const processUserPortfolio = async (userId: string, userData: any) => {
+    try {
+      // 🔄 FIX 1: Synced Data Sources - Use same data fetching approach as profile page
+      // Get full user profile data (not just basic user document)
+      const fullUserProfile = await realtimeDataService.getUserProfile(userId);
+      
+      let portfolio: Portfolio;
+      
+      // 🔄 FIX 3: Detailed Logging - Special logging for current user
+      if (user?.uid === userId) {
+        console.log('📊 CURRENT USER PORTFOLIO LOADING:', {
+          userId,
+          username: fullUserProfile?.username || userData.username,
+          hasPortfolioV2: !!fullUserProfile?.portfolioV2,
+          hasOldPortfolio: !!fullUserProfile?.portfolio,
+          fullUserProfile: fullUserProfile
+        });
+      }
+      
+      try {
+        portfolio = await getUserPortfolio(userId);
+        
+        if (user?.uid === userId) {
+          console.log('✅ CURRENT USER PORTFOLIO LOADED:', {
+            itemsCount: portfolio.items.length,
+            totalValue: portfolio.totalValue,
+            totalCost: portfolio.totalCost,
+            items: portfolio.items.map(item => ({
+              opinionText: item.opinionText,
+              quantity: item.quantity,
+              averagePrice: item.averagePrice
+            }))
+          });
+        }
+      } catch (error) {
+        console.warn('Failed to load new portfolio, trying migration...');
+        await migrateUserPortfolio(userId);
+        portfolio = await getUserPortfolio(userId);
+        
+        if (user?.uid === userId) {
+          console.log('🔄 CURRENT USER PORTFOLIO MIGRATED:', {
+            itemsCount: portfolio.items.length,
+            totalValue: portfolio.totalValue,
+            totalCost: portfolio.totalCost
+          });
+        }
+      }
+      
+      // If no items in new portfolio but old portfolio exists, migrate
+      if (portfolio.items.length === 0 && fullUserProfile?.portfolio) {
+        console.log('🔄 Migrating portfolio data...');
+        await migrateUserPortfolio(userId);
+        portfolio = await getUserPortfolio(userId);
+        
+        if (user?.uid === userId) {
+          console.log('🔄 CURRENT USER PORTFOLIO AFTER MIGRATION:', {
+            itemsCount: portfolio.items.length,
+            totalValue: portfolio.totalValue,
+            totalCost: portfolio.totalCost
+          });
+        }
+      }
+      
+      // 🔄 FIX 5: Data Validation - Filter out invalid portfolio items before calculations
+      const validItems = [];
+      for (const item of portfolio.items) {
+        if (!item.opinionText || 
+            typeof item.opinionText !== 'string' || 
+            !item.opinionText.trim() ||
+            item.opinionText === 'Unknown Opinion' ||
+            item.opinionText === 'Opinion (Unknown)' ||
+            item.opinionText.startsWith('Opinion (')) {
+          console.warn('Skipping invalid portfolio item:', item);
+          continue;
+        }
+        validItems.push(item);
+      }
+      
+      // Transform portfolio items to the expected format using market data
+      const transformedOpinions = validItems.map(item => ({
+        id: item.opinionId,
+        text: item.opinionText,
+        purchasePrice: item.averagePrice,
+        currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+        purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+        quantity: item.quantity,
+      }));
+      
+      if (user?.uid === userId) {
+        console.log('📊 CURRENT USER FINAL PORTFOLIO:', {
+          validItemsCount: validItems.length,
+          transformedOpinions: transformedOpinions.length,
+          marketDataAvailable: !!marketData[validItems[0]?.opinionText],
+          sampleMarketData: validItems.slice(0, 2).map(item => ({
+            opinionText: item.opinionText,
+            marketPrice: marketData[item.opinionText]?.currentPrice,
+            averagePrice: item.averagePrice,
+            finalPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice
+          })),
+          transformedItems: transformedOpinions.map(op => ({
+            text: op.text,
+            quantity: op.quantity,
+            purchasePrice: op.purchasePrice,
+            currentPrice: op.currentPrice,
+            value: op.currentPrice * op.quantity
+          }))
+        });
+      }
+      
+      return transformedOpinions;
+      
+    } catch (error) {
+      console.error('Error processing user portfolio:', error);
+      return [];
+    }
+  };
+
   // Calculate leaderboard
   useEffect(() => {
+    // 🔄 FIX 4: Market Data Sync - Wait for market data before calculating leaderboard
+    if (!marketDataLoaded) return;
+    
     const calculateLeaderboard = async () => {
       // Process regular users
       const regularUsers: LeaderboardEntry[] = await Promise.all(users.map(async (u) => {
         const pf = portfolios.find((p) => p.userId === u.id);
         const userBets = bets.filter((b) => b.userId === u.id);
         
-        // Create default portfolio data for users without portfolios
-        const defaultPortfolio = {
-          userId: u.id,
-          ownedOpinions: [],
-          shortExposure: 0,
-          betExposure: 0,
-          snapshots: []
-        };
+        // 🔄 FIX 1: Synced Data Sources - Get full user profile data like profile page
+        const fullUserProfile = await realtimeDataService.getUserProfile(u.id);
         
-        const portfolio = pf || defaultPortfolio;
-        
-        // FIXED: Filter out holdings with invalid opinion text before calculations
-        const validOpinions = [];
-        for (const op of portfolio.ownedOpinions) {
-          if (!op.opinionText || 
-              typeof op.opinionText !== 'string' || 
-              !op.opinionText.trim() ||
-              op.opinionText === 'Unknown Opinion' ||
-              op.opinionText === 'Opinion (Unknown)' ||
-              op.opinionText.startsWith('Opinion (')) {
-            console.warn('Skipping invalid opinion:', op);
-            continue;
-          }
-          validOpinions.push(op);
+        // Handle case where full user profile is not available
+        if (!fullUserProfile) {
+          console.warn(`⚠️ Could not load full user profile for ${u.username} (${u.id})`);
         }
         
-        const value = validOpinions.reduce((sum, op) => {
-          const md = priceMap.get(op.opinionText);
-          return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
-        }, 0);
+        // 🔄 FIX 2: Enhanced Portfolio Loading - Process with migration support
+        const ownedOpinions = await processUserPortfolio(u.id, fullUserProfile || u);
         
-        const exposure = (portfolio.shortExposure || 0) + (portfolio.betExposure || 0);
+        const value = ownedOpinions.reduce((sum, op) => sum + op.currentPrice * op.quantity, 0);
+        
+        const exposure = (pf?.shortExposure || 0) + (pf?.betExposure || 0);
         const portfolioValue = value - exposure;
         
-        // Calculate performance
-        const previousValue = portfolio.snapshots && portfolio.snapshots.length > 0 
-          ? portfolio.snapshots[portfolio.snapshots.length - 1].value 
+        // Calculate performance using full user profile data
+        const previousValue = pf?.snapshots && pf.snapshots.length > 0 
+          ? pf.snapshots[pf.snapshots.length - 1].value 
           : portfolioValue;
         const performanceChange = portfolioValue - previousValue;
         const performancePercent = previousValue !== 0 ? (performanceChange / previousValue) * 100 : 0;
@@ -412,25 +467,25 @@ export default function UsersPage() {
                           exposure > portfolioValue * 0.2 ? 'Medium' : 'Low';
         
         // Get top holdings - only use valid opinions
-        const sortedOpinions = validOpinions
+        const sortedOpinions = ownedOpinions
           .sort((a, b) => {
-            const aValue = (priceMap.get(a.opinionText)?.currentPrice ?? a.purchasePrice) * a.quantity;
-            const bValue = (priceMap.get(b.opinionText)?.currentPrice ?? b.purchasePrice) * b.quantity;
+            const aValue = a.currentPrice * a.quantity;
+            const bValue = b.currentPrice * b.quantity;
             return bValue - aValue;
           })
           .slice(0, 2);
         
-        // FIXED: Process top holdings with better validation
+        // Process top holdings with better validation
         const topHoldings = [];
         for (const op of sortedOpinions) {
-          const opinionText = await getOpinionText(op.opinionId, op.opinionText);
+          const opinionText = await getOpinionText(op.id, op.text);
           
           // Skip if we couldn't resolve valid opinion text
           if (!opinionText) {
             continue;
           }
           
-          const currentPrice = priceMap.get(op.opinionText)?.currentPrice ?? op.purchasePrice;
+          const currentPrice = op.currentPrice;
           const value = currentPrice * op.quantity;
           const percentChange = op.purchasePrice > 0 ? ((currentPrice - op.purchasePrice) / op.purchasePrice) * 100 : 0;
           
@@ -444,18 +499,33 @@ export default function UsersPage() {
           });
         }
         
+        // 🔄 FIX 3: Detailed Logging - Special logging for current user
+        if (user?.uid === u.id) {
+          console.log('👤 CURRENT USER LEADERBOARD DATA:', {
+            userId: u.id,
+            username: fullUserProfile?.username || u.username,
+            balance: fullUserProfile?.balance,
+            totalEarnings: fullUserProfile?.totalEarnings,
+            totalLosses: fullUserProfile?.totalLosses,
+            portfolioValue: portfolioValue,
+            ownedOpinions: ownedOpinions.length,
+            topHoldings: topHoldings.length,
+            fullUserProfile: fullUserProfile
+          });
+        }
+        
         return {
           uid: u.id,
-          username: u.username,
-          joinDate: u.joinDate,
+          username: fullUserProfile?.username || u.username,
+          joinDate: fullUserProfile?.joinDate || u.joinDate,
           portfolioValue,
           exposure,
-          opinionsCount: validOpinions.length, // Use valid opinions count
+          opinionsCount: ownedOpinions.length,
           betsCount: userBets.length,
           performanceChange,
           performancePercent,
           volatility,
-          holdings: validOpinions.length, // Use valid opinions count
+          holdings: ownedOpinions.length,
           topHoldings,
           isBot: false
         };
@@ -474,7 +544,7 @@ export default function UsersPage() {
         
         const portfolio = botPf || defaultBotPortfolio;
         
-        // FIXED: Filter out holdings with invalid opinion text before calculations
+        // 🔄 FIX 5: Data Validation - Filter out holdings with invalid opinion text before calculations
         const validBotHoldings = [];
         for (const op of portfolio.holdings) {
           if (!op.opinionText || 
@@ -490,7 +560,7 @@ export default function UsersPage() {
         }
         
         const value = validBotHoldings.reduce((sum, op) => {
-          const md = priceMap.get(op.opinionText);
+          const md = marketData[op.opinionText];
           return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
         }, 0);
         
@@ -511,13 +581,13 @@ export default function UsersPage() {
         // Get top holdings (use existing opinionText for bots) - only use valid holdings
         const sortedBotOpinions = validBotHoldings
           .sort((a, b) => {
-            const aValue = (priceMap.get(a.opinionText)?.currentPrice ?? a.purchasePrice) * a.quantity;
-            const bValue = (priceMap.get(b.opinionText)?.currentPrice ?? b.purchasePrice) * b.quantity;
+            const aValue = (marketData[a.opinionText]?.currentPrice ?? a.purchasePrice) * a.quantity;
+            const bValue = (marketData[b.opinionText]?.currentPrice ?? b.purchasePrice) * b.quantity;
             return bValue - aValue;
           })
           .slice(0, 2);
         
-        // FIXED: Process bot top holdings with better validation
+        // Process bot top holdings with better validation
         const topHoldings = [];
         for (const op of sortedBotOpinions) {
           const opinionText = await getOpinionText(op.opinionId, op.opinionText);
@@ -527,7 +597,7 @@ export default function UsersPage() {
             continue;
           }
           
-          const currentPrice = priceMap.get(op.opinionText)?.currentPrice ?? op.purchasePrice;
+          const currentPrice = marketData[op.opinionText]?.currentPrice ?? op.purchasePrice;
           const value = currentPrice * op.quantity;
           const percentChange = op.purchasePrice > 0 ? ((currentPrice - op.purchasePrice) / op.purchasePrice) * 100 : 0;
           
@@ -547,12 +617,12 @@ export default function UsersPage() {
           joinDate: bot.joinDate,
           portfolioValue,
           exposure,
-          opinionsCount: validBotHoldings.length, // Use valid holdings count
+          opinionsCount: validBotHoldings.length,
           betsCount: botBets.length,
           performanceChange,
           performancePercent,
           volatility,
-          holdings: validBotHoldings.length, // Use valid holdings count
+          holdings: validBotHoldings.length,
           topHoldings,
           isBot: true
         };
@@ -581,21 +651,37 @@ export default function UsersPage() {
           sortedResults = results.sort((a, b) => b.portfolioValue - a.portfolioValue);
       }
       
-      // Debug logging
+      // 🔄 FIX 3: Detailed Logging - Debug logging with special focus on current user
       console.log('🔍 Leaderboard Debug:', {
         totalUsers: users.length,
         totalBots: bots.length,
         regularUsersProcessed: regularUsers.length,
         botUsersProcessed: botUsers.length,
         finalResults: sortedResults.length,
+        marketDataKeys: Object.keys(marketData).length,
         first10Results: sortedResults.slice(0, 10).map(r => ({ 
           username: r.username, 
           isBot: r.isBot, 
           portfolioValue: r.portfolioValue,
           opinionsCount: r.opinionsCount,
-          topHoldings: r.topHoldings.length
+          topHoldings: r.topHoldings.length,
+          isCurrentUser: r.uid === user?.uid
         }))
       });
+
+      // Special logging for current user
+      if (user?.uid) {
+        const currentUserEntry = sortedResults.find(r => r.uid === user.uid);
+        if (currentUserEntry) {
+          console.log('👤 CURRENT USER LEADERBOARD ENTRY:', {
+            username: currentUserEntry.username,
+            portfolioValue: currentUserEntry.portfolioValue,
+            opinionsCount: currentUserEntry.opinionsCount,
+            topHoldings: currentUserEntry.topHoldings,
+            rank: sortedResults.findIndex(r => r.uid === user.uid) + 1
+          });
+        }
+      }
       
       // Limit results to prevent performance issues (show top 100)
       const limitedResults = sortedResults.slice(0, 100);
@@ -619,7 +705,7 @@ export default function UsersPage() {
     if (users.length > 0 || bots.length > 0) {
       calculateLeaderboard();
     }
-  }, [users, bots, portfolios, botPortfolios, priceMap, bets, sortBy]);
+  }, [users, bots, portfolios, botPortfolios, marketData, marketDataLoaded, bets, sortBy, user?.uid]);
 
   /* 4️⃣  UI state */
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
@@ -681,20 +767,7 @@ export default function UsersPage() {
               <Eye size={24} weight="regular" />
               View Traders
             </h1>
-            <div className={styles.headerActions}>
-              <a href="/feed" className="nav-button">
-                <Rss size={20} weight="regular" />
-                Live Feed
-              </a>
-              <a href="/generate" className="nav-button">
-                <Balloon size={20} weight="regular" />
-                Generate
-              </a>
-              <a href="/profile" className="nav-button">
-                <ChartLine size={20} weight="regular" />
-                My Portfolio
-              </a>
-            </div>
+            <Navigation currentPage="users" />
           </nav>
 
           {/* Leaderboard Container */}
@@ -702,6 +775,7 @@ export default function UsersPage() {
             <h2 className={styles.leaderboardTitle}>Portfolio Leaderboard</h2>
             <div className={styles.leaderboardStats}>
               <p>👥 {users.length} users • 🤖 {bots.length} bots • Showing top {leaderboard.length} traders</p>
+              {!marketDataLoaded && <p>📈 Loading market data...</p>}
             </div>
             
             {/* Sort Controls */}
@@ -737,7 +811,7 @@ export default function UsersPage() {
             </div>
 
             {/* Leaderboard Grid */}
-            {users.length === 0 && bots.length === 0 ? (
+            {(users.length === 0 && bots.length === 0) || !marketDataLoaded ? (
               <p style={{ padding: 40 }}>Loading traders…</p>
             ) : (
               <div className={styles.leaderboardGrid}>
