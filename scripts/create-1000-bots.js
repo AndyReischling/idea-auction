@@ -258,4 +258,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { create1000Bots }; 
+module.exports = { create1000Bots };

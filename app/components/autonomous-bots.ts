@@ -99,9 +99,10 @@ class AutonomousBotSystem {
     console.log(`🤖 Bot system started with ${activeBots.length} active bots`);
 
     // spin each active bot on its own timer
+    // longer intervals keep UI responsive when thousands of bots run
     [...this.bots.values()].forEach(bot => {
       if (!bot.isActive) return;
-      const ms = 60_000 + Math.random() * 60_000; // 1‑2 min
+      const ms = 300_000 + Math.random() * 300_000; // 5‑10 min
       this.intervals[bot.id] = setInterval(() => this.tick(bot), ms);
     });
   }

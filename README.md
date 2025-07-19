@@ -104,6 +104,18 @@ This is a Next.js application that can be deployed to:
 3. Make your changes
 4. Submit a pull request
 
+## Bot Generation
+
+To repopulate Firestore with a large set of trading bots run:
+
+```bash
+node scripts/create-1000-bots.js
+```
+
+This script seeds 1,000 bots in the `autonomous-bots` collection.
+Their trades are logged to the same `transactions` and
+`activity-feed` collections used by normal users.
+
 ## License
 
 This project is licensed under the MIT License.
