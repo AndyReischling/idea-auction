@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* globals.css – Updated color palette 2024-06-29 */
 
 /* 1️⃣  Font import ---------------------------------------------------------- */
