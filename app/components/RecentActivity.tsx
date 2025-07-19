@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { FirebaseActivityService } from '../lib/firebase-activity';
 import type { LocalActivityItem } from '../lib/firebase-activity';
@@ -33,149 +33,306 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
         setLoading(true);
         
         if (userId) {
-          // Query both collections for user activities
-          const transactionsQuery = query(
-            collection(db, 'transactions'),
-            where('userId', '==', userId),
-            limit(100)
-          );
-
-          const activityFeedQuery = query(
-            collection(db, 'activity-feed'),
-            where('userId', '==', userId),
-            limit(100)
-          );
-
-          const [transactionsSnapshot, activityFeedSnapshot] = await Promise.all([
-            getDocs(transactionsQuery),
-            getDocs(activityFeedQuery)
-          ]);
-
+          // Set up real-time subscriptions for user activities
+          const unsubscriptions: (() => void)[] = [];
           const userActivities: LocalActivityItem[] = [];
 
-          // Process transactions
-          transactionsSnapshot.forEach((doc) => {
-            const data = doc.data();
-            userActivities.push({
-              id: `transactions-${doc.id}`,
-              type: data.type,
-              username: data.username || 'Anonymous',
-              opinionText: data.opinionText,
-              opinionId: data.opinionId,
-              amount: data.amount || 0,
-              price: data.price,
-              quantity: data.quantity,
-              targetUser: data.targetUser,
-              betType: data.betType,
-              targetPercentage: data.targetPercentage,
-              timeframe: data.timeframe,
-              timestamp: data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString(),
-              relativeTime: getRelativeTime(data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString()),
-              isBot: data.isBot || false
+          // REAL-TIME SUBSCRIPTION 1: User transactions
+          const transactionsQuery = query(
+            collection(db, 'transactions'),
+            where('userId', '==', userId),
+            limit(100)
+          );
+          const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+            const transactionActivities: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : (data.date || new Date().toISOString());
+              
+              let username = data.username || data.metadata?.username || 'Anonymous';
+              if (data.botId && username === 'Anonymous') {
+                username = `Bot_${data.botId}`;
+              }
+              
+              transactionActivities.push({
+                id: `transactions-${doc.id}`,
+                type: data.type,
+                username: username,
+                opinionText: data.opinionText,
+                opinionId: data.opinionId,
+                amount: data.amount || 0,
+                price: data.price || data.metadata?.price,
+                quantity: data.quantity || data.metadata?.quantity,
+                targetUser: data.targetUser || data.metadata?.targetUser,
+                betType: data.betType || data.metadata?.betType,
+                targetPercentage: data.targetPercentage || data.metadata?.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: data.isBot || !!data.botId
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('transactions-'));
+              const combined = [...transactionActivities, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
             });
           });
+          unsubscriptions.push(unsubscribeTransactions);
 
-          // Process activity feed
-          activityFeedSnapshot.forEach((doc) => {
-            const data = doc.data();
-            userActivities.push({
-              id: `activity-feed-${doc.id}`,
-              type: data.type || data.action || 'generate',
-              username: data.username || data.user || 'Anonymous',
-              opinionText: data.opinionText || data.text || data.description,
-              opinionId: data.opinionId,
-              amount: data.amount || data.value || 0,
-              price: data.price,
-              quantity: data.quantity,
-              targetUser: data.targetUser,
-              betType: data.betType,
-              targetPercentage: data.targetPercentage,
-              timeframe: data.timeframe,
-              timestamp: data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString(),
-              relativeTime: getRelativeTime(data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString()),
-              isBot: data.isBot || false
+          // REAL-TIME SUBSCRIPTION 2: Bot transactions
+          const botTransactionsQuery = query(
+            collection(db, 'transactions'),
+            where('botId', '==', userId),
+            limit(100)
+          );
+          const unsubscribeBotTransactions = onSnapshot(botTransactionsQuery, (snapshot) => {
+            const botTransactionActivities: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : (data.date || new Date().toISOString());
+              
+              let username = data.username || data.metadata?.username || `Bot_${data.botId}`;
+              
+              botTransactionActivities.push({
+                id: `bot-transactions-${doc.id}`,
+                type: data.type,
+                username: username,
+                opinionText: data.opinionText,
+                opinionId: data.opinionId,
+                amount: data.amount || 0,
+                price: data.price || data.metadata?.price,
+                quantity: data.quantity || data.metadata?.quantity,
+                targetUser: data.targetUser || data.metadata?.targetUser,
+                betType: data.betType || data.metadata?.betType,
+                targetPercentage: data.targetPercentage || data.metadata?.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: true
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-transactions-'));
+              const combined = [...botTransactionActivities, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
             });
           });
+          unsubscriptions.push(unsubscribeBotTransactions);
 
-          // Sort by timestamp (newest first) and take the most recent activities
-          userActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          setActivities(userActivities.slice(0, maxItems));
+          // REAL-TIME SUBSCRIPTION 3: Activity feed
+          const activityFeedQuery = query(
+            collection(db, 'activity-feed'),
+            where('userId', '==', userId),
+            limit(100)
+          );
+          const unsubscribeActivityFeed = onSnapshot(activityFeedQuery, (snapshot) => {
+            const activityFeedItems: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+              
+              let username = data.username || data.user || 'Anonymous';
+              if (data.botId && (username === 'Anonymous' || !username)) {
+                username = `Bot_${data.botId}`;
+              }
+              
+              activityFeedItems.push({
+                id: `activity-feed-${doc.id}`,
+                type: data.type || data.action || 'generate',
+                username: username,
+                opinionText: data.opinionText || data.text || data.description,
+                opinionId: data.opinionId,
+                amount: data.amount || data.value || 0,
+                price: data.price,
+                quantity: data.quantity,
+                targetUser: data.targetUser,
+                betType: data.betType,
+                targetPercentage: data.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: data.isBot || !!data.botId
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('activity-feed-'));
+              const combined = [...activityFeedItems, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
+            });
+          });
+          unsubscriptions.push(unsubscribeActivityFeed);
+
+          // REAL-TIME SUBSCRIPTION 4: Bot activity feed
+          const botActivityFeedQuery = query(
+            collection(db, 'activity-feed'),
+            where('botId', '==', userId),
+            limit(100)
+          );
+          const unsubscribeBotActivityFeed = onSnapshot(botActivityFeedQuery, (snapshot) => {
+            const botActivityFeedItems: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+              
+              let username = data.username || data.user || `Bot_${data.botId || doc.id}`;
+              
+              botActivityFeedItems.push({
+                id: `bot-activity-feed-${doc.id}`,
+                type: data.type || data.action || 'generate',
+                username: username,
+                opinionText: data.opinionText || data.text || data.description,
+                opinionId: data.opinionId,
+                amount: data.amount || data.value || 0,
+                price: data.price,
+                quantity: data.quantity,
+                targetUser: data.targetUser,
+                betType: data.betType,
+                targetPercentage: data.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: true
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-activity-feed-'));
+              const combined = [...botActivityFeedItems, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
+            });
+          });
+          unsubscriptions.push(unsubscribeBotActivityFeed);
+
+          console.log('🔄 Set up real-time activity subscriptions for user:', userId);
+          
+          // Return cleanup function for all subscriptions
+          return () => {
+            console.log('🧹 Cleaning up activity subscriptions');
+            unsubscriptions.forEach(unsub => unsub());
+          };
         } else {
-          // Get all recent activities from both collections
+          // Get all recent activities from both collections with real-time updates
+          const unsubscriptions: (() => void)[] = [];
+
+          // REAL-TIME SUBSCRIPTION: All transactions
           const transactionsQuery = query(
             collection(db, 'transactions'),
             limit(50)
           );
+          const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+            const transactionActivities: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+              transactionActivities.push({
+                id: `transactions-${doc.id}`,
+                type: data.type,
+                username: data.username || 'Anonymous',
+                opinionText: data.opinionText,
+                opinionId: data.opinionId,
+                amount: data.amount || 0,
+                price: data.price,
+                quantity: data.quantity,
+                targetUser: data.targetUser,
+                betType: data.betType,
+                targetPercentage: data.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: data.isBot || false
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('transactions-'));
+              const combined = [...transactionActivities, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
+            });
+          });
+          unsubscriptions.push(unsubscribeTransactions);
 
+          // REAL-TIME SUBSCRIPTION: All activity feed
           const activityFeedQuery = query(
             collection(db, 'activity-feed'),
             limit(50)
           );
-
-          const [transactionsSnapshot, activityFeedSnapshot] = await Promise.all([
-            getDocs(transactionsQuery),
-            getDocs(activityFeedQuery)
-          ]);
-
-          const allActivities: LocalActivityItem[] = [];
-
-          // Process transactions
-          transactionsSnapshot.forEach((doc) => {
-            const data = doc.data();
-            allActivities.push({
-              id: `transactions-${doc.id}`,
-              type: data.type,
-              username: data.username || 'Anonymous',
-              opinionText: data.opinionText,
-              opinionId: data.opinionId,
-              amount: data.amount || 0,
-              price: data.price,
-              quantity: data.quantity,
-              targetUser: data.targetUser,
-              betType: data.betType,
-              targetPercentage: data.targetPercentage,
-              timeframe: data.timeframe,
-              timestamp: data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString(),
-              relativeTime: getRelativeTime(data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString()),
-              isBot: data.isBot || false
+          const unsubscribeActivityFeed = onSnapshot(activityFeedQuery, (snapshot) => {
+            const activityFeedItems: LocalActivityItem[] = [];
+            snapshot.forEach((doc) => {
+              const data = doc.data();
+              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+              activityFeedItems.push({
+                id: `activity-feed-${doc.id}`,
+                type: data.type || data.action || 'generate',
+                username: data.username || data.user || 'Anonymous',
+                opinionText: data.opinionText || data.text || data.description,
+                opinionId: data.opinionId,
+                amount: data.amount || data.value || 0,
+                price: data.price,
+                quantity: data.quantity,
+                targetUser: data.targetUser,
+                betType: data.betType,
+                targetPercentage: data.targetPercentage,
+                timeframe: data.timeframe,
+                timestamp: timestamp,
+                relativeTime: getRelativeTime(timestamp),
+                isBot: data.isBot || false
+              });
+            });
+            
+            // Update state with combined activities
+            setActivities(prevActivities => {
+              const otherActivities = prevActivities.filter(a => !a.id.startsWith('activity-feed-'));
+              const combined = [...activityFeedItems, ...otherActivities];
+              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+              return combined.slice(0, maxItems);
             });
           });
+          unsubscriptions.push(unsubscribeActivityFeed);
 
-          // Process activity feed
-          activityFeedSnapshot.forEach((doc) => {
-            const data = doc.data();
-            allActivities.push({
-              id: `activity-feed-${doc.id}`,
-              type: data.type || data.action || 'generate',
-              username: data.username || data.user || 'Anonymous',
-              opinionText: data.opinionText || data.text || data.description,
-              opinionId: data.opinionId,
-              amount: data.amount || data.value || 0,
-              price: data.price,
-              quantity: data.quantity,
-              targetUser: data.targetUser,
-              betType: data.betType,
-              targetPercentage: data.targetPercentage,
-              timeframe: data.timeframe,
-              timestamp: data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString(),
-              relativeTime: getRelativeTime(data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString()),
-              isBot: data.isBot || false
-            });
-          });
-
-          // Sort by timestamp (newest first) and take the most recent activities
-          allActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          setActivities(allActivities.slice(0, maxItems));
+          console.log('🔄 Set up real-time activity subscriptions for all activities');
+          
+          // Return cleanup function for all subscriptions
+          return () => {
+            console.log('🧹 Cleaning up global activity subscriptions');
+            unsubscriptions.forEach(unsub => unsub());
+          };
         }
       } catch (err) {
-        console.error('Error loading activities:', err);
+        console.error('Error setting up activity subscriptions:', err);
         setError('Failed to load activities');
       } finally {
         setLoading(false);
       }
     };
 
-    loadActivities();
+    // Store cleanup function
+    let cleanup: (() => void) | undefined;
+    
+    loadActivities().then((cleanupFn) => {
+      cleanup = cleanupFn;
+    });
+
+    // Return cleanup function
+    return () => {
+      if (cleanup) {
+        cleanup();
+      }
+    };
   }, [userId, maxItems]);
 
   const getRelativeTime = (timestamp: string): string => {

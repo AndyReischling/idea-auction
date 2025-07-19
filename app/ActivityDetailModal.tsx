@@ -1224,7 +1224,7 @@ export default function ActivityDetailModal({
                            fontWeight: '700',
                            margin: '0',
                            color: targetUserProfile.pnlPercent >= 0 ? 'var(--green)' : 'var(--red)'
-                         }}>{targetUserProfile.pnlPercent >= 0 ? '+' : ''}{targetUserProfile.pnlPercent?.toFixed(1) || '0.0'}%</p>
+                         }}>{targetUserProfile.pnlPercent >= 0 ? '+' : ''}{targetUserProfile.pnlPercent?.toFixed(2) || '0.00'}%</p>
                        </div>
                        
                        <div>

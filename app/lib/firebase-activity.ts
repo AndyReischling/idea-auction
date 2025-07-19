@@ -55,18 +55,155 @@ export interface LocalActivityItem {
 export class FirebaseActivityService {
   private static instance: FirebaseActivityService;
   private activityCollection = collection(db, 'activity-feed');
+  private recentActivityHashes = new Set<string>();
+  private readonly DEDUP_WINDOW_MS = 5000; // 5 seconds - reduced from longer window
 
-  public static getInstance(): FirebaseActivityService {
+  private constructor() {
+    console.log('🔥 Firebase Activity Service initialized');
+  }
+
+  static getInstance(): FirebaseActivityService {
     if (!FirebaseActivityService.instance) {
       FirebaseActivityService.instance = new FirebaseActivityService();
     }
     return FirebaseActivityService.instance;
   }
 
-  // Add activity to Firebase
+  // Generate a stable hash for deduplication (excluding timestamp)
+  private generateActivityHash(activity: any): string {
+    // Create stable hash that doesn't change based on timing
+    const baseComponents = [
+      activity.type,
+      activity.username,
+      activity.amount,
+      activity.opinionId || activity.opinionText || 'no-opinion',
+      activity.targetUser || '',
+      activity.betType || '',
+      activity.isBot ? 'bot' : 'user'
+    ].join('-');
+    
+    return baseComponents;
+  }
+
+  // Clean old hashes to prevent memory leaks
+  private cleanupOldHashes(): void {
+    // Simple cleanup - clear all hashes periodically
+    if (this.recentActivityHashes.size > 100) {
+      this.recentActivityHashes.clear();
+      console.log('🧹 Cleared activity hash cache');
+    }
+  }
+
+  // Enhanced retry logic for network errors and race conditions
+  private async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delayMs: number = 1000
+  ): Promise<T> {
+    let lastError: any = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        
+        // Enhanced error extraction to prevent empty objects
+        let errorCode = 'unknown';
+        let errorMessage = 'Unknown error occurred';
+        
+        try {
+          if (error && typeof error === 'object') {
+            errorCode = (error as any).code || (error as any).status || 'object_error';
+            errorMessage = (error as any).message || JSON.stringify(error, null, 2);
+          } else if (error instanceof Error) {
+            errorCode = (error as any).code || 'error_instance';
+            errorMessage = error.message;
+          } else {
+            errorMessage = String(error);
+            errorCode = 'string_error';
+          }
+        } catch (parseError) {
+          errorMessage = 'Error occurred but could not be parsed';
+          errorCode = 'parse_error';
+        }
+        
+        console.log(`🔍 Retry attempt ${attempt} - Error details:`, {
+          errorCode,
+          errorMessage,
+          errorType: typeof error,
+          errorConstructor: error?.constructor?.name,
+        });
+
+        // Don't retry certain errors
+        if (errorCode === 'permission-denied' || 
+            errorCode === 'unauthenticated' || 
+            errorCode === 'invalid-argument' ||
+            attempt >= maxRetries) {
+          break;
+        }
+
+        // For race condition errors, add more delay and jitter
+        if (errorCode === 'already-exists' || errorMessage.includes('already exists')) {
+          console.log(`⏳ Race condition detected, adding jitter to retry ${attempt + 1}...`);
+          delayMs = delayMs * 2 + Math.random() * 1000; // Exponential backoff with jitter
+        }
+
+        // Wait before retrying
+        if (attempt < maxRetries) {
+          console.log(`⏳ Retrying operation in ${delayMs}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Exponential backoff
+      }
+    }
+    
+    // This should never be reached, but if it is, throw the last error
+    throw lastError || new Error('Retry logic completed without success or error');
+  }
+
+  // Add activity to Firebase with enhanced race condition handling
   async addActivity(activity: Omit<FirebaseActivityItem, 'id' | 'timestamp'>): Promise<void> {
     try {
-      console.log('🔥 Adding activity to Firebase:', activity.username, activity.type);
+      // Add small random delay for bot activities to reduce race conditions
+      if (activity.isBot) {
+        const delay = Math.random() * 100; // 0-100ms random delay
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      // Generate stable hash for deduplication
+      const activityHash = this.generateActivityHash(activity);
+      
+      // Check for duplicates with enhanced logging
+      if (this.recentActivityHashes.has(activityHash)) {
+        console.log('🔄 Skipping duplicate activity (hash match):', {
+          hash: activityHash.substring(0, 20) + '...',
+          username: activity.username,
+          type: activity.type,
+          amount: activity.amount
+        });
+        return;
+      }
+
+      console.log('🔥 Adding activity to Firebase:', {
+        username: activity.username,
+        type: activity.type,
+        amount: activity.amount,
+        isBot: activity.isBot || false,
+        hash: activityHash.substring(0, 20) + '...'
+      });
+      
+      // Add to deduplication set immediately
+      this.recentActivityHashes.add(activityHash);
+      
+      // Clean up old hashes periodically
+      this.cleanupOldHashes();
+
+      // Remove hash after time window to allow legitimate duplicates
+      setTimeout(() => {
+        this.recentActivityHashes.delete(activityHash);
+      }, this.DEDUP_WINDOW_MS);
       
       // Filter out undefined values that Firebase doesn't accept
       const cleanedActivity: any = {
@@ -74,6 +211,8 @@ export class FirebaseActivityService {
         username: activity.username,
         amount: Number(activity.amount) || 0,
         timestamp: serverTimestamp(),
+        // Add a unique identifier to prevent true duplicates
+        activityHash: activityHash.substring(0, 50), // Store first 50 chars of hash
       };
 
       // Only include defined fields (Firebase doesn't accept undefined values)
@@ -90,30 +229,83 @@ export class FirebaseActivityService {
       if (activity.botId) cleanedActivity.botId = String(activity.botId);
       if (activity.metadata && typeof activity.metadata === 'object') cleanedActivity.metadata = activity.metadata;
 
-      await addDoc(this.activityCollection, cleanedActivity);
-      console.log('✅ Activity added to Firebase successfully');
+      // Use retry logic with enhanced race condition handling
+      await this.retryOperation(async () => {
+        try {
+          await addDoc(this.activityCollection, cleanedActivity);
+        } catch (docError) {
+          // Handle specific Firestore errors
+          const errorCode = (docError as any)?.code;
+          const errorMessage = (docError as any)?.message || '';
+          
+          if (errorCode === 'already-exists' || errorMessage.includes('already exists')) {
+            console.warn('⚠️ Document collision detected, activity may already be logged');
+            // Don't throw error for race conditions - just log and continue
+            return;
+          }
+          
+          // Re-throw other errors for retry logic
+          throw docError;
+        }
+      });
+      
+      console.log('✅ Activity added to Firebase successfully:', {
+        username: activity.username,
+        type: activity.type,
+        hash: activityHash.substring(0, 20) + '...'
+      });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorCode = (error as any)?.code;
+      // Remove from deduplication cache if addition failed
+      const activityHash = this.generateActivityHash(activity);
+      this.recentActivityHashes.delete(activityHash);
+      
+      // Enhanced error logging without overwhelming output
+      let errorMessage = 'Unknown error occurred';
+      let errorCode = 'unknown';
+      
+      try {
+        if (error instanceof Error) {
+          errorMessage = error.message || 'Error instance with no message';
+          errorCode = (error as any)?.code || (error as any)?.status || 'error_instance';
+        } else if (error && typeof error === 'object') {
+          const keys = Object.keys(error);
+          errorMessage = (error as any).message || `Object with keys: ${keys.join(', ')}`;
+          errorCode = (error as any).code || (error as any).status || 'object_error';
+        } else {
+          errorMessage = String(error) || 'Falsy error value';
+          errorCode = 'primitive_error';
+        }
+      } catch (processingError) {
+        console.error('🚨 Error while processing error:', processingError);
+        errorMessage = 'Error processing failed';
+        errorCode = 'processing_error';
+      }
       
       console.error('❌ Error adding activity to Firebase:', {
         message: errorMessage,
         code: errorCode,
-        activity: `${activity.username} ${activity.type}`,
-        fullError: error
+        activity: `${activity?.username || 'unknown'} ${activity?.type || 'unknown'}`,
+        activityData: {
+          type: activity?.type,
+          username: activity?.username,
+          amount: activity?.amount,
+          isBot: activity?.isBot
+        },
+        timestamp: new Date().toISOString()
       });
       
       // Provide specific guidance based on error type
-      if (errorMessage.includes('permission') || errorMessage.includes('PERMISSION_DENIED')) {
-        console.error('🔒 FIREBASE PERMISSIONS ERROR: Firestore security rules are blocking writes');
-        console.error('🔧 FIX: Update Firestore security rules to allow authenticated users to write to activity-feed collection');
-      } else if (errorMessage.includes('auth') || errorCode === 'unauthenticated') {
-        console.error('🔑 AUTHENTICATION ERROR: User not authenticated for Firebase operations');
-      } else if (errorMessage.includes('network') || errorMessage.includes('offline')) {
-        console.error('🌐 NETWORK ERROR: Firebase is offline or unreachable');
+      if (errorMessage.includes('permission') || errorMessage.includes('PERMISSION_DENIED') || errorCode === 'permission-denied') {
+        console.error('🔒 FIREBASE PERMISSIONS ERROR: Firestore security rules are blocking writes to activity-feed');
+      } else if (errorMessage.includes('already exists') || errorCode === 'already-exists') {
+        console.warn('🔄 DUPLICATE ERROR: Document already exists - this is normal for high-frequency trading');
+      } else if (errorCode === 'invalid-argument') {
+        console.error('📝 DATA ERROR: Invalid data format being sent to Firebase');
       }
       
-      throw error;
+      // Don't re-throw the error to prevent app crashes, just log it
+      console.warn('🚨 Activity creation failed but continuing execution to prevent app crash');
+      return;
     }
   }
 
@@ -122,13 +314,17 @@ export class FirebaseActivityService {
     try {
       console.log(`🔥 Fetching ${limitCount} recent activities from Firebase...`);
       
-      // Simplified query without orderBy to avoid index requirement
+      // Use orderBy with timestamp for proper Firestore sorting (uses existing index)
       const q = query(
         this.activityCollection,
+        orderBy('timestamp', 'desc'),
         limit(limitCount)
       );
 
-      const querySnapshot = await getDocs(q);
+      // Use retry logic for fetching data
+      const querySnapshot = await this.retryOperation(async () => {
+        return await getDocs(q);
+      });
       const activities: LocalActivityItem[] = [];
 
       querySnapshot.forEach((doc) => {
@@ -136,15 +332,8 @@ export class FirebaseActivityService {
         activities.push(this.convertToLocalActivity(doc.id, data));
       });
 
-      // Sort manually by timestamp (newest first)
-      activities.sort((a, b) => {
-        const timeA = new Date(a.timestamp).getTime();
-        const timeB = new Date(b.timestamp).getTime();
-        return timeB - timeA; // Descending order (newest first)
-      });
-
       console.log(`✅ Fetched ${activities.length} activities from Firebase`);
-      return activities.slice(0, limitCount); // Apply limit after sorting
+      return activities; // No need to sort or slice - Firestore already did it
     } catch (error) {
       console.error('❌ Error fetching activities from Firebase:', error);
       throw error;
@@ -159,9 +348,10 @@ export class FirebaseActivityService {
   ): () => void {
     console.log(`🔥 Subscribing to real-time activity updates (limit: ${limitCount})`);
     
-    // Simplified query without orderBy to avoid index requirement
+    // Use orderBy with timestamp for proper Firestore sorting (uses existing index)
     const q = query(
       this.activityCollection,
+      orderBy('timestamp', 'desc'),
       limit(limitCount)
     );
 
@@ -174,15 +364,8 @@ export class FirebaseActivityService {
           activities.push(this.convertToLocalActivity(doc.id, data));
         });
 
-        // Sort manually by timestamp (newest first)
-        activities.sort((a, b) => {
-          const timeA = new Date(a.timestamp).getTime();
-          const timeB = new Date(b.timestamp).getTime();
-          return timeB - timeA; // Descending order (newest first)
-        });
-
         console.log(`🔄 Real-time update: ${activities.length} activities received`);
-        callback(activities.slice(0, limitCount)); // Apply limit after sorting
+        callback(activities); // No need to sort or slice - Firestore already did it
       },
       (error) => {
         console.error('❌ Error in activity subscription:', error);
@@ -257,6 +440,34 @@ export class FirebaseActivityService {
   }
 
   // Batch add activities (for migration or bulk operations)
+  // Health check method to test Firebase connection
+  async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy', details: any }> {
+    try {
+      const testQuery = query(this.activityCollection, limit(1));
+      await this.retryOperation(async () => {
+        await getDocs(testQuery);
+      });
+      
+      return {
+        status: 'healthy',
+        details: {
+          message: 'Firebase connection is working',
+          timestamp: new Date().toISOString(),
+          dedupCacheSize: this.recentActivityHashes.size
+        }
+      };
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        details: {
+          message: error instanceof Error ? error.message : String(error),
+          code: (error as any)?.code || 'unknown',
+          timestamp: new Date().toISOString()
+        }
+      };
+    }
+  }
+
   async addActivitiesBatch(activities: Omit<FirebaseActivityItem, 'id' | 'timestamp'>[]): Promise<void> {
     console.log(`🔥 Adding ${activities.length} activities to Firebase in batch...`);
     

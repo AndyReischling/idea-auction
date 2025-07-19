@@ -91,7 +91,7 @@ export default function LeaderboardCard({ rank, data, isMe, onClick, onNavigate 
             {formatCurrency(data.portfolioValue)}
           </div>
           <div className={`${styles.performanceChange} ${getPerformanceColor(data.performanceChange || 0)}`}>
-            +{formatCurrency(data.performanceChange || 0)}({data.performancePercent || 0}%)
+            +{formatCurrency(data.performanceChange || 0)}({(data.performancePercent || 0).toFixed(2)}%)
           </div>
           <div className={styles.exposure}>
             Exposure: {formatCurrency(data.exposure)}
@@ -104,7 +104,7 @@ export default function LeaderboardCard({ rank, data, isMe, onClick, onNavigate 
         <div className={styles.metricBox}>
           <div className={styles.metricLabel}>7-DAY PERFORMANCE</div>
           <div className={`${styles.metricValue} ${getPerformanceColor(data.performanceChange || 0)}`}>
-            +{(data.performancePercent || 0).toFixed(1)}%
+            +{(data.performancePercent || 0).toFixed(2)}%
           </div>
         </div>
         

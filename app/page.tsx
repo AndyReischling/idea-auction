@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 import AuthButton from './components/AuthButton';
 import AuthStatusIndicator from './components/AuthStatusIndicator';
 import Navigation from './components/Navigation';
+import ActivityIntegration from './components/ActivityIntegration';
 
 import { realtimeDataService } from './lib/realtime-data-service';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
@@ -120,7 +121,6 @@ export default function HomePage() {
   /* -------------------------- state --------------------------- */
   const [opinions, setOpinions] = useState<OpinionWithPrice[]>([]);
   const [featuredOpinions, setFeaturedOpinions] = useState<OpinionWithPrice[]>([]);
-  const [trendingOpinions, setTrendingOpinions] = useState<OpinionWithPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
@@ -168,12 +168,49 @@ export default function HomePage() {
 
   const calculatePriceTrend = (md: OpinionMarketData) => {
     const hist = md.priceHistory ?? [];
-    if (hist.length < 2) return { trend: 'neutral', priceChange: 0, priceChangePercent: 0 };
-    const prev = hist[hist.length - 2].price;
-    const change = md.currentPrice - prev;
-    const pct = (change / prev) * 100;
-    const trend: 'up' | 'down' | 'neutral' = change > 0.1 ? 'up' : change < -0.1 ? 'down' : 'neutral';
-    return { trend, priceChange: +change.toFixed(2), priceChangePercent: +pct.toFixed(2) };
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+    
+    // Calculate total gain from base price for overall performance
+    const basePrice = md.basePrice || 10.0;
+    const totalChange = md.currentPrice - basePrice;
+    const totalPct = (totalChange / basePrice) * 100;
+    
+    // Also calculate 24-hour change for trend detection
+    let priceFromYesterday = basePrice;
+    
+    if (hist.length > 0) {
+      // Find the closest price point to 24 hours ago
+      const validHistory = hist.filter(h => h.timestamp && h.price);
+      
+      if (validHistory.length > 0) {
+        // Find the price entry closest to 24 hours ago
+        let closestEntry = validHistory[0];
+        let closestTimeDiff = Math.abs(new Date(closestEntry.timestamp).getTime() - twentyFourHoursAgo.getTime());
+        
+        for (const entry of validHistory) {
+          const entryTime = new Date(entry.timestamp).getTime();
+          const timeDiff = Math.abs(entryTime - twentyFourHoursAgo.getTime());
+          
+          if (timeDiff < closestTimeDiff) {
+            closestTimeDiff = timeDiff;
+            closestEntry = entry;
+          }
+        }
+        
+        priceFromYesterday = closestEntry.price;
+      }
+    }
+    
+    // Use total change for display, but 24h change for trend direction
+    const recentChange = md.currentPrice - priceFromYesterday;
+    const trend: 'up' | 'down' | 'neutral' = recentChange > 0.1 ? 'up' : recentChange < -0.1 ? 'down' : 'neutral';
+    
+    return { 
+      trend, 
+      priceChange: +totalChange.toFixed(2), 
+      priceChangePercent: +totalPct.toFixed(2) 
+    };
   };
 
   const getOpinionAttribution = async (text: string) => {
@@ -231,7 +268,10 @@ export default function HomePage() {
       const botPf = botPortfolios.find((bp) => bp.botId === bot.id);
       const portfolio = botPf || { botId: bot.id, holdings: [] };
       
-      const value = portfolio.holdings.reduce((sum, op) => {
+      // Ensure holdings is an array before processing
+      const holdings = Array.isArray(portfolio.holdings) ? portfolio.holdings : [];
+      
+      const value = holdings.reduce((sum, op) => {
         const md = marketDataMap.get(op.opinionText);
         return sum + (md?.currentPrice ?? op.purchasePrice) * op.quantity;
       }, 0);
@@ -244,7 +284,7 @@ export default function HomePage() {
         joinDate: bot.joinDate,
         portfolioValue: value - exposure,
         exposure,
-        opinionsCount: portfolio.holdings.length,
+        opinionsCount: holdings.length,
         isBot: true,
       };
     });
@@ -378,27 +418,22 @@ export default function HomePage() {
         });
       }
 
-      const sorted = processed.sort((a, b) => b.createdAt - a.createdAt);
+      const sorted = processed.sort((a, b) => b.currentPrice - a.currentPrice);
       setOpinions(sorted);
       
-      // Featured opinions: always 2-4 opinions, prioritizing volume and price volatility
-      const qualifyingOpinions = sorted.filter(o => o.volume > 5 || Math.abs(o.priceChangePercent) > 10);
-      let featuredList = qualifyingOpinions.slice(0, 4); // Take up to 4 qualifying opinions
+      // Featured opinions: only show positive % increases, sorted by biggest increase
+      const positiveGainers = processed.filter(o => o.priceChangePercent > 0);
+      const sortedByPercentageIncrease = positiveGainers.sort((a, b) => b.priceChangePercent - a.priceChangePercent);
+      let featuredList = sortedByPercentageIncrease.slice(0, 4); // Take top 4 opinions with biggest % increase
       
-      // If we have less than 2, fill up to 2 with the next best opinions from the sorted list
+      // If we have less than 2 positive gainers, show the best available opinions
       if (featuredList.length < 2) {
         const remainingOpinions = sorted.filter(o => !featuredList.includes(o));
-        const additionalNeeded = 2 - featuredList.length;
+        const additionalNeeded = Math.min(2 - featuredList.length, remainingOpinions.length);
         featuredList = [...featuredList, ...remainingOpinions.slice(0, additionalNeeded)];
       }
       
       setFeaturedOpinions(featuredList);
-      setTrendingOpinions(
-        sorted
-          .filter(o => o.trend !== 'neutral')
-          .sort((a, b) => Math.abs(b.priceChangePercent) - Math.abs(a.priceChangePercent))
-          .slice(0, 5),
-      );
       setLastUpdateTime(new Date().toLocaleTimeString());
     } finally {
       setLoading(false);
@@ -515,7 +550,7 @@ export default function HomePage() {
    * UI helpers (unchanged apart from imports)
    * ----------------------------------------------------------------*/
   const handleOpinionClick = (op: OpinionWithPrice) => router.push(`/opinion/${op.id}`);
-  const formatPriceChange = (c: number, p: number) => `${c >= 0 ? '+' : ''}$${c.toFixed(2)} (${c >= 0 ? '+' : ''}${p.toFixed(1)}%)`;
+    const formatPriceChange = (c: number, p: number) => `${c >= 0 ? '+' : ''}$${c.toFixed(2)} (${c >= 0 ? '+' : ''}${p.toFixed(2)}%)`;
   const getTrendIcon = (t: 'up' | 'down' | 'neutral') =>
     t === 'up' ? <ChartLineUp size={16} style={{ color: 'var(--green)' }} /> : t === 'down' ? <ChartLineDown size={16} style={{ color: 'var(--red)' }} /> : <Minus size={16} style={{ color: 'var(--text-secondary)' }} />;
 
@@ -620,65 +655,7 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Trending Opinions */}
-        {trendingOpinions.length > 0 && (
-          <section className="section" style={{ 
-            marginLeft: 20, 
-            borderTop: '2px solid var(--border-primary)', 
-            paddingTop: '40px' 
-          }}>
-            <h2 className="section-title">Trending Opinions</h2>
-            <div className="grid grid-2" style={{ marginLeft: 20 }}>
-              {trendingOpinions.map((opinion) => (
-                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
-                  <div className="card-header">
-                    <div className="card-content" style={{ paddingRight: '100px' }}>
-                      <p className="card-title">
-                        {opinion.text.slice(0, 60)}...
-                      </p>
-                      <p className="card-subtitle">
-                        Vol: {opinion.volume} • {opinion.author}
-                      </p>
-                    </div>
-                  </div>
-                  <div style={{ 
-                    position: 'absolute', 
-                    top: '16px', 
-                    right: '16px',
-                    textAlign: 'right'
-                  }}>
-                    <p style={{ 
-                      color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
-                      fontFamily: 'var(--font-number)',
-                      fontWeight: '600',
-                      fontSize: 'var(--font-size-2xl)',
-                      margin: '0 0 4px 0'
-                    }}>
-                      ${opinion.currentPrice.toFixed(2)}
-                    </p>
-                    <div style={{ 
-                      width: '60px', 
-                      height: '1px', 
-                      backgroundColor: 'var(--border-primary)'
-                    }} />
-                  </div>
-                  <div style={{ 
-                    position: 'absolute', 
-                    bottom: '16px', 
-                    right: '16px',
-                    color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                    fontFamily: 'var(--font-number)',
-                    fontWeight: '500',
-                    fontSize: 'var(--font-size-sm)',
-                    textAlign: 'right'
-                  }}>
-                    {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+
 
         {/* Top Traders */}
         <section className="section" style={{ 
@@ -764,8 +741,8 @@ export default function HomePage() {
                               color: trader.portfolioValue >= 1000 ? 'var(--green)' : trader.portfolioValue < 0 ? 'var(--red)' : 'var(--text-secondary)'
                             }}>
                               {trader.portfolioValue >= 1000 ? '+' : ''}
-                              {trader.portfolioValue >= 1000 ? (((trader.portfolioValue - 1000) / 1000) * 100).toFixed(1) : 
-                               trader.portfolioValue < 0 ? (((trader.portfolioValue) / 1000) * 100).toFixed(1) : '0.0'}%
+                              {trader.portfolioValue >= 1000 ? (((trader.portfolioValue - 1000) / 1000) * 100).toFixed(2) : 
+                               trader.portfolioValue < 0 ? (((trader.portfolioValue) / 1000) * 100).toFixed(2) : '0.00'}%
                             </p>
                             <p style={{ 
                               margin: 0,
@@ -848,58 +825,101 @@ export default function HomePage() {
               <p>No opinions available yet. Check back soon!</p>
             </div>
           ) : (
-            <div className="grid grid-2" style={{ marginLeft: 20, marginRight: 20 }}>
-              {opinions.map((opinion) => (
-                <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
-                  <div className="card-header">
-                    <div className="card-content" style={{ paddingRight: '100px' }}>
-                      <p className="card-title">
-                        {opinion.text.slice(0, 100)}...
+            <>
+              <div className="grid grid-2" style={{ marginLeft: 20, marginRight: 20 }}>
+                {opinions.slice(0, 15).map((opinion) => (
+                  <div key={opinion.id} className="card" onClick={() => handleOpinionClick(opinion)}>
+                    <div className="card-header">
+                      <div className="card-content" style={{ paddingRight: '100px' }}>
+                        <p className="card-title">
+                          {opinion.text.slice(0, 100)}...
+                        </p>
+                        <p className="card-subtitle">
+                          Vol: {opinion.volume} • {opinion.author}
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ 
+                      position: 'absolute', 
+                      top: '16px', 
+                      right: '16px',
+                      textAlign: 'right'
+                    }}>
+                      <p style={{ 
+                        color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
+                        fontFamily: 'var(--font-number)',
+                        fontWeight: '600',
+                        fontSize: 'var(--font-size-2xl)',
+                        margin: '0 0 4px 0'
+                      }}>
+                        ${opinion.currentPrice.toFixed(2)}
                       </p>
-                      <p className="card-subtitle">
-                        Vol: {opinion.volume} • {opinion.author}
-                      </p>
+                      <div style={{ 
+                        width: '60px', 
+                        height: '1px', 
+                        backgroundColor: 'var(--border-primary)'
+                      }} />
+                    </div>
+                    <div style={{ 
+                      position: 'absolute', 
+                      bottom: '16px', 
+                      right: '16px',
+                      color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
+                      fontFamily: 'var(--font-number)',
+                      fontWeight: '500',
+                      fontSize: 'var(--font-size-sm)',
+                      textAlign: 'right'
+                    }}>
+                      {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
                     </div>
                   </div>
-                  <div style={{ 
-                    position: 'absolute', 
-                    top: '16px', 
-                    right: '16px',
-                    textAlign: 'right'
-                  }}>
-                    <p style={{ 
-                      color: opinion.currentPrice > 0 ? 'var(--green)' : 'var(--text-primary)',
-                      fontFamily: 'var(--font-number)',
-                      fontWeight: '600',
-                      fontSize: 'var(--font-size-2xl)',
-                      margin: '0 0 4px 0'
-                    }}>
-                      ${opinion.currentPrice.toFixed(2)}
-                    </p>
-                    <div style={{ 
-                      width: '60px', 
-                      height: '1px', 
-                      backgroundColor: 'var(--border-primary)'
-                    }} />
-                  </div>
-                  <div style={{ 
-                    position: 'absolute', 
-                    bottom: '16px', 
-                    right: '16px',
-                    color: opinion.priceChange >= 0 ? 'var(--green)' : 'var(--red)',
-                    fontFamily: 'var(--font-number)',
-                    fontWeight: '500',
-                    fontSize: 'var(--font-size-sm)',
-                    textAlign: 'right'
-                  }}>
-                    {formatPriceChange(opinion.priceChange, opinion.priceChangePercent)}
-                  </div>
+                ))}
+              </div>
+              
+              {/* Start Talking Button */}
+              {opinions.length > 15 && (
+                <div style={{ 
+                  marginTop: '40px', 
+                  marginLeft: 20, 
+                  marginRight: 20,
+                  display: 'flex', 
+                  justifyContent: 'center' 
+                }}>
+                  <button 
+                    onClick={() => user ? router.push('/generate') : setShowAuthModal(true)}
+                    style={{
+                      padding: '16px 48px',
+                      backgroundColor: 'white',
+                      border: '2px solid black',
+                      borderRadius: '16px',
+                      color: 'black',
+                      fontSize: 'var(--font-size-lg)',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                      minWidth: '200px'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.2)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                    }}
+                  >
+                    Start Talking
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
       </main>
+
+      {/* Activity Integration for real-time updates */}
+      <ActivityIntegration />
     </div>
   );
 }

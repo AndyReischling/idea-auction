@@ -30,6 +30,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import Sidebar from '../components/Sidebar';
 import '../global.css';
 import styles from './page.module.css';
@@ -45,12 +46,14 @@ import { DiceSix } from '@phosphor-icons/react';
 import { ChartLineDown } from '@phosphor-icons/react';
 import AuthButton from '../components/AuthButton';
 import Navigation from '../components/Navigation';
+import ActivityIntegration from '../components/ActivityIntegration';
 import { useAuth } from '../lib/auth-context';
 import { firebaseActivityService, LocalActivityItem } from '../lib/firebase-activity';
 import { dataReconciliationService } from '../lib/data-reconciliation';
 import { realtimeDataService } from '../lib/realtime-data-service';
 import { createActivityId } from '../lib/document-id-utils';
 import { AuthProvider } from '../lib/auth-context';
+import { db } from '../lib/firebase';
 
 // REAL-TIME FEED: Global Event System for Instant Updates
 class RealTimeFeedManager {
@@ -2061,12 +2064,81 @@ export default function FeedPage() {
     if (!isClient) return;
     
     realTimeFeedManager.current = RealTimeFeedManager.getInstance();
-    setLiveConnectionStatus('connected');
+    setLiveConnectionStatus('connecting');
+    
+    // Set up Firebase real-time subscription for activity-feed
+    console.log('🔥 Setting up Firebase real-time activity subscription...');
+    const activityQuery = query(
+      collection(db, 'activity-feed'),
+      orderBy('timestamp', 'desc'),
+      limit(200)
+    );
+    
+    const unsubscribe = onSnapshot(activityQuery, (snapshot) => {
+      console.log(`🔥 Firebase activity update: ${snapshot.size} activities received`);
+      const activities: ActivityFeedItem[] = [];
+      
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        try {
+          // Handle Firestore Timestamp objects properly
+          let timestampISO: string;
+          if (data.timestamp?.toDate) {
+            timestampISO = data.timestamp.toDate().toISOString();
+          } else if (data.timestamp) {
+            timestampISO = new Date(data.timestamp).toISOString();
+          } else {
+            timestampISO = new Date().toISOString();
+          }
+          
+          activities.push({
+            id: doc.id,
+            type: data.type,
+            username: data.username || 'Unknown',
+            opinionText: data.opinionText,
+            opinionId: data.opinionId,
+            amount: data.amount || 0,
+            price: data.price,
+            quantity: data.quantity,
+            targetUser: data.targetUser,
+            betType: data.betType,
+            targetPercentage: data.targetPercentage,
+            timeframe: data.timeframe,
+            timestamp: timestampISO,
+            relativeTime: getRelativeTime(timestampISO),
+            isBot: data.isBot || false
+          });
+        } catch (error) {
+          console.error('Error processing activity doc:', doc.id, error);
+        }
+      });
+      
+      console.log(`🔥 Live feed updated with ${activities.length} activities`);
+      setActivityFeed(activities);
+      setLiveConnectionStatus('connected');
+    }, (error) => {
+      console.error('🔥 Firebase activity subscription error:', error);
+      setLiveConnectionStatus('disconnected');
+      setFirebaseError('Real-time updates failed. Please refresh.');
+    });
+    
+    // Update relative timestamps every 30 seconds to keep times fresh
+    const timestampUpdateInterval = setInterval(() => {
+      setActivityFeed(currentFeed => 
+        currentFeed.map(activity => ({
+          ...activity,
+          relativeTime: getRelativeTime(activity.timestamp)
+        }))
+      );
+    }, 30000);
     
     return () => {
+      console.log('🔥 Cleaning up Firebase activity subscription');
+      unsubscribe();
+      clearInterval(timestampUpdateInterval);
       setLiveConnectionStatus('disconnected');
     };
-  }, [isClient]);
+  }, [isClient]); // Removed getRelativeTime from dependencies as it's memoized with useCallback
 
   if (!isClient) {
     return (
@@ -2462,6 +2534,15 @@ export default function FeedPage() {
           100% { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Activity Integration for real-time updates */}
+      <ActivityIntegration userProfile={authUserProfile ? {
+        username: authUserProfile.username,
+        balance: authUserProfile.balance,
+        totalEarnings: authUserProfile.totalEarnings,
+        totalLosses: authUserProfile.totalLosses,
+        joinDate: authUserProfile.joinDate instanceof Date ? authUserProfile.joinDate.toISOString() : authUserProfile.joinDate
+      } : undefined} />
     </div>
   );
 }

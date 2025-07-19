@@ -206,7 +206,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
       import('../components/GlobalActivityTracker').then((module) => {
         const tracker = module.default; // This is already the singleton instance
         tracker.initializeWithAuthContext();
-        tracker.updateCurrentUser(userProfile);
+        
+        // Convert userProfile to the format expected by GlobalActivityTracker
+        const userData = {
+          uid: userProfile.uid,
+          username: userProfile.username,
+          balance: userProfile.balance,
+          totalEarnings: userProfile.totalEarnings,
+          totalLosses: userProfile.totalLosses,
+          joinDate: userProfile.joinDate instanceof Date ? userProfile.joinDate : 
+                   ((userProfile.joinDate as any)?.toDate ? (userProfile.joinDate as any).toDate() : new Date(userProfile.joinDate as any)),
+          createdAt: userProfile.createdAt instanceof Date ? userProfile.createdAt : 
+                    ((userProfile.createdAt as any)?.toDate ? (userProfile.createdAt as any).toDate() : new Date(userProfile.createdAt || Date.now())),
+          updatedAt: userProfile.updatedAt instanceof Date ? userProfile.updatedAt : 
+                    ((userProfile.updatedAt as any)?.toDate ? (userProfile.updatedAt as any).toDate() : new Date(userProfile.updatedAt || Date.now()))
+        };
+        
+        console.log('🔧 Auth Context: Initializing GlobalActivityTracker with user data:', userData);
+        tracker.updateCurrentUser(userData);
+      }).catch(error => {
+        console.error('❌ Failed to initialize GlobalActivityTracker:', error);
       });
     }
   }, [user, userProfile, loading]);

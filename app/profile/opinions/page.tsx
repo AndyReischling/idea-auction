@@ -288,7 +288,7 @@ export default function OpinionsLogPage() {
                                 margin: '0',
                                 color: pct >= 0 ? 'var(--green)' : 'var(--red)',
                               }}>
-                                ({pct.toFixed(1)}%)
+                                ({pct.toFixed(2)}%)
                               </p>
                             </div>
                           </div>
@@ -387,7 +387,7 @@ export default function OpinionsLogPage() {
                                 fontSize: 'var(--font-size-xs)',
                                 opacity: 0.8,
                               }}>
-                                ({pct.toFixed(1)}%)
+                                ({pct.toFixed(2)}%)
                               </span>
                             </div>
                           </a>

@@ -544,9 +544,12 @@ export default function UsersPage() {
         
         const portfolio = botPf || defaultBotPortfolio;
         
-        // 🔄 FIX 5: Data Validation - Filter out holdings with invalid opinion text before calculations
+        // 🔄 FIX 5: Data Validation - Ensure holdings is an array before iteration
+        const holdings = Array.isArray(portfolio.holdings) ? portfolio.holdings : [];
+        
+        // Filter out holdings with invalid opinion text before calculations
         const validBotHoldings = [];
-        for (const op of portfolio.holdings) {
+        for (const op of holdings) {
           if (!op.opinionText || 
               typeof op.opinionText !== 'string' || 
               !op.opinionText.trim() ||

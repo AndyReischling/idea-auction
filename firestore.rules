@@ -6,8 +6,10 @@ service cloud.firestore {
     match /users/{userId} {
       // public read access for leaderboards, author names, and user profiles
       allow read: if true;
-      // only authenticated users can write their own profile
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // allow authenticated users to write their own profile OR allow bot system to create bot entries
+      allow write: if (request.auth != null && request.auth.uid == userId)
+        || (request.resource.data.keys().hasAny(['isBot', 'botId']))
+        || (resource.data.keys().hasAny(['isBot', 'botId']));
     }
 
     /* username registry for uniqueness checks */
@@ -33,7 +35,8 @@ service cloud.firestore {
 
     /* ───────────── TRANSACTIONS ───────────── */
     match /transactions/{transactionId} {
-      allow read: if request.auth != null; // authenticated users can read transactions
+      // Allow authenticated users to read transactions (for user profiles, activity feeds, etc.)
+      allow read: if request.auth != null;
       allow write: if request.auth != null // authenticated users can create transactions
         || (request.resource.data.isBot == true)
         || (request.resource.data.metadata.source in ['bot_system', 'unified-system', 'reconciliation']);
@@ -41,27 +44,26 @@ service cloud.firestore {
 
     /* ───────────── SHORT POSITIONS ───────────── */
     match /short-positions/{positionId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId
-        || (resource.data.botId != null);  // allow reading bot short positions
+      // Allow authenticated users to read short positions (for user profiles and leaderboard)
+      allow read: if request.auth != null;
       allow write: if (request.auth != null && request.auth.uid == resource.data.userId)
         || (request.resource.data.botId != null);  // allow bots to create short positions
     }
 
     /* ───────────── ADVANCED BETS ───────────── */
     match /advanced-bets/{betId} {
-      allow read: if request.auth != null // Allow authenticated users to read bets for leaderboard
-        || (resource.data.botId != null);  // allow reading bot bets
+      // Allow authenticated users to read bets (for leaderboard and user profiles)
+      allow read: if request.auth != null;
       allow write: if request.auth != null // Allow authenticated users to create/update bets
         || (request.resource.data.botId != null);  // allow bots to place bets
     }
 
     /* ───────────── USER PORTFOLIOS ───────────── */
     match /user-portfolios/{userId} {
-      allow read: if request.auth != null; // Allow authenticated users to read all portfolios for leaderboard
+      // Allow authenticated users to read all portfolios (for leaderboard and user profiles)
+      allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == userId; // Only allow writing to your own portfolio
     }
-
-
 
     /* ───────────── AUTONOMOUS BOTS ───────────── */
     match /autonomous-bots/{botId} {
@@ -71,8 +73,6 @@ service cloud.firestore {
         || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
     }
     
-
-
     /* ───────────── BOT PORTFOLIOS ───────────── */
     match /bot-portfolios/{botId} {
       allow read: if request.auth != null; // Allow authenticated users to read bot portfolios for leaderboard
@@ -91,7 +91,7 @@ service cloud.firestore {
 
     /* ───────────── ACTIVITY FEED ───────────── */
     match /activity-feed/{activityId} {
-      allow read:  if true;                // live ticker is publicly visible
+      allow read: if true;                // live ticker is publicly visible (allow queries by userId and botId)
 
       // authenticated users can write
       allow write: if request.auth != null

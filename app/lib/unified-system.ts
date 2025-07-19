@@ -199,16 +199,16 @@ class FSTransactionManager {
     const ref = doc(collection(db, "transactions"), tx.id);
     await setDoc(ref, { ...tx, timestamp: serverTimestamp() });
 
-    // Determine username: for bots, look up by botId, otherwise use userId
-    let username = tx.userId ?? "anon";
-    if (tx.botId && !tx.userId) {
-      // For bot transactions, look up the bot username
+    // Determine username: prefer metadata username, then look up by botId or userId
+    let username = tx.metadata?.username || tx.userId || "anon";
+    if (tx.botId && !tx.metadata?.username) {
+      // For bot transactions without username in metadata, look up the bot username
       try {
         const botDoc = await getDoc(doc(db, "autonomous-bots", tx.botId));
         if (botDoc.exists()) {
-          username = botDoc.data().username || `bot_${tx.botId}`;
+          username = botDoc.data().username || `Bot_${tx.botId}`;
         } else {
-          username = `bot_${tx.botId}`; // Fallback if bot not found
+          username = `Bot_${tx.botId}`; // Fallback if bot not found
         }
       } catch (error) {
         console.warn(`Failed to lookup bot username for ${tx.botId}:`, error);

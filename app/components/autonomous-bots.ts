@@ -14,6 +14,10 @@ import {
   updateDoc,
   writeBatch,
   Timestamp,
+  getDoc,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 
@@ -26,6 +30,7 @@ import {
 } from '../lib/unified-system';
 
 import { db } from '../lib/firebase';
+import { firebaseActivityService } from '../lib/firebase-activity';
 
 // -----------------------------------------------------------------------------
 // 🔥 Firestore helpers
@@ -68,16 +73,27 @@ class AutonomousBotSystem {
   // 🚀 Boot
   // ----------------------------------------------------------------------------
   constructor() {
-    this.bootstrap();
+    // Don't start immediately - let bootstrap complete first
+    this.bootstrap().catch(error => {
+      console.error('🤖 Bot system bootstrap failed:', error);
+    });
   }
 
   /** bootstrap – initial fetch + live listeners */
   private async bootstrap() {
-    // 1️⃣ prime from Firestore once
+    console.log('🤖 Loading bots from Firestore...');
+    
+    // 1️⃣ prime from Firestore once - WAIT for this to complete
     const snap = await getDocs(colBots);
     snap.forEach(d => this.bots.set(d.id, d.data() as BotProfile));
 
-    // 2️⃣ live updates – keep local cache fresh
+    console.log(`🤖 Loaded ${this.bots.size} bots from Firestore`);
+    console.log(`🤖 Active bots: ${this.getActiveBotCount()}`);
+
+    // 2️⃣ Ensure all bots have user entries for profile pages
+    await this.ensureBotUserEntries();
+
+    // 3️⃣ live updates – keep local cache fresh
     onSnapshot(colBots, qs => {
       qs.docChanges().forEach(c => {
         if (c.type === 'removed') this.bots.delete(c.doc.id);
@@ -85,8 +101,44 @@ class AutonomousBotSystem {
       });
     });
 
-    // 🏃‍♂️ start after cache is warm
-    this.start();
+    // 🏃‍♂️ start after cache is warm and we have bots loaded
+    if (this.bots.size > 0) {
+      this.start();
+    } else {
+      console.log('🤖 No bots found in database - bot system not started');
+    }
+  }
+
+  /** Ensure all bots have entries in the users collection for profile pages */
+  private async ensureBotUserEntries() {
+    console.log('🤖 Ensuring bot user entries exist...');
+    const usersCollection = collection(db, 'users');
+    
+    for (const [botId, bot] of this.bots) {
+      try {
+        // Check if user entry exists
+        const userDoc = await getDoc(doc(usersCollection, botId));
+        
+        if (!userDoc.exists()) {
+          // Create user entry for the bot
+          await setDoc(doc(usersCollection, botId), {
+            username: bot.username || `Bot_${botId}`,
+            balance: bot.balance || 50000,
+            joinDate: bot.joinDate || new Date().toISOString(),
+            totalEarnings: bot.totalEarnings || 0,
+            totalLosses: bot.totalLosses || 0,
+            isBot: true,
+            botId: botId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+          console.log(`🤖 Created user entry for bot: ${bot.username}`);
+        }
+      } catch (error) {
+        console.error(`🤖 Error ensuring user entry for bot ${bot.username}:`, error);
+      }
+    }
+    console.log('✅ Bot user entries verified');
   }
 
   // ----------------------------------------------------------------------------
@@ -99,10 +151,10 @@ class AutonomousBotSystem {
     console.log(`🤖 Bot system started with ${activeBots.length} active bots`);
 
     // spin each active bot on its own timer
-    // longer intervals keep UI responsive when thousands of bots run
+    // HIGH FREQUENCY: 30 seconds to 2 minute intervals for bot activity
     [...this.bots.values()].forEach(bot => {
       if (!bot.isActive) return;
-      const ms = 300_000 + Math.random() * 300_000; // 5‑10 min
+      const ms = 30_000 + Math.random() * 90_000; // 30 seconds to 2 minutes
       this.intervals[bot.id] = setInterval(() => this.tick(bot), ms);
     });
   }
@@ -121,6 +173,19 @@ class AutonomousBotSystem {
   }
 
   public startBots() {
+    // If bots haven't loaded yet, wait for them
+    if (this.bots.size === 0) {
+      console.log('🤖 Waiting for bots to load before starting...');
+      // Set a flag to auto-start once bots are loaded
+      // Bootstrap will handle starting once bots are ready
+      return;
+    }
+    
+    // If bots are loaded, restart the system to ensure they're active
+    if (this.isRunning) {
+      console.log('🤖 Restarting bot system with loaded bots...');
+      this.stop();
+    }
     this.start();
   }
 
@@ -162,15 +227,19 @@ class AutonomousBotSystem {
     try {
       // Determine activity frequency based on bot personality
       const activityChance = this.getBotActivityChance(bot);
-      if (Math.random() > activityChance) return;
+      if (Math.random() > activityChance) {
+        // Occasional debug logging to show ticks are happening
+        if (Math.random() < 0.001) { // Log 0.1% of tick attempts
+          console.log(`🤖 ${bot.username}: Tick (no action this time, ${(activityChance * 100).toFixed(0)}% chance)`);
+        }
+        return;
+      }
 
       // Choose what type of activity to perform
       const activityType = this.chooseActivityType(bot);
       
-      // Enhanced logging for debugging
-      if ((window as any).debugBots || Math.random() < 0.01) { // Log 1% of attempts or when debug enabled
-        console.log(`🤖 ${bot.username}: Attempting ${activityType} (balance: $${bot.balance.toFixed(2)})`);
-      }
+      // Enhanced logging for debugging - show all attempted activities
+      console.log(`🤖 ${bot.username}: Attempting ${activityType} (balance: $${bot.balance.toFixed(2)})`);
 
       switch (activityType) {
         case 'buy':
@@ -200,13 +269,13 @@ class AutonomousBotSystem {
   // 🎯 Determine bot activity preferences
   // ----------------------------------------------------------------------------
   private getBotActivityChance(bot: BotProfile): number {
-    // Base activity chance on username patterns for now
+    // HIGH ACTIVITY: Much higher chances for frequent bot actions
     if (bot.username.includes('Aggressive') || bot.username.includes('Quick') || bot.username.includes('Wild')) {
-      return 0.15; // 15% chance per tick
+      return 0.90; // 90% chance per tick
     } else if (bot.username.includes('Conservative') || bot.username.includes('Patient') || bot.username.includes('Calm')) {
-      return 0.05; // 5% chance per tick
+      return 0.70; // 70% chance per tick
     }
-    return 0.10; // 10% default chance
+    return 0.80; // 80% default chance
   }
 
   private chooseActivityType(bot: BotProfile): string {
@@ -285,22 +354,60 @@ class AutonomousBotSystem {
         lastActive: bot.lastActive,
       });
 
+      // SYNC FIX: Also update users collection for unified access
+      await setDoc(doc(db, 'users', bot.id), {
+        username: bot.username || `Bot_${bot.id}`,
+        balance: bot.balance,
+        joinDate: bot.joinDate || new Date().toISOString(),
+        totalEarnings: bot.totalEarnings || 0,
+        totalLosses: bot.totalLosses || 0,
+        isBot: true,
+        botId: bot.id,
+        lastActive: bot.lastActive
+      }, { merge: true });
+
       // Create and save transaction
       const transaction = this.txMgr.create('buy', -total, {
         opinionText: opinion.text,
         opinionId: opinion.id,
         botId: bot.id,
+        userId: bot.id, // Add userId to match activity queries
         metadata: { 
           source: 'bot_system', 
           version: '2.0',
           price: price,
-          quantity: qty 
+          quantity: qty,
+          username: bot.username || `Bot_${bot.id}` // Include username
         }
       });
       
       await this.txMgr.save(transaction);
 
-      console.log(`🤖 ${bot.username} bought ${qty}x "${opinion.text.slice(0, 30)}…" ($${total.toFixed(2)}) @ $${price}`);
+            console.log(`🤖 ${bot.username} bought ${qty}x "${opinion.text.slice(0, 30)}…" ($${total.toFixed(2)}) @ $${price}`);
+        
+      // Update bot total earnings for leaderboard calculations  
+      bot.totalEarnings = (bot.totalEarnings || 0);
+      await updateDoc(doc(colBots, bot.id), {
+        totalEarnings: bot.totalEarnings
+      });
+        
+      // Log to activity feed for live display - ensure username is valid
+      await firebaseActivityService.addActivity({
+        type: 'buy',
+        username: bot.username || `Bot_${bot.id}`,
+        userId: bot.id,
+        opinionText: opinion.text,
+        opinionId: opinion.id,
+        amount: total,
+        price: price,
+        quantity: qty,
+        isBot: true,
+        botId: bot.id,
+        metadata: {
+          source: 'bot_system',
+          activityType: 'purchase'
+        }
+      });
       
       // Update portfolio in bot-portfolios collection
       await setDoc(
@@ -315,6 +422,9 @@ class AutonomousBotSystem {
         },
         { merge: true }
       );
+
+      // Update consolidated bot portfolio
+      await this.updateBotPortfolio(bot.id);
 
     } catch (error) {
       console.error(`🤖 ${bot.username} trade error:`, error);
@@ -416,13 +526,38 @@ class AutonomousBotSystem {
       // Apply sell trade through unified system
       await this.market.applyTrade(position.opinionText, 'sell', position.qty, bot.id);
 
-      // Update bot balance
+      // Calculate profit/loss for this sale
+      const originalCost = position.purchasePrice * position.qty;
+      const profit = sellValue - originalCost;
+      
+      // Update bot balance and earnings
       bot.balance += sellValue;
       bot.lastActive = new Date().toISOString();
+      
+      if (profit > 0) {
+        bot.totalEarnings = (bot.totalEarnings || 0) + profit;
+      } else {
+        bot.totalLosses = (bot.totalLosses || 0) + Math.abs(profit);
+      }
+      
       await updateDoc(doc(colBots, bot.id), {
         balance: bot.balance,
         lastActive: bot.lastActive,
+        totalEarnings: bot.totalEarnings,
+        totalLosses: bot.totalLosses
       });
+
+      // SYNC FIX: Also update users collection for unified access
+      await setDoc(doc(db, 'users', bot.id), {
+        username: bot.username || `Bot_${bot.id}`,
+        balance: bot.balance,
+        joinDate: bot.joinDate || new Date().toISOString(),
+        totalEarnings: bot.totalEarnings || 0,
+        totalLosses: bot.totalLosses || 0,
+        isBot: true,
+        botId: bot.id,
+        lastActive: bot.lastActive
+      }, { merge: true });
 
       // Remove from portfolio
       await updateDoc(doc(colBotPortfolios, position.id), {
@@ -436,16 +571,39 @@ class AutonomousBotSystem {
         opinionText: position.opinionText,
         opinionId: position.opinionId,
         botId: bot.id,
+        userId: bot.id, // Add userId to match activity queries
         metadata: { 
           source: 'bot_system', 
           sellPrice: sellPrice,
-          quantity: position.qty
+          quantity: position.qty,
+          username: bot.username || `Bot_${bot.id}` // Include username
         }
       });
       
       await this.txMgr.save(transaction);
 
       console.log(`🤖 ${bot.username} sold ${position.qty}x "${position.opinionText.slice(0, 30)}…" for $${sellValue.toFixed(2)}`);
+      
+      // Update consolidated bot portfolio after sell
+      await this.updateBotPortfolio(bot.id);
+      
+      // Log to activity feed for live display
+      await firebaseActivityService.addActivity({
+        type: 'sell',
+        username: bot.username || `Bot_${bot.id}`,
+        userId: bot.id,
+        opinionText: position.opinionText,
+        opinionId: position.opinionId,
+        amount: sellValue,
+        price: sellPrice,
+        quantity: position.qty,
+        isBot: true,
+        botId: bot.id,
+        metadata: {
+          source: 'bot_system',
+          activityType: 'sale'
+        }
+      });
     } catch (error) {
       console.error(`🤖 ${bot.username} sell position error:`, error);
     }
@@ -482,21 +640,56 @@ class AutonomousBotSystem {
       bot.balance -= shortAmount;
       await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
 
+      // SYNC FIX: Also update users collection for unified access
+      await setDoc(doc(db, 'users', bot.id), {
+        username: bot.username || `Bot_${bot.id}`,
+        balance: bot.balance,
+        joinDate: bot.joinDate || new Date().toISOString(),
+        totalEarnings: bot.totalEarnings || 0,
+        totalLosses: bot.totalLosses || 0,
+        isBot: true,
+        botId: bot.id,
+        lastActive: new Date().toISOString()
+      }, { merge: true });
+
       // Create transaction
       const transaction = this.txMgr.create('short_place', -shortAmount, {
         opinionText: opinion.text,
         opinionId: opinion.id,
         botId: bot.id,
+        userId: bot.id, // Add userId to match activity queries
         metadata: { 
           source: 'bot_system',
           shortId: shortId,
-          startPrice: currentPrice
+          startPrice: currentPrice,
+          username: bot.username || `Bot_${bot.id}` // Include username
         }
       });
       
       await this.txMgr.save(transaction);
 
       console.log(`🤖 ${bot.username} shorted "${opinion.text.slice(0, 30)}…" for $${shortAmount.toFixed(2)}`);
+      
+      // SYNC FIX: Update bot portfolio after short position created
+      await this.updateBotPortfolio(bot.id);
+      
+      // Log to activity feed for live display
+      await firebaseActivityService.addActivity({
+        type: 'short_place',
+        username: bot.username || `Bot_${bot.id}`,
+        userId: bot.id,
+        opinionText: opinion.text,
+        opinionId: opinion.id,
+        amount: shortAmount,
+        price: currentPrice,
+        isBot: true,
+        botId: bot.id,
+        metadata: {
+          source: 'bot_system',
+          activityType: 'short_position',
+          targetDropPercentage: 20
+        }
+      });
     } catch (error) {
       console.error(`🤖 ${bot.username} short creation error:`, error);
     }
@@ -532,7 +725,7 @@ class AutonomousBotSystem {
       const betId = `${bot.id}_bet_${Date.now()}`;
       await setDoc(doc(db, 'advanced-bets', betId), {
         botId: bot.id,
-        botUsername: bot.username,
+        botUsername: bot.username || `Bot_${bot.id}`,
         targetUser: targetUsername,
         betType: betType,
         targetPercentage: Math.round(targetPercentage),
@@ -546,21 +739,56 @@ class AutonomousBotSystem {
       bot.balance -= betAmount;
       await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
 
+      // SYNC FIX: Also update users collection for unified access
+      await setDoc(doc(db, 'users', bot.id), {
+        username: bot.username || `Bot_${bot.id}`,
+        balance: bot.balance,
+        joinDate: bot.joinDate || new Date().toISOString(),
+        totalEarnings: bot.totalEarnings || 0,
+        totalLosses: bot.totalLosses || 0,
+        isBot: true,
+        botId: bot.id,
+        lastActive: new Date().toISOString()
+      }, { merge: true });
+
       // Create transaction
       const transaction = this.txMgr.create('bet', -betAmount, {
         botId: bot.id,
+        userId: bot.id, // Add userId to match activity queries
         metadata: { 
           source: 'bot_system',
           betId: betId,
           targetUser: targetUsername,
           betType: betType,
-          targetPercentage: Math.round(targetPercentage)
+          targetPercentage: Math.round(targetPercentage),
+          username: bot.username || `Bot_${bot.id}` // Include username
         }
       });
       
       await this.txMgr.save(transaction);
 
       console.log(`🤖 ${bot.username} bet $${betAmount.toFixed(2)} that ${targetUsername} portfolio will ${betType} by ${Math.round(targetPercentage)}%`);
+      
+      // SYNC FIX: Update bot portfolio after bet placed (affects balance and exposure)
+      await this.updateBotPortfolio(bot.id);
+      
+      // Log to activity feed for live display
+      await firebaseActivityService.addActivity({
+        type: 'bet_place',
+        username: bot.username || `Bot_${bot.id}`,
+        userId: bot.id,
+        targetUser: targetUsername,
+        betType: betType as 'increase' | 'decrease',
+        targetPercentage: Math.round(targetPercentage),
+        amount: betAmount,
+        timeframe: 7,
+        isBot: true,
+        botId: bot.id,
+        metadata: {
+          source: 'bot_system',
+          activityType: 'portfolio_bet'
+        }
+      });
     } catch (error) {
       console.error(`🤖 ${bot.username} betting error:`, error);
     }
@@ -603,10 +831,10 @@ class AutonomousBotSystem {
       const opinionRef = doc(collection(db, 'opinions'));
       await setDoc(opinionRef, {
         text: opinionText,
-        author: bot.username,
+        author: bot.username || `Bot_${bot.id}`,
         createdAt: new Date().toISOString(),
         isBot: true,
-        source: 'bot_generation'
+        source: 'bot_generated' // Fixed: changed from 'bot_generation' to 'bot_generated'
       });
 
       // Create transaction (no money earned for generation)
@@ -614,18 +842,238 @@ class AutonomousBotSystem {
         opinionText: opinionText,
         opinionId: opinionRef.id,
         botId: bot.id,
+        userId: bot.id, // Add userId to match activity queries
         metadata: { 
           source: 'bot_system',
-          generated: true
+          generated: true,
+          username: bot.username || `Bot_${bot.id}` // Include username
         }
       });
       
       await this.txMgr.save(transaction);
 
       console.log(`🤖 ${bot.username} generated: "${opinionText.slice(0, 50)}..."`);
+      
+      // SYNC FIX: Update bot portfolio after opinion generation
+      await this.updateBotPortfolio(bot.id);
+      
+      // Log to activity feed for live display
+      await firebaseActivityService.addActivity({
+        type: 'generate',
+        username: bot.username || `Bot_${bot.id}`,
+        userId: bot.id,
+        opinionText: opinionText,
+        opinionId: opinionRef.id,
+        amount: 0, // No money involved in generation
+        isBot: true,
+        botId: bot.id,
+        metadata: {
+          source: 'bot_system',
+          activityType: 'opinion_generation',
+          topic: topic
+        }
+      });
     } catch (error) {
       console.error(`🤖 ${bot.username} opinion generation error:`, error);
     }
+  }
+
+  // ----------------------------------------------------------------------------
+  // 💼 Portfolio Management - Add consolidated portfolio updates
+  // ----------------------------------------------------------------------------
+  private async updateBotPortfolio(botId: string): Promise<void> {
+    try {
+      // Get all holdings for this bot from individual documents
+      const botHoldingsSnapshot = await getDocs(colBotPortfolios);
+      const botHoldings = botHoldingsSnapshot.docs
+        .filter(doc => doc.id.startsWith(`${botId}_`))
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(holding => (holding as any).qty > 0); // Only include active holdings
+
+      // Create consolidated portfolio document in the expected format for leaderboard
+      const consolidatedPortfolio = {
+        botId: botId,
+        holdings: botHoldings.map(holding => ({
+          opinionId: (holding as any).opinionId,
+          opinionText: (holding as any).opinionText,
+          quantity: (holding as any).qty,
+          purchasePrice: (holding as any).avgPrice,
+          averagePrice: (holding as any).avgPrice,
+          lastUpdated: new Date().toISOString()
+        })),
+        lastUpdated: new Date().toISOString(),
+        totalHoldings: botHoldings.length
+      };
+
+      // SYNC FIX: Save to the bot-portfolios collection in the format leaderboard expects
+      await setDoc(doc(db, 'bot-portfolios', botId), consolidatedPortfolio, { merge: true });
+      
+      // Also save to consolidated collection for backup
+      await setDoc(doc(db, 'consolidated-bot-portfolios', botId), consolidatedPortfolio);
+      
+      // SYNC FIX: Also sync to user-portfolios for unified access
+      const userPortfolioFormat = {
+        userId: botId,
+        items: botHoldings.map(holding => ({
+          opinionId: (holding as any).opinionId,
+          opinionText: (holding as any).opinionText,
+          quantity: (holding as any).qty,
+          averagePrice: (holding as any).avgPrice,
+          lastUpdated: new Date().toISOString()
+        })),
+        totalValue: consolidatedPortfolio.holdings.reduce((sum, h) => sum + (h.quantity * h.averagePrice), 0),
+        totalCost: consolidatedPortfolio.holdings.reduce((sum, h) => sum + (h.quantity * h.averagePrice), 0),
+        lastUpdated: new Date().toISOString(),
+        isBot: true
+      };
+      
+      await setDoc(doc(db, 'user-portfolios', botId), userPortfolioFormat, { merge: true });
+      
+      // Update bot earnings and losses based on current portfolio value
+      await this.updateBotPerformance(botId, botHoldings);
+      
+    } catch (error) {
+      console.error(`Error updating bot portfolio for ${botId}:`, error);
+    }
+  }
+
+  private async updateBotPerformance(botId: string, holdings: any[]): Promise<void> {
+    try {
+      // Calculate current portfolio value vs purchase cost
+      let totalCurrentValue = 0;
+      let totalPurchaseCost = 0;
+
+      for (const holding of holdings) {
+        const marketData = await this.market.get(holding.opinionText);
+        const currentPrice = marketData.currentPrice;
+        const quantity = holding.qty;
+        const purchasePrice = holding.avgPrice;
+
+        totalCurrentValue += currentPrice * quantity;
+        totalPurchaseCost += purchasePrice * quantity;
+      }
+
+      const unrealizedPnL = totalCurrentValue - totalPurchaseCost;
+      
+      // Update bot document with performance metrics
+      const bot = this.bots.get(botId);
+      if (bot) {
+        // Only update if we have meaningful performance data
+        const botAny = bot as any;
+        if (unrealizedPnL > 0) {
+          bot.totalEarnings = (bot.totalEarnings || 0) + Math.max(0, unrealizedPnL - (botAny.lastUnrealizedPnL || 0));
+        } else if (unrealizedPnL < 0) {
+          bot.totalLosses = (bot.totalLosses || 0) + Math.abs(Math.min(0, unrealizedPnL - (botAny.lastUnrealizedPnL || 0)));
+        }
+        
+        // Track last unrealized P&L to avoid double counting
+        (bot as any).lastUnrealizedPnL = unrealizedPnL;
+        (bot as any).portfolioValue = totalCurrentValue;
+        
+        // Update in Firestore
+        await updateDoc(doc(colBots, botId), {
+          totalEarnings: bot.totalEarnings,
+          totalLosses: bot.totalLosses,
+          lastUnrealizedPnL: unrealizedPnL,
+          portfolioValue: totalCurrentValue,
+          lastPerformanceUpdate: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error(`Error updating bot performance for ${botId}:`, error);
+    }
+  }
+
+  // ----------------------------------------------------------------------------
+  // 🐛 Debug Methods - Add comprehensive debugging
+  // ----------------------------------------------------------------------------
+  public async debugBotSystem(): Promise<void> {
+    console.log('🔍 === BOT SYSTEM DEBUG REPORT ===');
+    console.log(`System running: ${this.isRunning}`);
+    console.log(`Loaded bots in memory: ${this.bots.size}`);
+    console.log(`Active intervals: ${Object.keys(this.intervals).length}`);
+    
+    // Check Firestore for actual bot data
+    try {
+      const botsSnapshot = await getDocs(colBots);
+      console.log(`Bots in Firestore: ${botsSnapshot.size}`);
+      
+      const activeBots: string[] = [];
+      const inactiveBots: string[] = [];
+      
+      botsSnapshot.forEach(doc => {
+        const bot = doc.data() as BotProfile;
+        if (bot.isActive) {
+          activeBots.push(`${bot.username} (${doc.id}) - $${bot.balance}`);
+        } else {
+          inactiveBots.push(`${bot.username} (${doc.id}) - INACTIVE`);
+        }
+      });
+      
+      console.log(`✅ Active bots (${activeBots.length}):`, activeBots);
+      console.log(`❌ Inactive bots (${inactiveBots.length}):`, inactiveBots);
+      
+      // Check recent activity feed
+      const recentActivities = await getDocs(query(
+        collection(db, 'activity-feed'),
+        orderBy('timestamp', 'desc'),
+        limit(10)
+      ));
+      
+      console.log(`Recent activities in feed: ${recentActivities.size}`);
+      const botActivities: string[] = [];
+      recentActivities.forEach(doc => {
+        const activity = doc.data();
+        if (activity.isBot) {
+          botActivities.push(`${activity.username}: ${activity.type} - ${activity.timestamp?.toDate?.()}`);
+        }
+      });
+      console.log(`Recent bot activities:`, botActivities);
+      
+    } catch (error) {
+      console.error('❌ Error checking Firestore:', error);
+    }
+    
+    console.log('🔍 === END DEBUG REPORT ===');
+  }
+
+  public async createTestBot(): Promise<string> {
+    const testBotId = `test_bot_${Date.now()}`;
+    const testBot: BotProfile = {
+      id: testBotId,
+      username: `TestBot_${Date.now()}`,
+      balance: 50000,
+      joinDate: new Date().toISOString(),
+      totalEarnings: 0,
+      totalLosses: 0,
+      lastActive: new Date().toISOString(),
+      isActive: true
+    };
+    
+    try {
+      await setDoc(doc(colBots, testBotId), testBot);
+      console.log(`✅ Created test bot: ${testBot.username}`);
+      
+      // Add to local cache
+      this.bots.set(testBotId, testBot);
+      
+      return testBotId;
+    } catch (error) {
+      console.error('❌ Error creating test bot:', error);
+      throw error;
+    }
+  }
+
+  public async forceTickTestBot(): Promise<void> {
+    const bots = [...this.bots.values()];
+    if (bots.length === 0) {
+      console.log('❌ No bots available to test');
+      return;
+    }
+    
+    const testBot = bots[0];
+    console.log(`🧪 Force ticking bot: ${testBot.username}`);
+    await this.tick(testBot);
   }
 }
 
@@ -639,7 +1087,7 @@ if (typeof window !== 'undefined') {
   (window as any).AutonomousBotSystem = AutonomousBotSystem;
   
   // Add global helper functions for easy access
-  (window as any).startBots = () => botSystem.start();
+  (window as any).startBots = () => botSystem.startBots();
   (window as any).stopBots = () => botSystem.stop();
   (window as any).restartBots = () => botSystem.restartSystem();
   (window as any).getBotStatus = () => ({
@@ -647,6 +1095,9 @@ if (typeof window !== 'undefined') {
     botCount: botSystem.getBotCount(),
     activeBots: botSystem.getActiveBotCount()
   });
+  (window as any).debugBots = () => botSystem.debugBotSystem();
+  (window as any).createTestBot = () => botSystem.createTestBot();
+  (window as any).forceTestTick = () => botSystem.forceTickTestBot();
   
   console.log('🤖 Bot system loaded! Available commands:');
   console.log('  • botSystem.restartSystem()');
@@ -654,6 +1105,9 @@ if (typeof window !== 'undefined') {
   console.log('  • stopBots()'); 
   console.log('  • restartBots()');
   console.log('  • getBotStatus()');
+  console.log('  • debugBots() - comprehensive system debug');
+  console.log('  • createTestBot() - create a test bot');
+  console.log('  • forceTestTick() - force a bot to act');
 }
 
 export default botSystem;

@@ -12,7 +12,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { firebaseDataService } from '../../lib/firebase-data-service';
-import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import ActivityIntegration from '../../components/ActivityIntegration';
+import { collection, query, where, limit, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { calculateMultiplier, calculatePayout } from '../../lib/multiplier-utils';
 import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../../lib/portfolio-utils';
@@ -89,70 +90,7 @@ interface ShortPosition {
   sharesObligation: number; // shares you'd need to buy if closed early
 }
 
-// Mock data - replace with real data once available
-const MOCK_PORTFOLIO_BETS: PortfolioBet[] = [
-  {
-    id: 'bet1',
-    targetUser: 'trading_maven',
-    betType: 'increase',
-    targetPercentage: 15,
-    timeframe: 7,
-    amount: 250.00,
-    potentialPayout: calculatePayout(250.00, 15, 7 * 24), // 7 days = 168 hours
-    status: 'active',
-    placedDate: '12/15/2024',
-    expiryDate: '12/22/2024',
-    riskMultiplier: calculateMultiplier(15, 7 * 24),
-  },
-  {
-    id: 'bet2',
-    targetUser: 'crypto_bull',
-    betType: 'decrease',
-    targetPercentage: 10,
-    timeframe: 3,
-    amount: 100.00,
-    potentialPayout: calculatePayout(100.00, 10, 3 * 24), // 3 days = 72 hours
-    status: 'active',
-    placedDate: '12/12/2024',
-    expiryDate: '12/15/2024',
-    riskMultiplier: calculateMultiplier(10, 3 * 24),
-  },
-];
-
-const MOCK_SHORT_POSITIONS: ShortPosition[] = [
-  {
-    id: 'short1',
-    opinionText: 'Cryptocurrency will replace traditional banking by 2026',
-    opinionId: 'crypto_replace_banking',
-    targetDropPercentage: 20,
-    betAmount: 150.00,
-    potentialWinnings: calculatePayout(150.00, 20, 168), // 7 days = 168 hours
-    status: 'active',
-    createdDate: '12/10/2024',
-    expirationDate: '12/17/2024',
-    startingPrice: 25.00,
-    currentPrice: 22.50,
-    targetPrice: 20.00,
-    progress: 55.6, // (25-22.5)/(25-20) * 100
-    sharesObligation: 20, // 20% of 100 shares if closed early
-  },
-  {
-    id: 'short2',
-    opinionText: 'Remote work will become less popular post-pandemic',
-    opinionId: 'remote_work_decline',
-    targetDropPercentage: 15,
-    betAmount: 200.00,
-    potentialWinnings: calculatePayout(200.00, 15, 168), // 7 days = 168 hours
-    status: 'active',
-    createdDate: '12/5/2024',
-    expirationDate: '12/12/2024',
-    startingPrice: 18.00,
-    currentPrice: 19.25,
-    targetPrice: 15.30,
-    progress: -46.3, // Moving against us
-    sharesObligation: 15, // 15% of 100 shares if closed early
-  },
-];
+// Real data - removed mock data
 
 // ──────────────────────────────────────────────────────────────────────────────
 export default function UserDetailPage() {
@@ -172,6 +110,13 @@ export default function UserDetailPage() {
   // All opinion texts → used for sidebar links
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
 
+  // Real bets and shorts data
+  const [userBets, setUserBets] = useState<any[]>([]);
+  const [userShorts, setUserShorts] = useState<any[]>([]);
+  
+  // Real-time activity updates
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
   // Check if current user is viewing their own profile - only check when we have complete data
   const isOwnProfile = !loading && user && profile && (
     user.displayName === profile.username || 
@@ -186,6 +131,8 @@ export default function UserDetailPage() {
   useEffect(() => {
     if (typeof username !== 'string') return;
     
+    let unsubscriptions: (() => void)[] = [];
+    
     const fetchUserData = async () => {
       setLoading(true);
       try {
@@ -194,6 +141,15 @@ export default function UserDetailPage() {
         // 1️⃣ Fetch the user by username
         const targetUser = await firebaseDataService.getUserByUsername(uname);
         if (!targetUser) {
+          console.error('❌ User not found:', uname);
+          setLoading(false);
+          return;
+        }
+
+        // Validate that user has required uid field (check both uid and id)
+        const userId = targetUser.uid || (targetUser as any).id;
+        if (!userId) {
+          console.error('❌ User missing uid/id field:', targetUser);
           setLoading(false);
           return;
         }
@@ -204,69 +160,115 @@ export default function UserDetailPage() {
           joinDate: targetUser.joinDate instanceof Date ? targetUser.joinDate.toISOString() : (targetUser.joinDate || new Date().toISOString()),
           totalEarnings: targetUser.totalEarnings || 0,
           totalLosses: targetUser.totalLosses || 0,
-          uid: targetUser.uid,
+          uid: userId, // Use the validated userId
         };
         setProfile(userProfile);
 
-        // 2️⃣ Fetch portfolio data using proper portfolio service
-        let portfolio: Portfolio;
-        try {
-          portfolio = await getUserPortfolio(targetUser.uid);
-        } catch (error) {
-          console.warn('Failed to load new portfolio, trying migration...');
-          await migrateUserPortfolio(targetUser.uid);
-          portfolio = await getUserPortfolio(targetUser.uid);
-        }
-        
-        // If no items in new portfolio but old portfolio exists, migrate
-        if (portfolio.items.length === 0 && (targetUser as any)?.portfolio) {
-          console.log('🔄 Migrating portfolio data...');
-          await migrateUserPortfolio(targetUser.uid);
-          portfolio = await getUserPortfolio(targetUser.uid);
-        }
-        
-        // Get market data for current prices
-        const marketData = await realtimeDataService.getMarketData();
-        
-        // Transform portfolio items to the expected format and get actual opinion IDs
-        const transformedOpinions = await Promise.all(
-          portfolio.items.map(async (item) => {
-            // Query Firestore to get the actual document ID for this opinion text
-            let actualOpinionId = item.opinionId; // fallback to original ID
-            try {
-              const q = query(
-                collection(db, 'opinions'),
-                where('text', '==', item.opinionText),
-                limit(1)
-              );
-              const querySnapshot = await getDocs(q);
-              
-              if (!querySnapshot.empty) {
-                actualOpinionId = querySnapshot.docs[0].id; // Use actual Firestore document ID
-              }
-            } catch (error) {
-              console.error('Error fetching actual opinion ID for:', item.opinionText, error);
-              // Keep fallback ID if query fails
+        // 🔄 SET UP REAL-TIME SUBSCRIPTIONS FOR ALL DATA
+
+        // REAL-TIME SUBSCRIPTION 1: User profile data
+        const userDocRef = query(collection(db, 'users'), where('uid', '==', userId));
+        const unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
+          if (!snapshot.empty) {
+            const userData = snapshot.docs[0].data();
+            const updatedProfile: UserProfile = {
+              username: userData.username || userProfile.username,
+              balance: userData.balance || 0,
+              joinDate: userData.joinDate instanceof Date ? userData.joinDate.toISOString() : (userData.joinDate || userProfile.joinDate),
+              totalEarnings: userData.totalEarnings || 0,
+              totalLosses: userData.totalLosses || 0,
+              uid: userId,
+            };
+            setProfile(updatedProfile);
+            console.log('🔄 User profile updated:', updatedProfile.username, 'Balance:', updatedProfile.balance);
+          }
+        });
+        unsubscriptions.push(unsubscribeUser);
+
+        // REAL-TIME SUBSCRIPTION 2: Portfolio data
+        const portfolioDocRef = query(collection(db, 'user-portfolios'), where('userId', '==', userId));
+        const unsubscribePortfolio = onSnapshot(portfolioDocRef, async (snapshot) => {
+          try {
+            let portfolioItems: any[] = [];
+            if (!snapshot.empty) {
+              const portfolioDoc = snapshot.docs[0];
+              const portfolioData = portfolioDoc.data();
+              portfolioItems = portfolioData.items || [];
             }
 
-            return {
-              id: actualOpinionId, // Use actual Firestore document ID
-              text: item.opinionText,
-              purchasePrice: item.averagePrice,
-              currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
-              purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
-              quantity: item.quantity,
-            };
-          })
+            // Get market data for current prices
+            const marketData = await realtimeDataService.getMarketData();
+            
+            // Transform portfolio items to the expected format
+            const transformedOpinions = await Promise.all(
+              portfolioItems.map(async (item) => {
+                let actualOpinionId = item.opinionId;
+                try {
+                  const q = query(
+                    collection(db, 'opinions'),
+                    where('text', '==', item.opinionText),
+                    limit(1)
+                  );
+                  const querySnapshot = await getDocs(q);
+                  
+                  if (!querySnapshot.empty) {
+                    actualOpinionId = querySnapshot.docs[0].id;
+                  }
+                } catch (error) {
+                  console.error('Error fetching actual opinion ID for:', item.opinionText, error);
+                }
+
+                return {
+                  id: actualOpinionId,
+                  text: item.opinionText,
+                  purchasePrice: item.averagePrice,
+                  currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+                  purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+                  quantity: item.quantity,
+                };
+              })
+            );
+            
+            setOwnedOpinions(transformedOpinions);
+            console.log('🔄 Portfolio updated:', transformedOpinions.length, 'opinions');
+          } catch (error) {
+            console.error('Error processing portfolio update:', error);
+          }
+        });
+        unsubscriptions.push(unsubscribePortfolio);
+
+        // REAL-TIME SUBSCRIPTION 3: User bets
+        const betsQuery = query(
+          collection(db, 'advanced-bets'),
+          where('userId', '==', userId)
         );
-        
-        setOwnedOpinions(transformedOpinions);
+        const unsubscribeBets = onSnapshot(betsQuery, (snapshot) => {
+          const betsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setUserBets(betsData);
+          console.log('🔄 Bets updated:', betsData.length, 'active bets');
+        });
+        unsubscriptions.push(unsubscribeBets);
 
-        // 3️⃣ Fetch transaction data for transactions section
-        const txData = await firebaseDataService.getUserTransactions(targetUser.uid, 200);
+        // REAL-TIME SUBSCRIPTION 4: User shorts
+        const shortsQuery = query(
+          collection(db, 'short-positions'),
+          where('userId', '==', userId)
+        );
+        const unsubscribeShorts = onSnapshot(shortsQuery, (snapshot) => {
+          const shortsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setUserShorts(shortsData);
+          console.log('🔄 Shorts updated:', shortsData.length, 'short positions');
+        });
+        unsubscriptions.push(unsubscribeShorts);
 
-        // 3️⃣ Set transactions
-        if (txData) {
+        // REAL-TIME SUBSCRIPTION 5: Transactions
+        const transactionsQuery = query(
+          collection(db, 'transactions'),
+          where('userId', '==', userId),
+          limit(200)
+        );
+        const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+          const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           const processedTransactions = txData.map((tx: any) => ({
             id: tx.id,
             type: tx.type,
@@ -281,9 +283,32 @@ export default function UserDetailPage() {
           );
           
           setTransactions(processedTransactions);
-        }
+          console.log('🔄 Transactions updated:', processedTransactions.length, 'transactions');
+        });
+        unsubscriptions.push(unsubscribeTransactions);
 
-        // 4️⃣ Opinions list (for sidebar)
+        // REAL-TIME SUBSCRIPTION 6: Activity feed (already exists, keeping it)
+        const activityQuery = query(
+          collection(db, 'activity-feed'),
+          where('userId', '==', userId),
+          limit(20)
+        );
+        
+        const unsubscribeActivity = onSnapshot(activityQuery, (snapshot: any) => {
+          const activities = snapshot.docs.map((doc: any) => ({
+            id: doc.id,
+            ...doc.data(),
+            timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
+          }));
+          
+          // Sort by most recent first
+          activities.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          setRecentActivity(activities);
+          console.log('🔄 Activity feed updated:', activities.length, 'activities');
+        });
+        unsubscriptions.push(unsubscribeActivity);
+
+        // Load sidebar opinions (one-time)
         try {
           const allOpinions = await firebaseDataService.searchOpinions('', 500);
           setAllOpinions(allOpinions.map(op => op.text));
@@ -298,7 +323,14 @@ export default function UserDetailPage() {
       }
     };
 
+    // Start the async fetch
     fetchUserData();
+    
+    // Return synchronous cleanup function
+    return () => {
+      console.log('🧹 Cleaning up', unsubscriptions.length, 'subscriptions for user:', username);
+      unsubscriptions.forEach(unsub => unsub());
+    };
   }, [username]);
 
   if (loading || !profile) return <div className="loading">Loading…</div>;
@@ -311,76 +343,22 @@ export default function UserDetailPage() {
   const pnl = portfolioValue + profile.balance + profile.totalEarnings - profile.totalLosses - 10000; // example calc
   const activeBets = ownedOpinions.length;
 
-  // Mock bet positions data
-  const mockBetPositions = [
-    {
-      id: '1',
-      title: "trading_maven's portfolio",
-      type: 'BET',
-      percentage: 15,
-      placedDate: '12/15/2024',
-      daysHeld: 7,
-      multiplier: '1.75x',
-      wagered: 250.00,
-      currentValue: 437.50,
-      potential: 187.50
-    },
-    {
-      id: '2',
-      title: "crypto_bull's portfolio",
-      type: 'BET',
-      percentage: 10,
-      placedDate: '12/12/2024',
-      daysHeld: 3,
-      multiplier: '2.071428571428571x',
-      wagered: 100.00,
-      currentValue: 207.14,
-      potential: 107.14
-    }
-  ];
+  // Real data is loaded in useEffect and stored in state
 
-  // Mock short positions data
-  const mockShortPositions = [
-    {
-      id: '1',
-      title: "Cryptocurrency will replace traditional banking by 2026",
-      type: 'SHORT',
-      shortedDate: '12/10/2024',
-      dropTarget: 20,
-      progress: 55.6,
-      entry: 25.00,
-      currentValue: 22.50,
-      shares: 20,
-      obligation: true
-    },
-    {
-      id: '2',
-      title: "Remote work will become less popular post-pandemic",
-      type: 'SHORT',
-      shortedDate: '12/5/2024',
-      dropTarget: 15,
-      progress: 46.3,
-      entry: 18.00,
-      currentValue: 16.50,
-      shares: 15,
-      obligation: true
-    }
-  ];
-
-  // Portfolio Betting Exposure & Volatility Calculations
-  const activeBetsData = MOCK_PORTFOLIO_BETS.filter(bet => bet.status === 'active');
-  const activeShortsData = MOCK_SHORT_POSITIONS.filter(short => short.status === 'active');
+  // Portfolio Betting Exposure & Volatility Calculations - using real data
+  const activeBetsData = userBets.filter((bet: any) => bet.status === 'active');
+  const activeShortsData = userShorts.filter((short: any) => short.status === 'active');
   
   // Total Exposure: Amount at risk from active bets and shorts
-  const betsExposure = activeBetsData.reduce((sum, bet) => sum + bet.amount, 0);
-  const shortsExposure = activeShortsData.reduce((sum, short) => sum + short.betAmount, 0);
+  const betsExposure = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.amount || 0), 0);
+  const shortsExposure = activeShortsData.reduce((sum: number, short: any) => sum + (short.betAmount || short.amount || 0), 0);
   const totalExposure = betsExposure + shortsExposure;
   
   // Portfolio Volatility: Potential swing range as percentage of total portfolio value
-  const maxBetsWin = activeBetsData.reduce((sum, bet) => sum + bet.potentialPayout, 0);
-  const maxBetsLoss = activeBetsData.reduce((sum, bet) => sum + bet.amount, 0);
-  const maxShortsWin = activeShortsData.reduce((sum, short) => sum + short.potentialWinnings, 0);
-  const maxShortsLoss = activeShortsData.reduce((sum, short) => sum + short.betAmount, 0);
+  const maxBetsWin = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.potentialPayout || bet.amount * 2 || 0), 0);
+  const maxBetsLoss = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.amount || 0), 0);
+  const maxShortsWin = activeShortsData.reduce((sum: number, short: any) => sum + (short.potentialWinnings || short.amount * 1.5 || 0), 0);
+  const maxShortsLoss = activeShortsData.reduce((sum: number, short: any) => sum + (short.betAmount || short.amount || 0), 0);
   
   const maxWinScenario = maxBetsWin + maxShortsWin;
   const maxLossScenario = maxBetsLoss + maxShortsLoss;
@@ -654,7 +632,7 @@ export default function UserDetailPage() {
               color: portfolioVolatility > 100 ? 'var(--red)' : 
                      portfolioVolatility > 50 ? 'var(--yellow)' : 'var(--green)',
             }}>
-              {portfolioVolatility.toFixed(1)}%
+              {portfolioVolatility.toFixed(2)}%
             </p>
                   </div>
             </div>
@@ -772,7 +750,7 @@ export default function UserDetailPage() {
                                 color: pct >= 0 ? 'var(--green)' : 'var(--red)',
                                 fontWeight: '600',
                               }}>
-                                {pct >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(1)}%)
+                                {pct >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(2)}%)
                               </p>
                             </div>
                           </div>
@@ -843,7 +821,7 @@ export default function UserDetailPage() {
               gap: '20px',
             }}>
               {/* BET Positions */}
-              {mockBetPositions.map((position) => (
+              {userBets.map((position: any) => (
                 <div key={position.id} style={{
                   background: 'var(--white)',
                   padding: '20px',
@@ -923,7 +901,7 @@ export default function UserDetailPage() {
                         fontSize: 'var(--font-size-xs)',
                         color: 'var(--green)',
                       }}>
-                        (+{position.percentage.toFixed(1)}%)
+                        (+{position.percentage.toFixed(2)}%)
                       </div>
                     </div>
                   </div>
@@ -931,7 +909,7 @@ export default function UserDetailPage() {
               ))}
 
               {/* SHORT Positions */}
-              {mockShortPositions.map((position) => (
+              {userShorts.map((position: any) => (
                 <div key={position.id} style={{
                   background: 'var(--white)',
                   padding: '20px',
@@ -1066,6 +1044,9 @@ export default function UserDetailPage() {
           </div>
         )}
       </main>
+      
+      {/* Activity Integration for real-time updates */}
+      <ActivityIntegration userProfile={profile || undefined} />
     </div>
   );
 }

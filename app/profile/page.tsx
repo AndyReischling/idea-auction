@@ -1,10 +1,10 @@
 // =============================================================================
-// app/profile/page.tsx – Firestore‑native profile dashboard (no localStorage)
+// app/profile/page.tsx – Enhanced profile dashboard with real-time portfolio sync
 // -----------------------------------------------------------------------------
-//  ✦ Fetches all user‑centric data via `realtimeDataService` helpers
-//  ✦ Subscribes to live updates where available (profile / portfolio)
-//  ✦ Drops every legacy fallback that referenced browser localStorage
-//  ✦ Keeps the previous UI intact – only the data layer changed
+//  ✦ Uses UnifiedPortfolioService for real-time portfolio data
+//  ✦ Enhanced portfolio statistics with comprehensive risk metrics
+//  ✦ Accurate betting positions and shorts with current market values
+//  ✦ Real-time opinion holdings with current prices and P&L
 // =============================================================================
 
 'use client';
@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth-context';
 import { realtimeDataService } from '../lib/realtime-data-service';
+import { unifiedPortfolioService } from '../lib/unified-portfolio-service';
 import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../lib/portfolio-utils';
@@ -23,9 +24,10 @@ import styles from '../page.module.css';
 import {
   Wallet, ScanSmiley, RssSimple, Balloon, SignOut,
 } from '@phosphor-icons/react';
+import ActivityIntegration from '../components/ActivityIntegration';
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Data shapes (firestore docs already match these)
+// Data shapes for enhanced portfolio display
 // ──────────────────────────────────────────────────────────────────────────────
 interface UserProfile {
   username: string;
@@ -35,13 +37,32 @@ interface UserProfile {
   totalLosses: number;
 }
 
-interface OpinionAsset {
+interface EnhancedOpinionAsset {
   id: string;
   text: string;
-  purchasePrice: number;
-  currentPrice: number;
-  purchaseDate: string;
   quantity: number;
+  averagePrice: number;
+  currentPrice: number;
+  currentValue: number;
+  totalCost: number;
+  unrealizedGainLoss: number;
+  unrealizedGainLossPercent: number;
+  lastUpdated: string;
+}
+
+interface PortfolioStats {
+  portfolioValue: number;
+  totalCost: number;
+  unrealizedGainLoss: number;
+  unrealizedGainLossPercent: number;
+  totalQuantity: number;
+  uniqueOpinions: number;
+  topHoldings: any[];
+  riskMetrics: {
+    diversificationScore: number;
+    volatilityScore: number;
+    exposureRating: 'Low' | 'Medium' | 'High';
+  };
 }
 
 interface Transaction {
@@ -56,10 +77,18 @@ export default function ProfilePage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
+  const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
+  const [ownedOpinions, setOwnedOpinions] = useState<EnhancedOpinionAsset[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [userBets, setUserBets] = useState<any[]>([]);
+  const [userShorts, setUserShorts] = useState<any[]>([]);
 
-  // ── Initial data load + subscriptions ──────────────────────────────────────
+  // Portfolio subscription IDs for cleanup
+  const [portfolioSubscriptionId, setPortfolioSubscriptionId] = useState<string | null>(null);
+  const [positionsSubscriptionId, setPositionsSubscriptionId] = useState<string | null>(null);
+  const [riskPositionsSubscriptionId, setRiskPositionsSubscriptionId] = useState<string | null>(null);
+
+  // ── Enhanced data load + subscriptions ──────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) return;
     setLoading(true);
@@ -72,79 +101,46 @@ export default function ProfilePage() {
           username: p.username,
           balance: p.balance,
           joinDate: p.joinDate?.toDate?.()?.toISOString?.() ?? p.joinDate,
-          totalEarnings: p.totalEarnings,
-          totalLosses: p.totalLosses,
+          totalEarnings: p.totalEarnings || 0,
+          totalLosses: p.totalLosses || 0,
         };
         setProfile(userProfile);
-        // Fetch portfolio data when profile updates
-        fetchPortfolioData(p);
+        setLoading(false);
       }
     );
 
-    // 2️⃣  Portfolio data (using new portfolio structure)
-    const fetchPortfolioData = async (userProfile: any) => {
-      try {
-        // Try to get the new portfolio structure first
-        let portfolio: Portfolio;
-        
-        try {
-          portfolio = await getUserPortfolio(user.uid);
-        } catch (error) {
-          console.warn('Failed to load new portfolio, trying migration...');
-          await migrateUserPortfolio(user.uid);
-          portfolio = await getUserPortfolio(user.uid);
-        }
-        
-        // If no items in new portfolio but old portfolio exists, migrate
-        if (portfolio.items.length === 0 && userProfile?.portfolio) {
-          console.log('🔄 Migrating portfolio data...');
-          await migrateUserPortfolio(user.uid);
-          portfolio = await getUserPortfolio(user.uid);
-        }
-        
-        // Get market data for current prices
-        const marketData = await realtimeDataService.getMarketData();
-        
-        // Transform portfolio items to the expected format and get actual opinion IDs
-        const transformedOpinions = await Promise.all(
-          portfolio.items.map(async (item) => {
-            // Query Firestore to get the actual document ID for this opinion text
-            let actualOpinionId = item.opinionId; // fallback to original ID
-            try {
-              const q = query(
-                collection(db, 'opinions'),
-                where('text', '==', item.opinionText),
-                limit(1)
-              );
-              const querySnapshot = await getDocs(q);
-              
-              if (!querySnapshot.empty) {
-                actualOpinionId = querySnapshot.docs[0].id; // Use actual Firestore document ID
-              }
-            } catch (error) {
-              console.error('Error fetching actual opinion ID for:', item.opinionText, error);
-              // Keep fallback ID if query fails
-            }
-
-            return {
-              id: actualOpinionId, // Use actual Firestore document ID
-              text: item.opinionText,
-              purchasePrice: item.averagePrice,
-              currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
-              purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
-              quantity: item.quantity,
-            };
-          })
-        );
-        
-        setOwnedOpinions(transformedOpinions);
-      } catch (error) {
-        console.error('Error fetching portfolio data:', error);
-        setOwnedOpinions([]);
+    // 2️⃣  Enhanced Portfolio Statistics Subscription
+    const statsSubscriptionId = unifiedPortfolioService.subscribeToPortfolioStats(
+      user.uid,
+      (stats: PortfolioStats) => {
+        console.log('📊 Portfolio stats updated:', stats);
+        setPortfolioStats(stats);
       }
-    };
+    );
+    setPortfolioSubscriptionId(statsSubscriptionId);
 
-    // 3️⃣  Transactions snapshot listener
+    // 3️⃣  Enhanced Trading Positions Subscription
+    const tradingSubscriptionId = unifiedPortfolioService.subscribeToTradingPositions(
+      user.uid,
+      (positions: EnhancedOpinionAsset[]) => {
+        console.log('💼 Trading positions updated:', positions.length, 'positions');
+        setOwnedOpinions(positions);
+      }
+    );
+    setPositionsSubscriptionId(tradingSubscriptionId);
+
+    // 4️⃣  Risk Positions Subscription (Bets + Shorts)
+    const riskSubscriptionId = unifiedPortfolioService.subscribeToRiskPositions(
+      user.uid,
+      (positions: { bets: any[]; shorts: any[] }) => {
+        console.log('🎯 Risk positions updated:', positions.bets.length, 'bets,', positions.shorts.length, 'shorts');
+        setUserBets(positions.bets);
+        setUserShorts(positions.shorts);
+      }
+    );
+    setRiskPositionsSubscriptionId(riskSubscriptionId);
+
+    // 5️⃣  Transactions snapshot listener
     const unsubTx = realtimeDataService.subscribeToUserTransactions(
       user.uid,
       (txs) => {
@@ -159,87 +155,39 @@ export default function ProfilePage() {
       }
     );
 
-    setLoading(false);
     return () => {
-      unsubProfile && realtimeDataService.unsubscribe(unsubProfile);
-      unsubTx && realtimeDataService.unsubscribe(unsubTx);
+      // Clean up all subscriptions
+      try {
+        if (typeof unsubProfile === 'function') unsubProfile();
+        if (typeof unsubTx === 'function') unsubTx();
+      } catch (error) {
+        console.warn('Error cleaning up profile subscriptions:', error);
+      }
+      
+      if (portfolioSubscriptionId) {
+        unifiedPortfolioService.unsubscribe(portfolioSubscriptionId);
+      }
+      if (positionsSubscriptionId) {
+        unifiedPortfolioService.unsubscribe(positionsSubscriptionId);
+      }
+      if (riskPositionsSubscriptionId) {
+        unifiedPortfolioService.unsubscribe(riskPositionsSubscriptionId);
+      }
     };
-  }, [user?.uid]);
+  }, [user?.uid, portfolioSubscriptionId, positionsSubscriptionId, riskPositionsSubscriptionId]);
 
-  // ── Derived stats ──────────────────────────────────────────────────────────
+  // ── Enhanced derived stats ──────────────────────────────────────────────────────────────
   if (loading || !profile) return <div className="loading">Loading…</div>;
 
+  // Use enhanced portfolio statistics
+  const portfolioValue = portfolioStats?.portfolioValue || 0;
+  const portfolioGainLoss = portfolioStats?.unrealizedGainLoss || 0;
+  const totalOpinions = portfolioStats?.uniqueOpinions || 0;
+  const portfolioVolatility = portfolioStats?.riskMetrics?.volatilityScore || 0;
+  const diversificationScore = portfolioStats?.riskMetrics?.diversificationScore || 0;
+  const exposureRating = portfolioStats?.riskMetrics?.exposureRating || 'Low';
 
-
-  // Mock bet positions data
-  const mockBetPositions = [
-    {
-      id: '1',
-      title: "trading_maven's portfolio",
-      type: 'BET',
-      percentage: 15,
-      placedDate: '12/15/2024',
-      daysHeld: 7,
-      multiplier: '1.75x',
-      wagered: 250.00,
-      currentValue: 437.50,
-      potential: 187.50
-    },
-    {
-      id: '2',
-      title: "crypto_bull's portfolio",
-      type: 'BET',
-      percentage: 10,
-      placedDate: '12/12/2024',
-      daysHeld: 3,
-      multiplier: '2.071428571428571x',
-      wagered: 100.00,
-      currentValue: 207.14,
-      potential: 107.14
-    }
-  ];
-
-  // Mock short positions data
-  const mockShortPositions = [
-    {
-      id: '1',
-      title: "Cryptocurrency will replace traditional banking by 2026",
-      type: 'SHORT',
-      shortedDate: '12/10/2024',
-      dropTarget: 20,
-      progress: 55.6,
-      entry: 25.00,
-      currentValue: 22.50,
-      shares: 20,
-      obligation: true
-    },
-    {
-      id: '2',
-      title: "Remote work will become less popular post-pandemic",
-      type: 'SHORT',
-      shortedDate: '12/5/2024',
-      dropTarget: 15,
-      progress: 46.3,
-      entry: 18.00,
-      currentValue: 16.50,
-      shares: 15,
-      obligation: true
-    }
-  ];
-
-
-
-  // Keep real data for owned opinions display
-  const portfolioValue = ownedOpinions.reduce((sum, o) => sum + o.currentPrice * o.quantity, 0);
-  const portfolioGainLoss = ownedOpinions.reduce((sum, o) => sum + (o.currentPrice - o.purchasePrice) * o.quantity, 0);
-  const totalOpinions = ownedOpinions.length;
-
-  // Calculate portfolio volatility based on price variations
-  const priceVariations = ownedOpinions.map(o => Math.abs(o.currentPrice - o.purchasePrice) / o.purchasePrice);
-  const avgVariation = priceVariations.length > 0 ? priceVariations.reduce((a, b) => a + b, 0) / priceVariations.length : 0;
-  const portfolioVolatility = Math.min(avgVariation * 100, 100); // Cap at 100%
-
-  // ── UI ──────────────────────────────────────────────────────────────────────
+  // ── UI with Enhanced Portfolio Display ──────────────────────────────────────────────────────────────────────
   return (
     <div className="page-container">
       <Sidebar />
@@ -279,7 +227,7 @@ export default function ProfilePage() {
               <div className="user-avatar">{profile.username[0]}</div>
               <div>
                 <div className="user-name">{profile.username}</div>
-                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>🤖 Bots: Active Globally</p>
+                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>Real-time Portfolio Tracking</p>
                 <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>Member since {new Date(profile.joinDate).toLocaleDateString()} | Opinion Trader & Collector</p>
               </div>
             </div>
@@ -335,10 +283,10 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Portfolio Statistics */}
+        {/* Enhanced Portfolio Statistics Grid */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(6, 1fr)',
+          gridTemplateColumns: 'repeat(7, 1fr)',
           gap: '0',
           margin: '40px 0',
           border: '2px solid var(--border-primary)',
@@ -391,6 +339,13 @@ export default function ProfilePage() {
             }}>
               ${portfolioValue.toFixed(2)}
             </p>
+            <p style={{
+              fontSize: 'var(--font-size-xs)',
+              margin: '4px 0 0 0',
+              color: 'var(--text-secondary)',
+            }}>
+              Cost: ${portfolioStats?.totalCost.toFixed(2) || '0.00'}
+            </p>
           </div>
 
           <div style={{
@@ -405,7 +360,7 @@ export default function ProfilePage() {
               color: 'var(--text-secondary)',
               fontWeight: '400',
             }}>
-              P&L
+              Unrealized P&L
             </h3>
             <p style={{
               fontSize: 'var(--font-size-2xl)',
@@ -415,6 +370,13 @@ export default function ProfilePage() {
             }}>
               {portfolioGainLoss >= 0 ? '+' : ''}${portfolioGainLoss.toFixed(2)}
             </p>
+                         <p style={{
+               fontSize: 'var(--font-size-xs)',
+               margin: '4px 0 0 0',
+               color: (portfolioStats?.unrealizedGainLossPercent || 0) >= 0 ? 'var(--green)' : 'var(--red)',
+             }}>
+               ({(portfolioStats?.unrealizedGainLossPercent || 0) >= 0 ? '+' : ''}{(portfolioStats?.unrealizedGainLossPercent || 0).toFixed(2)}%)
+             </p>
           </div>
 
           <div style={{
@@ -439,6 +401,13 @@ export default function ProfilePage() {
             }}>
               {totalOpinions}
             </p>
+            <p style={{
+              fontSize: 'var(--font-size-xs)',
+              margin: '4px 0 0 0',
+              color: 'var(--text-secondary)',
+            }}>
+              {portfolioStats?.totalQuantity || 0} shares
+            </p>
           </div>
 
           <div style={{
@@ -461,7 +430,32 @@ export default function ProfilePage() {
               margin: '0',
               color: 'var(--green)',
             }}>
-              ${(profile.totalEarnings || 0).toFixed(2)}
+              ${profile.totalEarnings.toFixed(2)}
+            </p>
+          </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+            borderRight: '1px solid var(--border-secondary)',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              Diversification
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: diversificationScore > 70 ? 'var(--green)' : 
+                     diversificationScore > 40 ? 'var(--yellow)' : 'var(--red)',
+            }}>
+              {diversificationScore.toFixed(0)}%
             </p>
           </div>
 
@@ -476,21 +470,28 @@ export default function ProfilePage() {
               color: 'var(--text-secondary)',
               fontWeight: '400',
             }}>
-              Portfolio Volatility
+              Risk Rating
             </h3>
             <p style={{
               fontSize: 'var(--font-size-2xl)',
               fontWeight: '700',
               margin: '0',
-              color: portfolioVolatility > 100 ? 'var(--red)' : 
-                     portfolioVolatility > 50 ? 'var(--yellow)' : 'var(--green)',
+              color: exposureRating === 'High' ? 'var(--red)' : 
+                     exposureRating === 'Medium' ? 'var(--yellow)' : 'var(--green)',
             }}>
-              {portfolioVolatility.toFixed(1)}%
+              {exposureRating}
+            </p>
+            <p style={{
+              fontSize: 'var(--font-size-xs)',
+              margin: '4px 0 0 0',
+              color: 'var(--text-secondary)',
+            }}>
+              {portfolioVolatility.toFixed(0)}% volatility
             </p>
           </div>
         </div>
 
-        {/* My Opinion Portfolio */}
+        {/* Enhanced Opinion Portfolio Display */}
         <section style={{ margin: '40px 0' }}>
           <h2 style={{
             fontSize: 'var(--font-size-xl)',
@@ -499,7 +500,7 @@ export default function ProfilePage() {
             color: 'var(--text-primary)',
             paddingLeft: '32px',
           }}>
-            My Opinion Portfolio
+            My Opinion Portfolio ({ownedOpinions.length} positions)
           </h2>
 
           {ownedOpinions.length === 0 ? (
@@ -518,9 +519,6 @@ export default function ProfilePage() {
                 gap: '20px',
               }}>
                 {ownedOpinions.slice(0, 6).map((o, index) => {
-                  const gainLoss = (o.currentPrice - o.purchasePrice) * o.quantity;
-                  const gainLossPercent = ((o.currentPrice - o.purchasePrice) / o.purchasePrice) * 100;
-                  
                   return (
                     <a
                       key={`${o.id}-${index}`}
@@ -531,20 +529,22 @@ export default function ProfilePage() {
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '16px',
-                        minHeight: '200px',
+                        minHeight: '220px',
                         textDecoration: 'none',
                         color: 'inherit',
                         cursor: 'pointer',
-                        transition: 'background var(--transition)',
+                        transition: 'all var(--transition)',
                         border: '1px solid var(--border-secondary)',
                         borderRadius: 'var(--radius-md)',
                         boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = 'var(--bg-light)';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'var(--white)';
+                        e.currentTarget.style.transform = 'translateY(0)';
                       }}
                     >
                       <div style={{ flex: 1 }}>
@@ -557,13 +557,17 @@ export default function ProfilePage() {
                         }}>
                           {o.text}
                         </p>
-                        <p style={{
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '8px',
                           fontSize: 'var(--font-size-xs)',
                           color: 'var(--text-secondary)',
-                          margin: '0',
+                          marginBottom: '8px',
                         }}>
-                          Purchased: {o.purchaseDate} | Qty: {o.quantity}
-                        </p>
+                          <span>Qty: {o.quantity}</span>
+                          <span>Avg: ${o.averagePrice.toFixed(2)}</span>
+                        </div>
                       </div>
                       
                       <div style={{
@@ -583,7 +587,7 @@ export default function ProfilePage() {
                               color: 'var(--text-secondary)',
                               margin: '0',
                             }}>
-                              Bought: ${o.purchasePrice.toFixed(2)}
+                              Value: ${o.currentValue.toFixed(2)}
                             </p>
                             <p style={{
                               fontSize: 'var(--font-size-lg)',
@@ -598,17 +602,17 @@ export default function ProfilePage() {
                             <p style={{
                               fontSize: 'var(--font-size-sm)',
                               margin: '0',
-                              color: gainLoss >= 0 ? 'var(--green)' : 'var(--red)',
+                              color: o.unrealizedGainLoss >= 0 ? 'var(--green)' : 'var(--red)',
                               fontWeight: '600',
                             }}>
-                              {gainLoss >= 0 ? '+' : ''}${gainLoss.toFixed(2)}
+                              {o.unrealizedGainLoss >= 0 ? '+' : ''}${o.unrealizedGainLoss.toFixed(2)}
                             </p>
                             <p style={{
                               fontSize: 'var(--font-size-xs)',
                               margin: '0',
-                              color: gainLossPercent >= 0 ? 'var(--green)' : 'var(--red)',
+                              color: o.unrealizedGainLossPercent >= 0 ? 'var(--green)' : 'var(--red)',
                             }}>
-                              ({gainLossPercent >= 0 ? '+' : ''}{gainLossPercent.toFixed(1)}%)
+                              ({o.unrealizedGainLossPercent >= 0 ? '+' : ''}{o.unrealizedGainLossPercent.toFixed(1)}%)
                             </p>
                           </div>
                         </div>
@@ -658,7 +662,7 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* My Portfolio Bets and Shorts */}
+        {/* Enhanced Portfolio Bets and Shorts */}
         <section style={{ margin: '40px 0' }}>
           <h2 style={{
             fontSize: 'var(--font-size-xl)',
@@ -667,191 +671,207 @@ export default function ProfilePage() {
             color: 'var(--text-primary)',
             paddingLeft: '32px',
           }}>
-            My Portfolio Bets and Shorts
+            My Portfolio Bets and Shorts ({userBets.length + userShorts.length} positions)
           </h2>
 
-          <div style={{
-            background: 'var(--white)',
-            paddingLeft: '32px',
-            paddingRight: '32px',
-            paddingBottom: '20px',
-          }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
-              gap: '20px',
-            }}>
-              {/* BET Positions */}
-              {mockBetPositions.map((position) => (
-                <div key={position.id} style={{
-                  background: 'var(--white)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-secondary)',
-                  position: 'relative',
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '8px',
-                  }}>
-                    <h3 style={{
-                      fontSize: 'var(--font-size-md)',
-                      fontWeight: '600',
-                      margin: '0',
-                      color: 'var(--text-primary)',
-                      lineHeight: '1.4',
-                      maxWidth: '70%',
-                    }}>
-                      {position.title}
-                    </h3>
-                    <div style={{
-                      background: 'var(--green)',
-                      color: 'var(--white)',
-                      padding: '4px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 'var(--font-size-xs)',
-                      fontWeight: '700',
-                      letterSpacing: '0.5px',
-                    }}>
-                      {position.type}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    fontSize: 'var(--font-size-xs)',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '16px',
-                  }}>
-                    Placed: {position.placedDate} | {position.daysHeld} days | {position.multiplier} multiplier
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-end',
-                  }}>
-                    <div>
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'var(--text-secondary)',
-                        marginBottom: '4px',
-                      }}>
-                        Wagered: ${position.wagered.toFixed(2)}
-                      </div>
-                      <div style={{
-                        fontSize: 'var(--font-size-lg)',
-                        fontWeight: '700',
-                        color: 'var(--text-primary)',
-                      }}>
-                        ${position.currentValue.toFixed(2)}
-                      </div>
-                    </div>
-                    <div style={{
-                      textAlign: 'right',
-                    }}>
-                      <div style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontWeight: '600',
-                        color: 'var(--green)',
-                      }}>
-                        +${position.potential.toFixed(2)}
-                      </div>
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'var(--green)',
-                      }}>
-                        (+{position.percentage.toFixed(1)}%)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* SHORT Positions */}
-              {mockShortPositions.map((position) => (
-                <div key={position.id} style={{
-                  background: 'var(--white)',
-                  padding: '20px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-secondary)',
-                  position: 'relative',
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-start',
-                    marginBottom: '8px',
-                  }}>
-                    <h3 style={{
-                      fontSize: 'var(--font-size-md)',
-                      fontWeight: '600',
-                      margin: '0',
-                      color: 'var(--text-primary)',
-                      lineHeight: '1.4',
-                      maxWidth: '70%',
-                    }}>
-                      {position.title}
-                    </h3>
-                    <div style={{
-                      background: 'var(--red)',
-                      color: 'var(--white)',
-                      padding: '4px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 'var(--font-size-xs)',
-                      fontWeight: '700',
-                      letterSpacing: '0.5px',
-                    }}>
-                      {position.type}
-                    </div>
-                  </div>
-
-                  <div style={{
-                    fontSize: 'var(--font-size-xs)',
-                    color: 'var(--text-secondary)',
-                    marginBottom: '16px',
-                  }}>
-                    Shorted: {position.shortedDate} | {position.dropTarget}% drop target | {position.progress}% progress
-                  </div>
-
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'flex-end',
-                  }}>
-                    <div>
-                      <div style={{
-                        fontSize: 'var(--font-size-xs)',
-                        color: 'var(--text-secondary)',
-                        marginBottom: '4px',
-                      }}>
-                        Entry: ${position.entry.toFixed(2)}
-                      </div>
-                      <div style={{
-                        fontSize: 'var(--font-size-lg)',
-                        fontWeight: '700',
-                        color: 'var(--text-primary)',
-                      }}>
-                        ${position.currentValue.toFixed(2)}
-                      </div>
-                    </div>
-                    <div style={{
-                      textAlign: 'right',
-                    }}>
-                      <div style={{
-                        fontSize: 'var(--font-size-sm)',
-                        fontWeight: '600',
-                        color: 'var(--text-secondary)',
-                      }}>
-                        {position.shares} shares obligation
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          {userBets.length === 0 && userShorts.length === 0 ? (
+            <div className="empty-state">
+              No active betting positions. Start by placing bets on other traders' portfolios.
             </div>
-          </div>
+          ) : (
+            <div style={{
+              background: 'var(--white)',
+              paddingLeft: '32px',
+              paddingRight: '32px',
+              paddingBottom: '20px',
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+                gap: '20px',
+              }}>
+                {/* Enhanced BET Positions */}
+                {userBets.map((position: any) => (
+                  <div key={position.id} style={{
+                    background: 'var(--white)',
+                    padding: '20px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid var(--border-secondary)',
+                    position: 'relative',
+                    transition: 'all var(--transition)',
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '12px',
+                    }}>
+                      <h3 style={{
+                        fontSize: 'var(--font-size-md)',
+                        fontWeight: '600',
+                        margin: '0',
+                        color: 'var(--text-primary)',
+                        lineHeight: '1.4',
+                        maxWidth: '70%',
+                      }}>
+                        {position.title}
+                      </h3>
+                      <div style={{
+                        background: position.riskLevel === 'High' ? 'var(--red)' : 
+                                   position.riskLevel === 'Medium' ? 'var(--yellow)' : 'var(--green)',
+                        color: 'var(--white)',
+                        padding: '4px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: '700',
+                        letterSpacing: '0.5px',
+                      }}>
+                        {position.type} • {position.riskLevel}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      fontSize: 'var(--font-size-xs)',
+                      color: 'var(--text-secondary)',
+                      marginBottom: '16px',
+                    }}>
+                      Placed: {position.placedDate} | {position.daysHeld} days | {position.multiplier}x multiplier
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-end',
+                    }}>
+                      <div>
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: 'var(--text-secondary)',
+                          marginBottom: '4px',
+                        }}>
+                          Wagered: ${position.wagered.toFixed(2)}
+                        </div>
+                        <div style={{
+                          fontSize: 'var(--font-size-lg)',
+                          fontWeight: '700',
+                          color: 'var(--text-primary)',
+                        }}>
+                          ${position.currentValue.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{
+                        textAlign: 'right',
+                      }}>
+                        <div style={{
+                          fontSize: 'var(--font-size-sm)',
+                          fontWeight: '600',
+                          color: position.potential >= 0 ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          {position.potential >= 0 ? '+' : ''}${position.potential.toFixed(2)}
+                        </div>
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: position.percentage >= 0 ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          ({position.percentage >= 0 ? '+' : ''}{position.percentage.toFixed(1)}%)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Enhanced SHORT Positions */}
+                {userShorts.map((position: any) => (
+                  <div key={position.id} style={{
+                    background: 'var(--white)',
+                    padding: '20px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '2px solid var(--border-secondary)',
+                    position: 'relative',
+                    transition: 'all var(--transition)',
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      marginBottom: '12px',
+                    }}>
+                      <h3 style={{
+                        fontSize: 'var(--font-size-md)',
+                        fontWeight: '600',
+                        margin: '0',
+                        color: 'var(--text-primary)',
+                        lineHeight: '1.4',
+                        maxWidth: '70%',
+                      }}>
+                        {position.title}
+                      </h3>
+                      <div style={{
+                        background: position.riskLevel === 'High' ? 'var(--red)' : 
+                                   position.riskLevel === 'Medium' ? 'var(--yellow)' : 'var(--green)',
+                        color: 'var(--white)',
+                        padding: '4px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: 'var(--font-size-xs)',
+                        fontWeight: '700',
+                        letterSpacing: '0.5px',
+                      }}>
+                        {position.type} • {position.riskLevel}
+                      </div>
+                    </div>
+
+                    <div style={{
+                      fontSize: 'var(--font-size-xs)',
+                      color: 'var(--text-secondary)',
+                      marginBottom: '16px',
+                    }}>
+                      Shorted: {position.shortedDate} | {position.dropTarget}% target | {position.progress.toFixed(1)}% progress
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-end',
+                    }}>
+                      <div>
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: 'var(--text-secondary)',
+                          marginBottom: '4px',
+                        }}>
+                          Entry: ${position.entry.toFixed(2)} → ${position.currentPrice.toFixed(2)}
+                        </div>
+                        <div style={{
+                          fontSize: 'var(--font-size-lg)',
+                          fontWeight: '700',
+                          color: 'var(--text-primary)',
+                        }}>
+                          ${position.currentValue.toFixed(2)}
+                        </div>
+                      </div>
+                      <div style={{
+                        textAlign: 'right',
+                      }}>
+                        <div style={{
+                          fontSize: 'var(--font-size-sm)',
+                          fontWeight: '600',
+                          color: 'var(--text-secondary)',
+                        }}>
+                          {position.shares} shares
+                        </div>
+                        <div style={{
+                          fontSize: 'var(--font-size-xs)',
+                          color: position.progress > 50 ? 'var(--green)' : 'var(--red)',
+                        }}>
+                          Target: ${position.targetPrice.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Recent Activity */}
@@ -878,6 +898,9 @@ export default function ProfilePage() {
           </div>
         </section>
       </main>
+
+      {/* Activity Integration for real-time updates */}
+      <ActivityIntegration userProfile={profile || undefined} />
     </div>
   );
 }

@@ -33,36 +33,45 @@ const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }
     const init = async () => {
       try {
         const { default: globalActivityTracker } = await import('./GlobalActivityTracker');
-        console.log('🔧 ActivityIntegration: Setting up real-time profile updates…');
+        console.log('🔧 ActivityIntegration: Setting up real-time profile updates for user:', user?.uid);
 
         // Helper to update tracker with profile changes
         const updateTrackerProfile = (profile: UserProfile) => {
-          globalActivityTracker.updateCurrentUser({
+          const userData = {
             uid: user?.uid || '',
             username: profile.username,
             balance: profile.balance,
             totalEarnings: profile.totalEarnings,
             totalLosses: profile.totalLosses,
-            joinDate: new Date(profile.joinDate),
+            joinDate: ((profile.joinDate as any)?.toDate ? (profile.joinDate as any).toDate() : new Date(profile.joinDate as any)),
             createdAt: new Date(), // We don't have this in the UserProfile interface
             updatedAt: new Date()
-          });
-          console.log('👤 ActivityIntegration: Updated tracker with profile →', profile.username);
+          };
+          
+          console.log('👤 ActivityIntegration: Updating tracker with user data:', userData);
+          globalActivityTracker.updateCurrentUser(userData);
         };
 
         // If a profile was passed as prop (e.g. SSR), update immediately
         if (userProfile && user?.uid) {
+          console.log('👤 ActivityIntegration: Using provided userProfile:', userProfile);
           updateTrackerProfile(userProfile);
         }
 
         // Listen to live profile updates via Firestore
         if (user?.uid) {
           const userDoc = doc(db, 'users', user.uid);
+          console.log('🔧 ActivityIntegration: Setting up Firestore profile subscription for:', user.uid);
           unsubscribe = onSnapshot(userDoc, snap => {
             if (snap.exists()) {
               const data = snap.data() as UserProfile;
+              console.log('🔥 ActivityIntegration: Profile updated from Firestore:', data);
               updateTrackerProfile(data);
+            } else {
+              console.warn('⚠️ ActivityIntegration: User document does not exist:', user.uid);
             }
+          }, (error) => {
+            console.error('❌ ActivityIntegration: Profile subscription error:', error);
           });
         }
 
@@ -74,10 +83,18 @@ const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }
 
     // Only initialize if we have a user
     if (user?.uid) {
+      console.log('🔧 ActivityIntegration: Initializing for authenticated user:', user.uid);
       init();
+    } else {
+      console.log('⚠️ ActivityIntegration: No authenticated user, skipping initialization');
     }
 
-    return () => unsubscribe?.();
+    return () => {
+      if (unsubscribe) {
+        console.log('🔧 ActivityIntegration: Cleaning up profile subscription');
+        unsubscribe();
+      }
+    };
   }, [user, userProfile]);
 
   // No visible output
