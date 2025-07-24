@@ -18,9 +18,7 @@ const nextConfig: NextConfig = {
 
     return config;
   },
-  experimental: {
-    esmExternals: 'loose',
-  },
+  // Removed deprecated esmExternals setting
 };
 
 export default nextConfig;

@@ -28,6 +28,8 @@ import {
   type UnifiedOpinionMarketData,
   type UnifiedTransaction,
 } from '../lib/unified-system';
+import { opinionConflictResolver } from '../lib/opinion-conflict-resolver';
+import { createMarketDataDocId } from '../lib/document-id-utils';
 
 import { db } from '../lib/firebase';
 import { firebaseActivityService } from '../lib/firebase-activity';
@@ -120,18 +122,20 @@ class AutonomousBotSystem {
         const userDoc = await getDoc(doc(usersCollection, botId));
         
         if (!userDoc.exists()) {
-          // Create user entry for the bot
-          await setDoc(doc(usersCollection, botId), {
-            username: bot.username || `Bot_${botId}`,
-            balance: bot.balance || 50000,
-            joinDate: bot.joinDate || new Date().toISOString(),
-            totalEarnings: bot.totalEarnings || 0,
-            totalLosses: bot.totalLosses || 0,
-            isBot: true,
-            botId: botId,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          });
+          // Create user entry for the bot with conflict resolution
+          await opinionConflictResolver.retryOperation(async () => {
+            await setDoc(doc(usersCollection, botId), {
+              username: bot.username || `Bot_${botId}`,
+              balance: bot.balance || 50000,
+              joinDate: bot.joinDate || new Date().toISOString(),
+              totalEarnings: bot.totalEarnings || 0,
+              totalLosses: bot.totalLosses || 0,
+              isBot: true,
+              botId: botId,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            });
+          }, 'createBotUserProfile');
           console.log(`🤖 Created user entry for bot: ${bot.username}`);
         }
       } catch (error) {
@@ -154,7 +158,8 @@ class AutonomousBotSystem {
     // HIGH FREQUENCY: 30 seconds to 2 minute intervals for bot activity
     [...this.bots.values()].forEach(bot => {
       if (!bot.isActive) return;
-      const ms = 30_000 + Math.random() * 90_000; // 30 seconds to 2 minutes
+      // CONFLICT REDUCTION: Increased interval timing to reduce concurrent operations
+      const ms = 60_000 + Math.random() * 120_000; // 1 minute to 3 minutes (was 30s to 2m)
       this.intervals[bot.id] = setInterval(() => this.tick(bot), ms);
     });
   }
@@ -226,11 +231,12 @@ class AutonomousBotSystem {
   private async tick(bot: BotProfile) {
     try {
       // Determine activity frequency based on bot personality
-      const activityChance = this.getBotActivityChance(bot);
-      if (Math.random() > activityChance) {
+      // CONFLICT REDUCTION: Reduced bot activity frequency to prevent version conflicts
+      const reducedActivityChance = this.getBotActivityChance(bot) * 0.3; // Reduce by 70%
+      if (Math.random() > reducedActivityChance) {
         // Occasional debug logging to show ticks are happening
-        if (Math.random() < 0.001) { // Log 0.1% of tick attempts
-          console.log(`🤖 ${bot.username}: Tick (no action this time, ${(activityChance * 100).toFixed(0)}% chance)`);
+        if (Math.random() < 0.0001) { // Reduced logging frequency
+          console.log(`🤖 ${bot.username}: Tick (no action this time, ${(reducedActivityChance * 100).toFixed(1)}% chance)`);
         }
         return;
       }
@@ -254,9 +260,7 @@ class AutonomousBotSystem {
         case 'bet':
           await this.handleBettingActivity(bot);
           break;
-        case 'generate':
-          await this.handleOpinionGeneration(bot);
-          break;
+        // ❌ REMOVED 'generate' case - no more fake opinion generation
         default:
           await this.handleBuyActivity(bot); // Default to buying
       }
@@ -279,12 +283,13 @@ class AutonomousBotSystem {
   }
 
   private chooseActivityType(bot: BotProfile): string {
-    const activities = ['buy', 'sell', 'short', 'bet', 'generate'];
+    // ❌ REMOVED 'generate' from activities - no more fake opinion generation
+    const activities = ['buy', 'sell', 'short', 'bet'];
     const weights: Record<string, number[]> = {
-      // [buy, sell, short, bet, generate] weights
-      'aggressive': [0.3, 0.2, 0.25, 0.15, 0.1],
-      'conservative': [0.4, 0.3, 0.05, 0.05, 0.2],
-      'moderate': [0.35, 0.25, 0.15, 0.1, 0.15]
+      // [buy, sell, short, bet] weights - increased betting/shorting for more variety
+      'aggressive': [0.25, 0.20, 0.35, 0.20],  // More shorts & bets for aggressive bots
+      'conservative': [0.45, 0.30, 0.10, 0.15], // Slightly more conservative betting
+      'moderate': [0.35, 0.25, 0.25, 0.15]      // Balanced approach
     };
 
     // Determine bot type from username
@@ -346,25 +351,30 @@ class AutonomousBotSystem {
       // Apply the trade through unified system
       const updatedMarketData = await this.market.applyTrade(opinion.text, 'buy', qty, bot.id);
       
-      // Update bot balance in RAM & Firestore
+      // Update bot balance in RAM & Firestore with conflict resolution
       bot.balance -= total;
       bot.lastActive = new Date().toISOString();
-      await updateDoc(doc(colBots, bot.id), {
-        balance: bot.balance,
-        lastActive: bot.lastActive,
-      });
+      
+      await opinionConflictResolver.retryOperation(async () => {
+        await updateDoc(doc(colBots, bot.id), {
+          balance: bot.balance,
+          lastActive: bot.lastActive,
+        });
+      }, `update bot ${bot.username} balance after buy`);
 
       // SYNC FIX: Also update users collection for unified access
-      await setDoc(doc(db, 'users', bot.id), {
-        username: bot.username || `Bot_${bot.id}`,
-        balance: bot.balance,
-        joinDate: bot.joinDate || new Date().toISOString(),
-        totalEarnings: bot.totalEarnings || 0,
-        totalLosses: bot.totalLosses || 0,
-        isBot: true,
-        botId: bot.id,
-        lastActive: bot.lastActive
-      }, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'users', bot.id), {
+          username: bot.username || `Bot_${bot.id}`,
+          balance: bot.balance,
+          joinDate: bot.joinDate || new Date().toISOString(),
+          totalEarnings: bot.totalEarnings || 0,
+          totalLosses: bot.totalLosses || 0,
+          isBot: true,
+          botId: bot.id,
+          lastActive: bot.lastActive
+        }, { merge: true });
+      }, `update bot ${bot.username} user profile`);
 
       // Create and save transaction
       const transaction = this.txMgr.create('buy', -total, {
@@ -409,19 +419,37 @@ class AutonomousBotSystem {
         }
       });
       
-      // Update portfolio in bot-portfolios collection
-      await setDoc(
-        doc(colBotPortfolios, `${bot.id}_${opinion.id}`),
-        {
+      // Update portfolio in bot-portfolios collection - ACCUMULATE quantities
+      const portfolioDocRef = doc(colBotPortfolios, `${bot.id}_${opinion.id}`);
+      const existingDoc = await getDoc(portfolioDocRef);
+      
+      if (existingDoc.exists()) {
+        // Accumulate quantity and calculate new average price
+        const existingData = existingDoc.data();
+        const existingQty = existingData.qty || 0;
+        const existingAvgPrice = existingData.avgPrice || price;
+        const newTotalQty = existingQty + qty;
+        const newAvgPrice = ((existingAvgPrice * existingQty) + (price * qty)) / newTotalQty;
+        
+        await setDoc(portfolioDocRef, {
+          botId: bot.id,
+          opinionId: opinion.id,
+          opinionText: opinion.text,
+          qty: newTotalQty,           // ✅ ACCUMULATE quantity
+          avgPrice: newAvgPrice,      // ✅ CALCULATE weighted average price
+          updatedAt: Timestamp.now(),
+        });
+      } else {
+        // Create new document for first purchase
+        await setDoc(portfolioDocRef, {
           botId: bot.id,
           opinionId: opinion.id,
           opinionText: opinion.text,
           qty: qty,
           avgPrice: price,
           updatedAt: Timestamp.now(),
-        },
-        { merge: true }
-      );
+        });
+      }
 
       // Update consolidated bot portfolio
       await this.updateBotPortfolio(bot.id);
@@ -464,9 +492,13 @@ class AutonomousBotSystem {
   private async handleShortActivity(bot: BotProfile) {
     try {
       const opinions = await this.getAvailableOpinions();
-      if (!opinions.length) return;
+      if (!opinions.length) {
+        console.log(`🤖 ${bot.username}: No opinions available for shorting`);
+        return;
+      }
 
       const opinion = opinions[Math.floor(Math.random() * opinions.length)];
+      console.log(`🤖 ${bot.username}: Attempting to short "${opinion.text.slice(0, 50)}..."`);
       await this.createShortPosition(bot, opinion);
     } catch (error) {
       console.error(`🤖 ${bot.username} short error:`, error);
@@ -483,6 +515,7 @@ class AutonomousBotSystem {
       }
 
       const targetUser = users[Math.floor(Math.random() * users.length)];
+      console.log(`🤖 ${bot.username}: Attempting to bet on ${targetUser}'s portfolio`);
       await this.placeBet(bot, targetUser);
     } catch (error) {
       console.error(`🤖 ${bot.username} bet error:`, error);
@@ -559,12 +592,14 @@ class AutonomousBotSystem {
         lastActive: bot.lastActive
       }, { merge: true });
 
-      // Remove from portfolio
-      await updateDoc(doc(colBotPortfolios, position.id), {
-        qty: 0,
-        soldAt: sellPrice,
-        soldDate: new Date().toISOString()
-      });
+      // Remove from portfolio with conflict resolution
+      await opinionConflictResolver.retryOperation(async () => {
+        await updateDoc(doc(colBotPortfolios, position.id), {
+          qty: 0,
+          soldAt: sellPrice,
+          soldDate: new Date().toISOString()
+        });
+      }, 'updateBotPortfolioPosition');
 
       // Create transaction
       const transaction = this.txMgr.create('sell', sellValue, {
@@ -616,16 +651,18 @@ class AutonomousBotSystem {
     try {
       const marketData = await this.market.get(opinion.text);
       const currentPrice = marketData.currentPrice;
-      const shortAmount = currentPrice * 10; // Short for $100 worth
+      // Make shorts more affordable - reduce from 10x to 3x current price
+      const shortAmount = Math.max(currentPrice * 3, 25); // Min $25, or 3x price
       
       if (bot.balance < shortAmount) {
-        console.log(`🤖 ${bot.username}: Insufficient balance for short position`);
+        console.log(`🤖 ${bot.username}: Insufficient balance ($${bot.balance.toFixed(2)}) for short position ($${shortAmount.toFixed(2)})`);
         return;
       }
 
       // Create short position document
       const shortId = `${bot.id}_short_${Date.now()}`;
       await setDoc(doc(db, 'short-positions', shortId), {
+        userId: bot.id, // ✅ FIX: Ensure bots use their own bot ID as userId
         botId: bot.id,
         opinionId: opinion.id,
         opinionText: opinion.text,
@@ -633,24 +670,32 @@ class AutonomousBotSystem {
         targetDropPercentage: 20, // Target 20% drop
         amount: shortAmount,
         status: 'active',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        isBot: true // ✅ FIX: Mark as bot-generated
       });
 
-      // Update bot balance
+      // Update bot balance with conflict resolution
       bot.balance -= shortAmount;
-      await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
+      await opinionConflictResolver.retryOperation(async () => {
+        await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
+      }, `update bot ${bot.username} balance after short`);
+
+      console.log(`📉 ${bot.username}: Created short position on "${opinion.text.slice(0, 50)}..." for $${shortAmount.toFixed(2)}`);
+    
 
       // SYNC FIX: Also update users collection for unified access
-      await setDoc(doc(db, 'users', bot.id), {
-        username: bot.username || `Bot_${bot.id}`,
-        balance: bot.balance,
-        joinDate: bot.joinDate || new Date().toISOString(),
-        totalEarnings: bot.totalEarnings || 0,
-        totalLosses: bot.totalLosses || 0,
-        isBot: true,
-        botId: bot.id,
-        lastActive: new Date().toISOString()
-      }, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'users', bot.id), {
+          username: bot.username || `Bot_${bot.id}`,
+          balance: bot.balance,
+          joinDate: bot.joinDate || new Date().toISOString(),
+          totalEarnings: bot.totalEarnings || 0,
+          totalLosses: bot.totalLosses || 0,
+          isBot: true,
+          botId: bot.id,
+          lastActive: new Date().toISOString()
+        }, { merge: true });
+      }, `update bot ${bot.username} user profile after short`);
 
       // Create transaction
       const transaction = this.txMgr.create('short_place', -shortAmount, {
@@ -674,22 +719,26 @@ class AutonomousBotSystem {
       await this.updateBotPortfolio(bot.id);
       
       // Log to activity feed for live display
-      await firebaseActivityService.addActivity({
-        type: 'short_place',
-        username: bot.username || `Bot_${bot.id}`,
-        userId: bot.id,
-        opinionText: opinion.text,
-        opinionId: opinion.id,
-        amount: shortAmount,
-        price: currentPrice,
-        isBot: true,
-        botId: bot.id,
-        metadata: {
-          source: 'bot_system',
-          activityType: 'short_position',
-          targetDropPercentage: 20
-        }
-      });
+      try {
+        await firebaseActivityService.addActivity({
+          type: 'short_place',
+          username: bot.username || `Bot_${bot.id}`,
+          userId: bot.id,
+          opinionText: opinion.text,
+          opinionId: opinion.id,
+          amount: shortAmount,
+          price: currentPrice,
+          isBot: true,
+          botId: bot.id,
+          metadata: {
+            source: 'bot_system',
+            activityType: 'short_position',
+            targetDropPercentage: 20
+          }
+        });
+      } catch (activityError) {
+        console.error(`🤖 ${bot.username} activity logging error:`, activityError);
+      }
     } catch (error) {
       console.error(`🤖 ${bot.username} short creation error:`, error);
     }
@@ -700,22 +749,39 @@ class AutonomousBotSystem {
   // ----------------------------------------------------------------------------
   private async getOtherUsers(botId: string): Promise<string[]> {
     try {
-      // Get active bots as betting targets
-      const botsSnapshot = await getDocs(colBots);
-      return botsSnapshot.docs
+      // Get both real users AND other bots as betting targets
+      const [usersSnapshot, botsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(colBots)
+      ]);
+      
+      const users = usersSnapshot.docs
+        .filter(doc => doc.id !== botId && !doc.data().isBot)
+        .map(doc => doc.data().username)
+        .filter(username => username); // Remove empty usernames
+      
+      const bots = botsSnapshot.docs
         .filter(doc => doc.id !== botId && doc.data().isActive)
         .map(doc => doc.data().username)
-        .slice(0, 10); // Limit to 10 potential targets
+        .filter(username => username);
+      
+      const allTargets = [...users, ...bots].slice(0, 20); // Increase target pool
+      console.log(`🎲 ${allTargets.length} betting targets available for bot betting`);
+      return allTargets;
     } catch (error) {
-      console.error('Error fetching other users:', error);
+      console.error('Error fetching betting targets:', error);
       return [];
     }
   }
 
   private async placeBet(bot: BotProfile, targetUsername: string) {
     try {
-      const betAmount = 50 + Math.random() * 200; // $50-$250 bet
-      if (bot.balance < betAmount) return;
+      // Make bets more affordable
+      const betAmount = 10 + Math.random() * 50; // $10-$60 bet (was $50-$250)
+      if (bot.balance < betAmount) {
+        console.log(`🤖 ${bot.username}: Insufficient balance ($${bot.balance.toFixed(2)}) for bet ($${betAmount.toFixed(2)})`);
+        return;
+      }
 
       const betTypes = ['increase', 'decrease'];
       const betType = betTypes[Math.floor(Math.random() * betTypes.length)];
@@ -724,6 +790,7 @@ class AutonomousBotSystem {
       // Create bet document
       const betId = `${bot.id}_bet_${Date.now()}`;
       await setDoc(doc(db, 'advanced-bets', betId), {
+        userId: bot.id, // ✅ FIX: Ensure bots use their own bot ID as userId
         botId: bot.id,
         botUsername: bot.username || `Bot_${bot.id}`,
         targetUser: targetUsername,
@@ -732,24 +799,32 @@ class AutonomousBotSystem {
         amount: betAmount,
         timeframe: 7, // 7 days
         status: 'active',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        isBot: true // ✅ FIX: Mark as bot-generated
       });
 
-      // Update bot balance
+      // Update bot balance with conflict resolution
       bot.balance -= betAmount;
-      await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
+      await opinionConflictResolver.retryOperation(async () => {
+        await updateDoc(doc(colBots, bot.id), { balance: bot.balance });
+      }, `update bot ${bot.username} balance after bet`);
+
+      console.log(`🎲 ${bot.username}: Placed $${betAmount.toFixed(2)} bet on ${targetUsername}'s portfolio (${betType} ${targetPercentage.toFixed(1)}%)`);
+    
 
       // SYNC FIX: Also update users collection for unified access
-      await setDoc(doc(db, 'users', bot.id), {
-        username: bot.username || `Bot_${bot.id}`,
-        balance: bot.balance,
-        joinDate: bot.joinDate || new Date().toISOString(),
-        totalEarnings: bot.totalEarnings || 0,
-        totalLosses: bot.totalLosses || 0,
-        isBot: true,
-        botId: bot.id,
-        lastActive: new Date().toISOString()
-      }, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'users', bot.id), {
+          username: bot.username || `Bot_${bot.id}`,
+          balance: bot.balance,
+          joinDate: bot.joinDate || new Date().toISOString(),
+          totalEarnings: bot.totalEarnings || 0,
+          totalLosses: bot.totalLosses || 0,
+          isBot: true,
+          botId: bot.id,
+          lastActive: new Date().toISOString()
+        }, { merge: true });
+      }, `update bot ${bot.username} user profile after bet`);
 
       // Create transaction
       const transaction = this.txMgr.create('bet', -betAmount, {
@@ -773,109 +848,40 @@ class AutonomousBotSystem {
       await this.updateBotPortfolio(bot.id);
       
       // Log to activity feed for live display
-      await firebaseActivityService.addActivity({
-        type: 'bet_place',
-        username: bot.username || `Bot_${bot.id}`,
-        userId: bot.id,
-        targetUser: targetUsername,
-        betType: betType as 'increase' | 'decrease',
-        targetPercentage: Math.round(targetPercentage),
-        amount: betAmount,
-        timeframe: 7,
-        isBot: true,
-        botId: bot.id,
-        metadata: {
-          source: 'bot_system',
-          activityType: 'portfolio_bet'
-        }
-      });
+      try {
+        await firebaseActivityService.addActivity({
+          type: 'bet_place',
+          username: bot.username || `Bot_${bot.id}`,
+          userId: bot.id,
+          targetUser: targetUsername,
+          betType: betType as 'increase' | 'decrease',
+          targetPercentage: Math.round(targetPercentage),
+          amount: betAmount,
+          timeframe: 7,
+          isBot: true,
+          botId: bot.id,
+          metadata: {
+            source: 'bot_system',
+            activityType: 'portfolio_bet'
+          }
+        });
+      } catch (activityError) {
+        console.error(`🤖 ${bot.username} activity logging error:`, activityError);
+      }
     } catch (error) {
       console.error(`🤖 ${bot.username} betting error:`, error);
     }
   }
 
   // ----------------------------------------------------------------------------
-  // 💭 Opinion Generation
+  // 💭 Opinion Generation - DISABLED: No more fake opinion generation
+  // Bots now only trade on real user-generated opinions from Firestore
   // ----------------------------------------------------------------------------
   private async generateOpinion(bot: BotProfile) {
-    try {
-      const opinionTopics = [
-        "The future of cryptocurrency markets",
-        "Climate change impact on agriculture", 
-        "Remote work productivity trends",
-        "Electric vehicle adoption rates",
-        "Social media influence on politics",
-        "Artificial intelligence job displacement",
-        "Real estate market predictions",
-        "Healthcare technology innovations",
-        "Education system reform needs",
-        "Energy transition challenges"
-      ];
-
-      const opinionStarters = [
-        "I believe that",
-        "Based on current trends,", 
-        "Looking at the data,",
-        "From my analysis,",
-        "Considering recent developments,",
-        "Given the market conditions,",
-        "Observing user behavior,",
-        "After studying patterns,"
-      ];
-
-      const topic = opinionTopics[Math.floor(Math.random() * opinionTopics.length)];
-      const starter = opinionStarters[Math.floor(Math.random() * opinionStarters.length)];
-      const opinionText = `${starter} ${topic.toLowerCase()} will see significant changes in the next 12 months.`;
-
-      // Create opinion document
-      const opinionRef = doc(collection(db, 'opinions'));
-      await setDoc(opinionRef, {
-        text: opinionText,
-        author: bot.username || `Bot_${bot.id}`,
-        createdAt: new Date().toISOString(),
-        isBot: true,
-        source: 'bot_generated' // Fixed: changed from 'bot_generation' to 'bot_generated'
-      });
-
-      // Create transaction (no money earned for generation)
-      const transaction = this.txMgr.create('generate', 0, {
-        opinionText: opinionText,
-        opinionId: opinionRef.id,
-        botId: bot.id,
-        userId: bot.id, // Add userId to match activity queries
-        metadata: { 
-          source: 'bot_system',
-          generated: true,
-          username: bot.username || `Bot_${bot.id}` // Include username
-        }
-      });
-      
-      await this.txMgr.save(transaction);
-
-      console.log(`🤖 ${bot.username} generated: "${opinionText.slice(0, 50)}..."`);
-      
-      // SYNC FIX: Update bot portfolio after opinion generation
-      await this.updateBotPortfolio(bot.id);
-      
-      // Log to activity feed for live display
-      await firebaseActivityService.addActivity({
-        type: 'generate',
-        username: bot.username || `Bot_${bot.id}`,
-        userId: bot.id,
-        opinionText: opinionText,
-        opinionId: opinionRef.id,
-        amount: 0, // No money involved in generation
-        isBot: true,
-        botId: bot.id,
-        metadata: {
-          source: 'bot_system',
-          activityType: 'opinion_generation',
-          topic: topic
-        }
-      });
-    } catch (error) {
-      console.error(`🤖 ${bot.username} opinion generation error:`, error);
-    }
+    // ❌ MOCK DATA ELIMINATED: Bots no longer generate fake opinions
+    // They will only trade on real user-generated opinions that exist in Firestore
+    console.log(`🤖 ${bot.username}: Opinion generation disabled - only trading on real user opinions`);
+    return;
   }
 
   // ----------------------------------------------------------------------------
@@ -906,10 +912,14 @@ class AutonomousBotSystem {
       };
 
       // SYNC FIX: Save to the bot-portfolios collection in the format leaderboard expects
-      await setDoc(doc(db, 'bot-portfolios', botId), consolidatedPortfolio, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'bot-portfolios', botId), consolidatedPortfolio, { merge: true });
+      }, 'updateBotPortfolio');
       
       // Also save to consolidated collection for backup
-      await setDoc(doc(db, 'consolidated-bot-portfolios', botId), consolidatedPortfolio);
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'consolidated-bot-portfolios', botId), consolidatedPortfolio);
+      }, 'updateConsolidatedBotPortfolio');
       
       // SYNC FIX: Also sync to user-portfolios for unified access
       const userPortfolioFormat = {
@@ -927,7 +937,9 @@ class AutonomousBotSystem {
         isBot: true
       };
       
-      await setDoc(doc(db, 'user-portfolios', botId), userPortfolioFormat, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(doc(db, 'user-portfolios', botId), userPortfolioFormat, { merge: true });
+      }, 'updateUserPortfolio');
       
       // Update bot earnings and losses based on current portfolio value
       await this.updateBotPerformance(botId, botHoldings);
@@ -970,14 +982,16 @@ class AutonomousBotSystem {
         (bot as any).lastUnrealizedPnL = unrealizedPnL;
         (bot as any).portfolioValue = totalCurrentValue;
         
-        // Update in Firestore
-        await updateDoc(doc(colBots, botId), {
-          totalEarnings: bot.totalEarnings,
-          totalLosses: bot.totalLosses,
-          lastUnrealizedPnL: unrealizedPnL,
-          portfolioValue: totalCurrentValue,
-          lastPerformanceUpdate: new Date().toISOString()
-        });
+        // Update in Firestore with conflict resolution
+        await opinionConflictResolver.retryOperation(async () => {
+          await updateDoc(doc(colBots, botId), {
+            totalEarnings: bot.totalEarnings,
+            totalLosses: bot.totalLosses,
+            lastUnrealizedPnL: unrealizedPnL,
+            portfolioValue: totalCurrentValue,
+            lastPerformanceUpdate: new Date().toISOString()
+          });
+        }, 'updateBotPerformanceStats');
       }
     } catch (error) {
       console.error(`Error updating bot performance for ${botId}:`, error);

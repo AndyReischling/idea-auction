@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/lib/auth-context';
-import { migrationTestingService } from '@/lib/migration-testing';
+import { useAuth } from '../lib/auth-context';
+import { migrationTestingService } from '../lib/migration-testing';
 import {
   PlayCircle,
   CheckCircle,
@@ -12,7 +12,7 @@ import {
   Download,
   Upload,
   ArrowsClockwise,
-  FlaskConical,
+  TestTube,
   Shield,
   Database,
 } from '@phosphor-icons/react';
@@ -113,9 +113,9 @@ export default function MigrationTestRunner() {
       <button
         onClick={() => setIsVisible(true)}
         title="Test Migration"
-        className="fixed bottom-4 right-4 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors z-40"
+        className="fixed bottom-4 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg hover:bg-gray-700 transition-colors z-40"
       >
-        <FlaskConical size={24} />
+        <TestTube className="w-6 h-6" />
       </button>
     );
   }

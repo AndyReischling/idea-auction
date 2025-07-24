@@ -1,0 +1,892 @@
+# Query: localstorage
+
+830 results - 43 files
+
+.env.local:
+  125:         const stored = ('semanticEmbeddings');
+  141:         localStorage.setItem('semanticEmbeddings', JSON.stringify(data));
+  182:       localStorage.removeItem('semanticEmbeddings');
+  396:         return JSON.parse(localStorage.getItem('opinions') || '[]').filter(Boolean);
+  409:         const activities = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  410:         const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  425:         const currentUser = JSON.parse(localStorage.getItem('userProfile') || '{}');
+  444:         const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
+  457:         return JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  468:         return JSON.parse(localStorage.getItem('transactions') || '[]');
+  479:         return JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  506:     // Import here to avoid issues with localStorage on server side
+
+.env.local.backup:
+  125:         const stored = localStorage.getItem('semanticEmbeddings');
+  141:         localStorage.setItem('semanticEmbeddings', JSON.stringify(data));
+  182:       localStorage.removeItem('semanticEmbeddings');
+  396:         return JSON.parse(localStorage.getItem('opinions') || '[]').filter(Boolean);
+  409:         const activities = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  410:         const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  425:         const currentUser = JSON.parse(localStorage.getItem('userProfile') || '{}');
+  444:         const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
+  457:         return JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  468:         return JSON.parse(localStorage.getItem('transactions') || '[]');
+  479:         return JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  506:     // Import here to avoid issues with localStorage on server side
+
+FIREBASE_PERMISSIONS_FIX.md:
+   6: - **"⚠️ Failed to add bot transaction to Firebase (using localStorage fallback)"**
+  80: ### Still Using localStorage Mode?
+  81: If you see "using localStorage fallback" in the status:
+  85: 4. Bot activities will sync to Firebase instead of localStorage only
+
+FIREBASE_REQUIREMENTS.md:
+   4: Migrate the opinion trading application from localStorage to Firebase, implementing authentication, cloud data persistence, and secure API middleware.
+  90: - **Dual Mode**: Support both localStorage and Firestore during transition
+  92: - **Backup Strategy**: Export localStorage data before migration
+  93: - **Rollback Plan**: Ability to revert to localStorage if needed
+  96: - **Firestore Listeners**: Replace localStorage polling with real-time listeners
+
+firestore.rules:
+  156:     // LocalStorage backup data - users can only access their own backups
+  157:     match /localStorage_backup/{backupId} {
+
+LOCALSTORAGE_SYNC_README.md:
+    1: # localStorage to Firebase Sync
+    3: A comprehensive solution to sync all your localStorage data to Firebase Firestore with proper organization and error handling.
+    8: 1. Visit `/localStorage-sync` in your app
+   21: import { syncLocalStorageToFirebase } from './lib/quick-sync';
+   24: const result = await syncLocalStorageToFirebase({
+   37: The system automatically organizes your localStorage data into appropriate Firebase collections:
+   39: | localStorage Key | Firebase Collection | Description |
+   51: | Other keys | `localStorage_backup` | General backup collection |
+   56: - Automatically identifies data types from localStorage keys
+   76: - Creates complete backup in `localStorage_backup` collection
+   84: import { syncLocalStorageToFirebase } from './lib/quick-sync';
+   87: const result = await syncLocalStorageToFirebase();
+   93: const result = await syncLocalStorageToFirebase({
+  114: import { getLocalStorageStats } from './lib/quick-sync';
+  116: const stats = getLocalStorageStats();
+  124: - Original localStorage key and value
+  163: localStorage.setItem('debug', 'true');
+  169: 2. **Data Backup**: All data is also backed up to `localStorage_backup` collection
+  179: getLocalStorageStats()            // Check what's in localStorage
+  180: syncLocalStorageToFirebase()      // Programmatic sync
+  185: Visit `/localStorage-sync` for a full web interface with:
+  193: - `app/lib/localStorage-to-firebase.ts` - Main sync service
+  195: - `app/components/LocalStorageSync.tsx` - React component
+  196: - `app/localStorage-sync/page.tsx` - Web interface page
+
+package.json:
+  11:     "extract-localStorage": "node scripts/push-to-firestore.js push-localStorage",
+
+PHASE_1_SUMMARY.md:
+  100: - Migrate localStorage data to Firestore
+
+app/page.tsx:
+   58:   // Note: Using Firebase data only, no localStorage helpers needed
+   78:       // Get market data from Firebase/localStorage via realtimeDataService
+  108:       // No localStorage fallback - Firebase only
+  167:       // No localStorage fallback - Firebase only
+  188:       // Get opinions from Firebase/localStorage via realtimeDataService
+  301:         console.log('📊 HomePage: Opinions updated from Firebase/localStorage');
+  308:         console.log('📊 HomePage: Market data updated from Firebase/localStorage');
+  329:   // Handle storage changes (for localStorage fallback)
+  336:     // Listen for localStorage changes
+
+app/admin/page.tsx:
+   50:       // Check bot status from localStorage
+   51:       const botsEnabled = localStorage.getItem('botsAutoStart') === 'true';
+   55:       const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  109:       localStorage.setItem('botsAutoStart', 'false');
+  113:       localStorage.setItem('botsAutoStart', 'true');
+
+app/api/search/route.ts:
+  14:     // Import here to avoid issues with localStorage on server side
+
+app/components/ActivityIntegration.tsx:
+  35:           // Load from localStorage if no userProfile provided
+  36:           const storedProfile = localStorage.getItem('userProfile');
+  47:         // Listen for user profile changes from localStorage
+
+app/components/autonomous-bots.ts:
+   200:       // Method 1: Add to GlobalActivityTracker (localStorage) with sanitization
+   244:           console.error('⚠️ Failed to add bot transaction to Firebase (using localStorage fallback):', error);
+   277:     const stored = localStorage.getItem('autonomousBots');
+   815:       const botOpinions = JSON.parse(localStorage.getItem('botOpinions_global') || '[]');
+   825:       localStorage.setItem('botOpinions_global', JSON.stringify(botOpinions));
+   931:       const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+   933:       localStorage.setItem('advancedBets', JSON.stringify(bets));
+   995:       const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+   997:       localStorage.setItem('shortPositions', JSON.stringify(shorts));
+  1014:       const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+  1054:         localStorage.setItem('shortPositions', JSON.stringify(updatedShorts));
+  1064:       localStorage.setItem('autonomousBots', JSON.stringify(this.bots));
+  1077:       return JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  1085:       const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+  1305:           const currentOpinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+  1461:       const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  1505:       localStorage.setItem('botTransactions', JSON.stringify(uniqueTransactions));
+  1531:       const transactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  1595:       const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+  1596:       const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  1597:       const globalFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  1800:     const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+  1819:     localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
+  1823:     const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+  1835:       localStorage.setItem('botOpinions', JSON.stringify(botOpinions));
+  1840:     const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '{}');
+  1912:       const stored = localStorage.getItem('opinions');
+  2154:     const opinions = JSON.parse(localStorage.getItem('opinions') || '[]');
+  2166:       localStorage.setItem('opinions', JSON.stringify(opinions));
+
+app/components/BotManager.tsx:
+  19:           localStorage.setItem('botsAutoStart', 'true');
+  20:           localStorage.setItem('botsInitialized', 'true');
+  28:           const shouldBeRunning = localStorage.getItem('botsAutoStart') === 'true';
+
+app/components/FirebaseMigrationUI.tsx:
+   15:   const [localStorageData, setLocalStorageData] = useState<{ [key: string]: any }>({});
+   19:   // Check for localStorage data on component mount
+   21:     analyzeLocalStorage();
+   24:   const analyzeLocalStorage = () => {
+   41:         const item = localStorage.getItem(key);
+   54:         console.error(`Error analyzing localStorage key ${key}:`, error);
+   58:     setLocalStorageData(data);
+   97:         <p>Please sign in to migrate your localStorage data to Firebase.</p>
+  117:           This will migrate all your localStorage data to Firebase for persistent storage across devices and sessions.
+  123:           <div style={{ fontSize: '18px', marginBottom: '10px' }}>🔍 Analyzing localStorage...</div>
+  129:           <div>No localStorage data found to migrate.</div>
+  137:               {Object.entries(localStorageData).map(([key, data]) => (
+  195:                   <div>✅ localStorage has been cleared</div>
+  220:             ⚠️ <strong>Important:</strong> After migration, all localStorage data will be cleared and the app will use Firebase exclusively. Make sure you're signed in and have a stable internet connection.
+  228:           onClick={analyzeLocalStorage}
+
+app/components/LocalStorageSync.tsx:
+    5: import { localStorageToFirebaseService } from '../lib/localStorage-to-firebase';
+   22: export default function LocalStorageSync() {
+   28:   const [localStorageStats, setLocalStorageStats] = useState<{
+   34:   // Get localStorage stats on component mount
+   37:       getLocalStorageStats();
+   41:   const getLocalStorageStats = () => {
+   45:     for (let i = 0; i < localStorage.length; i++) {
+   46:       const key = localStorage.key(i);
+   48:         const value = localStorage.getItem(key);
+   56:     setLocalStorageStats({
+   83:       const syncResults = await localStorageToFirebaseService.pushAllLocalStorageToFirebase(
+  111:       const syncResults = await localStorageToFirebaseService.syncSpecificData(keys);
+  143:         <h2 className="text-2xl font-bold text-gray-800 mb-4">📦 localStorage to Firebase Sync</h2>
+  145:           <p className="text-gray-600 mb-4">You need to be logged in to sync your localStorage data to Firebase.</p>
+  156:       <h2 className="text-2xl font-bold text-gray-800 mb-4">📦 localStorage to Firebase Sync</h2>
+  158:       {/* localStorage Stats */}
+  159:       {localStorageStats && (
+  161:           <h3 className="text-lg font-semibold mb-2">Current localStorage Data</h3>
+  165:               <p className="text-xl font-bold">{localStorageStats.totalItems}</p>
+  169:               <p className="text-xl font-bold">{localStorageStats.totalSize}</p>
+  173:               <p className="text-xl font-bold">{localStorageStats.itemTypes.length}</p>
+  198:             onClick={() => getLocalStorageStats()}
+  207:           This will sync all your localStorage data to Firebase, organized by data type into appropriate collections.
+  287:       {localStorageStats && (
+  291:             {localStorageStats.itemTypes.map((type, index) => (
+
+app/components/MigrationTestRunner.tsx:
+   36:     localStorageLatency: number;
+   71:           localStorageLatency: -1,
+  334:                     <span className="text-gray-600">LocalStorage Latency:</span>
+  336:                       {results.performanceMetrics.localStorageLatency}ms
+
+app/feed/page.tsx:
+   463:   // Safe localStorage helpers
+   467:       const item = localStorage.getItem(key);
+   470:       console.error(`Error reading localStorage key ${key}:`, error);
+   478:       localStorage.setItem(key, JSON.stringify(value));
+   480:       console.error(`Error writing to localStorage key ${key}:`, error);
+  1790:   // Safe localStorage helpers
+  1794:       const item = localStorage.getItem(key);
+  1797:       console.error(`Error reading localStorage key ${key}:`, error);
+  1805:       localStorage.setItem(key, JSON.stringify(value));
+  1807:       console.error(`Error writing to localStorage key ${key}:`, error);
+  2216:             ❌ Firebase Error: {firebaseError} (using localStorage fallback)
+
+app/feed/page.tsx.backup:
+   463:   // Safe localStorage helpers
+   467:       const item = localStorage.getItem(key);
+   470:       console.error(`Error reading localStorage key ${key}:`, error);
+   478:       localStorage.setItem(key, JSON.stringify(value));
+   480:       console.error(`Error writing to localStorage key ${key}:`, error);
+  1792:   // Load user profile from Firebase/auth context with localStorage fallback
+  1813:           // Update localStorage to ensure consistency
+  1814:           localStorage.setItem('userProfile', JSON.stringify({
+  1825:         // Fallback to auth context + localStorage
+  1835:           // Override with localStorage balance if available (transactions update localStorage)
+  1858:           // Update localStorage to ensure consistency
+  1859:           localStorage.setItem('userProfile', JSON.stringify({
+  1868:         console.log('Feed page: New authenticated user, checking localStorage first');
+  1907:         // Fallback to localStorage profile (for development/testing)
+  1919:       // Fallback to localStorage profile
+  1920:       const storedProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+  1936:       const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  1943:       localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+  1946:       const activityFeed = JSON.parse(localStorage.getItem('activityFeed') || '[]');
+  1953:       localStorage.setItem('activityFeed', JSON.stringify(updatedActivityFeed));
+  1970:   // Safe localStorage helpers with proper error handling
+  1974:       const item = localStorage.getItem(key);
+  1977:       console.error(`Error reading localStorage key ${key}:`, error);
+  1985:       localStorage.setItem(key, JSON.stringify(value));
+  1987:       console.error(`Error writing to localStorage key ${key}:`, error);
+  1999:       console.log(`🔍 DEBUG: Raw bot data from localStorage:`, bots.slice(0, 3));
+  2158:       // Get bot transactions from localStorage as fallback
+  2852:     // 2. Add to localStorage for persistence and bot system integration
+  2990:   // SIMPLE: Check what's actually in localStorage
+  2991:   const checkLocalStorageData = () => {
+  2992:     console.log('🔍 SIMPLE CHECK: Raw localStorage data...');
+  2994:     // Check all localStorage keys
+  2995:     const keys = Object.keys(localStorage);
+  2996:     console.log('🔑 All localStorage keys:', keys);
+  3009:         const raw = localStorage.getItem(key);
+  3038:     localStorage.removeItem('botTransactions');
+  3039:     localStorage.removeItem('globalActivityFeed');
+  3040:     localStorage.removeItem('opinions');
+  3041:     localStorage.removeItem('opinionMarketData');
+  3068:     // First check raw localStorage
+  3069:     checkLocalStorageData();
+  3071:     // Check localStorage data
+  3078:     console.log(`  - Bots in localStorage: ${botsData.length}`);
+  3125:       // Clear localStorage data
+  3126:       localStorage.removeItem('autonomousBots');
+  3127:       localStorage.removeItem('botTransactions');
+  3201:   // LEGACY: Migrate localStorage activity to Firebase (kept for backward compatibility)
+  3202:   const migrateLocalStorageToFirebase = async () => {
+  3203:     console.log('🔄 MIGRATION: Starting localStorage to Firebase migration...');
+  3206:       // Get existing localStorage activities
+  3325:     (window as any).migrateLocalStorageToFirebase = migrateLocalStorageToFirebase;
+  3346:       delete (window as any).migrateLocalStorageToFirebase;
+  3461:     // CRITICAL: Listen for localStorage changes to trigger real-time updates
+  3579:           console.error('🔒 Firebase permissions issue detected - falling back to localStorage mode');
+  3585:         // Fallback to localStorage-only mode
+  3586:         console.log('⚠️ Falling back to localStorage-only mode due to Firebase error...');
+  3804:                 <>❌ Firebase Error: {firebaseError} (using localStorage fallback)</>
+  3841: The app is working in localStorage mode for now.`;
+  4105:                     onClick={checkLocalStorageData}
+  4193:                     onClick={migrateLocalStorageToFirebase}
+  4329:                         alert(`❌ Firebase bot test failed!\n\nError: ${errorMsg}\n\nThis means bot activities will fall back to localStorage only.\nSee FIREBASE_PERMISSIONS_FIX.md for instructions to fix this.`);
+
+app/lib/auth-context.tsx:
+   99:       // Load user opinions from Firebase (will override localStorage)
+  103:       // Load user portfolio from Firebase (will override localStorage)
+  111:       // Clear any potentially conflicting localStorage data
+  112:       console.log('🧹 Clearing potentially stale localStorage data...');
+  114:       // Don't clear all localStorage, just ensure Firebase data takes precedence
+  115:       // The realtimeDataService methods already handle this by saving Firebase data to localStorage
+  306:       // Get current localStorage profile
+  307:       const localProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
+  310:         // Update Firebase with current localStorage data
+  317:         console.log('✅ Synced localStorage profile to Firebase');
+  318:         return { message: 'Successfully synced localStorage data to Firebase' };
+  320:         console.log('✅ No localStorage data to sync');
+  321:         return { message: 'No localStorage data found to sync' };
+
+app/lib/conflict-resolution.ts:
+   22:   | 'localStorage_wins'      // Always prefer localStorage data
+   79:     // User profile: localStorage wins for balance/stats, Firebase wins for settings
+  181:    * Detect conflicts between localStorage and Firebase for a specific data type
+  188:       const localData = this.getFromLocalStorage(dataType, null);
+  209:           resolution: 'localStorage_wins'
+  446:         case 'localStorage_wins':
+  530:       // localStorage wins for financial data (more recent transactions)
+  666:    * Apply resolved data to both localStorage and Firebase
+  669:     // Update localStorage
+  670:     this.saveToLocalStorage(dataType, resolvedData);
+  823:   private getFromLocalStorage<T>(key: string, defaultValue: T): T {
+  826:       const item = localStorage.getItem(key);
+  829:       console.error(`Error reading localStorage key ${key}:`, error);
+  834:   private saveToLocalStorage<T>(key: string, value: T): void {
+  837:       localStorage.setItem(key, JSON.stringify(value));
+  839:       console.error(`Error writing to localStorage key ${key}:`, error);
+
+app/lib/contentIndexer.ts:
+  205:         return JSON.parse(localStorage.getItem('opinions') || '[]').filter(Boolean);
+  218:         const activities = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  219:         const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  234:         const currentUser = JSON.parse(localStorage.getItem('userProfile') || '{}');
+  253:         const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
+  266:         return JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  277:         return JSON.parse(localStorage.getItem('transactions') || '[]');
+  288:         return JSON.parse(localStorage.getItem('botTransactions') || '[]');
+
+app/lib/data-reconciliation.ts:
+   32:   strategy: 'firebase_wins' | 'localStorage_wins' | 'merge' | 'manual';
+   84:   // Safe localStorage helper
+   88:       const item = localStorage.getItem(key);
+   91:       console.error(`Error reading localStorage key ${key}:`, error);
+   99:       localStorage.setItem(key, JSON.stringify(value));
+  101:       console.error(`Error writing to localStorage key ${key}:`, error);
+  151:       // Get localStorage activities
+  250:       // Get localStorage profile
+  274:         console.log('✅ Created new Firebase profile from localStorage');
+  278:       // Compare profiles and resolve conflicts - localStorage ALWAYS wins for financial data
+  281:       // Balance: localStorage ALWAYS wins (most recent transaction data)
+  286:         conflicts.push(`Balance mismatch: local=${localBalance}, firebase=${firebaseBalance} - localStorage wins`);
+  288:         console.log(`🔄 Syncing balance: Firebase ${firebaseBalance} → localStorage ${localBalance}`);
+  291:       // Earnings and losses: localStorage ALWAYS wins (most recent transaction data)
+  296:         conflicts.push(`Earnings mismatch: local=${localEarnings}, firebase=${firebaseEarnings} - localStorage wins`);
+  298:         console.log(`🔄 Syncing earnings: Firebase ${firebaseEarnings} → localStorage ${localEarnings}`);
+  305:         conflicts.push(`Losses mismatch: local=${localLosses}, firebase=${firebaseLosses} - localStorage wins`);
+  307:         console.log(`🔄 Syncing losses: Firebase ${firebaseLosses} → localStorage ${localLosses}`);
+  313:         // Update localStorage with Firebase username
+  319:         console.log(`🔄 Syncing username: localStorage ${localProfile.username} → Firebase ${firebaseProfile.username}`);
+  329:         console.log('✅ Firebase profile updated with localStorage financial data');
+  364:       // Get localStorage market data
+  483:   // Clean up localStorage data after successful migration
+  484:   async cleanupLocalStorageAfterMigration(userId: string): Promise<{
+  489:     console.log('🧹 Starting localStorage cleanup after migration...');
+  500:       // Define what localStorage keys correspond to each data type
+  531:                 localStorage.removeItem(key);
+  559:   // Restore localStorage from backup
+  573:         localStorage.removeItem(backupKey);
+  600:     for (let i = 0; i < localStorage.length; i++) {
+  601:       const key = localStorage.key(i);
+  655:     return await this.cleanupLocalStorageAfterMigration(userId);
+
+app/lib/embeddings.ts:
+  122:         const stored = localStorage.getItem('semanticEmbeddings');
+  138:         localStorage.setItem('semanticEmbeddings', JSON.stringify(data));
+  179:       localStorage.removeItem('semanticEmbeddings');
+
+app/lib/firebase-migration.ts:
+    4: // Define all localStorage keys used in the application
+    5: const LOCALSTORAGE_KEYS = [
+   43:    * Complete migration from localStorage to Firebase
+   55:       console.log('🚀 Starting complete localStorage to Firebase migration...');
+   57:       // Check if user has localStorage data
+   58:       const hasLocalData = this.hasLocalStorageData();
+   62:           message: 'No localStorage data found to migrate',
+  108:       result.message = `Successfully migrated ${result.totalItemsMigrated} items from localStorage to Firebase`;
+  123:    * Clear localStorage after successful migration
+  125:   async clearLocalStorage(): Promise<void> {
+  128:     console.log('🧹 Clearing localStorage after successful migration...');
+  130:     LOCALSTORAGE_KEYS.forEach(key => {
+  132:         localStorage.removeItem(key);
+  133:         console.log(`✅ Cleared localStorage key: ${key}`);
+  135:         console.error(`❌ Failed to clear localStorage key ${key}:`, error);
+  141:    * Check if localStorage has any data worth migrating
+  143:   private hasLocalStorageData(): boolean {
+  146:     return LOCALSTORAGE_KEYS.some(key => {
+  148:         const data = localStorage.getItem(key);
+  160:    * Safe localStorage getter
+  162:   private getFromLocalStorage<T>(key: string, defaultValue: T): T {
+  166:       const item = localStorage.getItem(key);
+  169:       console.error(`Error reading localStorage key ${key}:`, error);
+  178:     const localProfile: any = this.getFromLocalStorage('userProfile', null);
+  210:     const localOpinions: string[] = this.getFromLocalStorage('opinions', []);
+  241:     const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
+  274:     const localTransactions: any[] = this.getFromLocalStorage('transactions', []);
+  309:     const localBotTransactions: any[] = this.getFromLocalStorage('botTransactions', []);
+  345:     const localOwnedOpinions = this.getFromLocalStorage('ownedOpinions', []);
+  371:     const localSnapshots = this.getFromLocalStorage('portfolioSnapshots', []);
+  397:     const localBets: any[] = this.getFromLocalStorage('advancedBets', []);
+  434:     const localShorts: any[] = this.getFromLocalStorage('shortPositions', []);
+  473:     const globalFeed = this.getFromLocalStorage('globalActivityFeed', []);
+  474:     const userFeed = this.getFromLocalStorage('activityFeed', []);
+  514:     const localBots = this.getFromLocalStorage('autonomousBots', []);
+  540:     const localBotOpinions = this.getFromLocalStorage('botOpinions', {});
+  566:     const localOtherUsers = this.getFromLocalStorage('otherUsers', []);
+  592:     const localEmbeddings = this.getFromLocalStorage('semanticEmbeddings', []);
+  618:     const localAttributions = this.getFromLocalStorage('opinionAttributions', {});
+  644:     const botsAutoStart = this.getFromLocalStorage('botsAutoStart', 'false');
+  645:     const botsInitialized = this.getFromLocalStorage('botsInitialized', 'false');
+  676:     // Clear localStorage after successful migration
+  677:     await migrationService.clearLocalStorage();
+
+app/lib/localStorage-to-firebase.ts:
+   16: interface LocalStorageItem {
+   40: export class LocalStorageToFirebaseService {
+   41:   private static instance: LocalStorageToFirebaseService;
+   72:   public static getInstance(): LocalStorageToFirebaseService {
+   73:     if (!LocalStorageToFirebaseService.instance) {
+   74:       LocalStorageToFirebaseService.instance = new LocalStorageToFirebaseService();
+   76:     return LocalStorageToFirebaseService.instance;
+   86:    * Main function to push all localStorage data to Firebase
+   88:   public async pushAllLocalStorageToFirebase(
+   96:     console.log('🚀 Starting localStorage to Firebase sync...');
+   98:     // Extract all localStorage data
+   99:     const localStorageData = this.extractAllLocalStorageData();
+  103:       total: localStorageData.length,
+  111:     // Process each localStorage item
+  112:     for (const item of localStorageData) {
+  117:         const result = await this.processLocalStorageItem(item);
+  143:     await this.createFullBackup(localStorageData);
+  145:     console.log('🎉 localStorage to Firebase sync completed!');
+  153:    * Extract all localStorage data
+  155:   private extractAllLocalStorageData(): LocalStorageItem[] {
+  156:     const items: LocalStorageItem[] = [];
+  158:     for (let i = 0; i < localStorage.length; i++) {
+  159:       const key = localStorage.key(i);
+  161:         const value = localStorage.getItem(key);
+  186:     console.log(`📦 Extracted ${items.length} localStorage items`);
+  191:    * Process a single localStorage item
+  193:   private async processLocalStorageItem(item: LocalStorageItem): Promise<SyncResult> {
+  234:   private async syncUserProfile(item: LocalStorageItem): Promise<SyncResult> {
+  248:         syncedFromLocalStorage: true,
+  250:         localStorageBackup: item.parsedValue
+  276:   private async syncOpinions(item: LocalStorageItem): Promise<SyncResult> {
+  298:             syncedFromLocalStorage: true,
+  328:   private async syncTransactions(item: LocalStorageItem): Promise<SyncResult> {
+  349:             syncedFromLocalStorage: true,
+  379:   private async syncActivityFeed(item: LocalStorageItem): Promise<SyncResult> {
+  399:             syncedFromLocalStorage: true,
+  430:   private async syncMarketData(item: LocalStorageItem): Promise<SyncResult> {
+  451:             syncedFromLocalStorage: true,
+  481:   private async syncPortfolio(item: LocalStorageItem): Promise<SyncResult> {
+  496:         syncedFromLocalStorage: true,
+  523:   private async syncBots(item: LocalStorageItem): Promise<SyncResult> {
+  543:             syncedFromLocalStorage: true,
+  573:   private async syncAdvancedBets(item: LocalStorageItem): Promise<SyncResult> {
+  594:             syncedFromLocalStorage: true,
+  624:   private async syncShortPositions(item: LocalStorageItem): Promise<SyncResult> {
+  645:             syncedFromLocalStorage: true,
+  675:   private async syncGenericData(item: LocalStorageItem, collectionName: string): Promise<SyncResult> {
+  685:         syncedFromLocalStorage: true,
+  709:    * Create a complete backup of all localStorage data
+  711:   private async createFullBackup(items: LocalStorageItem[]): Promise<void> {
+  715:       const backupDoc = doc(collection(db, 'localStorage_backup'));
+  726:       console.log('💾 Full localStorage backup created successfully');
+  733:    * Identify data type from localStorage key
+  760:     return this.dataTypeMapping[dataType] || 'localStorage_backup';
+  781:       const value = localStorage.getItem(key);
+  783:         const item: LocalStorageItem = {
+  796:         const result = await this.processLocalStorageItem(item);
+  806: export const localStorageToFirebaseService = LocalStorageToFirebaseService.getInstance(); 
+
+app/lib/market-data-sync.ts:
+   57:   // Safe localStorage helper
+   61:       const item = localStorage.getItem(key);
+   64:       console.error(`Error reading localStorage key ${key}:`, error);
+   72:       localStorage.setItem(key, JSON.stringify(value));
+   74:       console.error(`Error writing to localStorage key ${key}:`, error);
+  250:       console.log('🔄 Merging market data from Firebase and localStorage...');
+  278:       // Update localStorage with merged data
+  309:       // Update localStorage with Firebase data
+  382:       // Update localStorage
+
+app/lib/migration-testing.ts:
+   38:     localStorageLatency: number;
+  162:           localStorageLatency: -1,
+  212:    * Test data integrity between localStorage and Firebase
+  219:       const localProfile = this.getFromLocalStorage('userProfile', null);
+  220:       const localOpinions = this.getFromLocalStorage('opinions', []);
+  221:       const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
+  278:       const localProfile = this.getFromLocalStorage('userProfile', null);
+  338:       const localOpinions = this.getFromLocalStorage('opinions', []);
+  382:       const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
+  435:       const localTransactions = this.getFromLocalStorage('transactions', []);
+  534:       if (metrics.localStorageLatency > 100) {
+  535:         issues.push('LocalStorage latency too high');
+  573:         passed: config.enableLocalStorageFallback,
+  574:         message: config.enableLocalStorageFallback ? 
+  653:       // LocalStorage data
+  654:       const localStorageKeys = [
+  668:       localStorageKeys.forEach(key => {
+  669:         const value = this.getFromLocalStorage(key, null);
+  671:           data[`localStorage_${key}`] = value;
+  717:       // Also save to localStorage for persistence
+  718:       this.saveToLocalStorage(`backup_${backupId}`, backup);
+  739:         // Try to load from localStorage
+  740:         backup = this.getFromLocalStorage(`backup_${backupId}`, null);
+  747:       // Restore localStorage data
+  749:         if (key.startsWith('localStorage_')) {
+  750:           const realKey = key.replace('localStorage_', '');
+  751:           this.saveToLocalStorage(realKey, value);
+  775:     // Also remove from localStorage
+  777:       localStorage.removeItem(`backup_${backupId}`);
+  786:     localStorageLatency: number;
+  799:     // Test localStorage latency
+  800:     const localStorageStart = Date.now();
+  803:       localStorage.setItem('test_performance', JSON.stringify(testData));
+  804:       localStorage.getItem('test_performance');
+  805:       localStorage.removeItem('test_performance');
+  809:     const localStorageLatency = Date.now() - localStorageStart;
+  822:       localStorageLatency,
+  868:    * Safe localStorage operations
+  870:   private getFromLocalStorage<T>(key: string, defaultValue: T): T {
+  873:       const item = localStorage.getItem(key);
+  876:       console.error(`Error reading localStorage key ${key}:`, error);
+  881:   private saveToLocalStorage<T>(key: string, value: T): void {
+  884:       localStorage.setItem(key, JSON.stringify(value));
+  886:       console.error(`Error writing to localStorage key ${key}:`, error);
+
+app/lib/quick-sync.ts:
+    3: import { localStorageToFirebaseService } from './localStorage-to-firebase';
+    6:  * Quick sync function to push all localStorage data to Firebase
+    9: export const syncLocalStorageToFirebase = async (options?: {
+   14:     console.log('🚀 Starting quick localStorage sync...');
+   16:     const results = await localStorageToFirebaseService.pushAllLocalStorageToFirebase(
+   44:  * Quick sync function for specific localStorage keys
+   50:     const results = await localStorageToFirebaseService.syncSpecificData(keys);
+   75:  * Get localStorage stats without syncing
+   77: export const getLocalStorageStats = () => {
+   85:   for (let i = 0; i < localStorage.length; i++) {
+   86:     const key = localStorage.key(i);
+   88:       const value = localStorage.getItem(key);
+  107:   console.log('🚀 Starting immediate localStorage sync...');
+  110:     const result = await syncLocalStorageToFirebase({
+  134:   (window as any).syncLocalStorageToFirebase = syncLocalStorageToFirebase;
+  135:   (window as any).getLocalStorageStats = getLocalStorageStats;
+
+app/lib/realtime-data-service.ts:
+   29:   enableLocalStorageFallback: boolean;
+   48:     source: 'firebase' | 'localStorage';
+   78:       enableLocalStorageFallback: true,
+  109:         console.log('🌐 Network offline - switching to localStorage mode');
+  124:           console.log('👤 User signed out - switching to localStorage only');
+  139:     if (!targetUserId) return this.getFromLocalStorage('userProfile', null);
+  161:     // No localStorage fallback - Firebase only
+  179:             // Update localStorage for backward compatibility
+  181:               this.saveToLocalStorage('userProfile', profile);
+  189:           // Fallback to localStorage data
+  190:           const localProfile = this.getFromLocalStorage('userProfile', null);
+  206:       // Fallback to localStorage with polling
+  207:       const localProfile = this.getFromLocalStorage('userProfile', null);
+  212:       // Poll for localStorage changes
+  214:         const currentProfile = this.getFromLocalStorage('userProfile', null);
+  282:     // No localStorage fallback - Firebase only
+  338:       // No localStorage fallback - Firebase only
+  381:     // No localStorage fallback - Firebase only
+  427:       // Fallback to localStorage with polling
+  428:       const localMarketData = this.getFromLocalStorage('opinionMarketData', {});
+  432:         const currentMarketData = this.getFromLocalStorage('opinionMarketData', {});
+  475:         this.saveToLocalStorage('globalActivityFeed', activities);
+  483:     // Fallback to localStorage
+  484:     const localActivityFeed = this.getFromLocalStorage('globalActivityFeed', []);
+  485:     this.updateCache(cacheKey, localActivityFeed, 'localStorage');
+  535:       // No localStorage fallback - Firebase only
+  589:     // No localStorage fallback - Firebase only
+  642:       // No localStorage fallback - Firebase only
+  669:     // Always update localStorage for immediate UI updates
+  670:     const currentProfile = this.getFromLocalStorage('userProfile', {});
+  672:     this.saveToLocalStorage('userProfile', updatedProfile);
+  675:     this.updateCache(`userProfile_${userId}`, updatedProfile, 'localStorage');
+  760:     // No localStorage fallback - Firebase only
+  855:   private updateCache(key: string, data: any, source: 'firebase' | 'localStorage'): void {
+  881:    * Safe localStorage get
+  883:   private getFromLocalStorage<T>(key: string, defaultValue: T): T {
+  886:       const item = localStorage.getItem(key);
+  889:       console.error(`Error reading localStorage key ${key}:`, error);
+  895:    * Safe localStorage set
+  897:   private saveToLocalStorage<T>(key: string, value: T): void {
+  900:       localStorage.setItem(key, JSON.stringify(value));
+  902:       console.error(`Error writing to localStorage key ${key}:`, error);
+
+app/lib/unified-migration.ts:
+   46: interface LocalStorageDataTypes {
+   86:     localStorageBackup: collection(db, 'localStorage_backup')
+  144:         console.log('🌐 Network offline - using localStorage fallback');
+  149:   // Safe localStorage operations
+  153:       const item = localStorage.getItem(key);
+  156:       console.error(`Error reading localStorage key ${key}:`, error);
+  164:       localStorage.setItem(key, JSON.stringify(value));
+  166:       console.error(`Error writing to localStorage key ${key}:`, error);
+  173:    * Start complete migration from localStorage to Firebase
+  190:       // 1. Create backup of localStorage data
+  193:       // 2. Analyze localStorage data
+  194:       const analysisResult = await this.analyzeLocalStorageData();
+  231:    * Create backup of all localStorage data
+  234:     console.log('💾 Creating localStorage backup...');
+  237:     const localStorageKeys = Object.keys(localStorage);
+  239:     localStorageKeys.forEach(key => {
+  241:         const value = localStorage.getItem(key);
+  255:     const backupDoc = doc(this.collections.localStorageBackup, `backup-${userId}-${Date.now()}`);
+  267:    * Analyze localStorage data to get migration statistics
+  269:   private async analyzeLocalStorageData(): Promise<{ totalItems: number; dataTypes: any }> {
+  270:     console.log('📊 Analyzing localStorage data...');
+  314:           // Merge profiles, preferring localStorage for balance and stats
+  371:               migratedFrom: 'localStorage'
+  433:             migratedFrom: 'localStorage'
+  482:                 migratedFrom: 'localStorage',
+  520:         migratedFrom: 'localStorage'
+  557:             migratedFrom: 'localStorage'
+  569:           migratedFrom: 'localStorage'
+  605:             migratedFrom: 'localStorage'
+  623:             migratedFrom: 'localStorage'
+  660:             migratedFrom: 'localStorage'
+  696:       // Verify some transactions exist if they were in localStorage
+  707:           console.warn('No transactions found in Firebase despite localStorage data');
+  753:         // Update localStorage for backward compatibility
+  781:           // Update localStorage for backward compatibility
+  816:       const hasLocalData = this.hasLocalStorageData();
+  826:    * Check if localStorage has data
+  828:   private hasLocalStorageData(): boolean {
+  860:         this.collections.localStorageBackup,
+  876:       // Restore localStorage from backup
+  878:         localStorage.setItem(key, data.value);
+
+app/lib/unified-system.ts:
+   80:   // Safe localStorage operations
+   85:       const item = localStorage.getItem(key);
+   88:       console.error(`Error reading ${key} from localStorage:`, error);
+   97:       localStorage.setItem(key, JSON.stringify(value));
+   99:       console.error(`Error saving ${key} to localStorage:`, error);
+  103:         localStorage.setItem(key, JSON.stringify(value));
+  260:   // Clean up old data to prevent localStorage overflow
+  275:       console.log('🧹 Cleaned up old data to free localStorage space');
+  372:   // Safe localStorage operations
+  377:       const item = localStorage.getItem(key);
+  380:       console.error(`Error reading ${key} from localStorage:`, error);
+  389:       localStorage.setItem(key, JSON.stringify(value));
+  391:       console.error(`Error saving ${key} to localStorage:`, error);
+  500:       const item = localStorage.getItem(key);
+  503:       console.error(`Error reading ${key} from localStorage:`, error);
+  512:       localStorage.setItem(key, JSON.stringify(value));
+  514:       console.error(`Error saving ${key} to localStorage:`, error);
+
+app/local-storage-export/page.tsx:
+    8: interface LocalStorageItem {
+   15: export default function LocalStorageExportPage() {
+   16:   const [localStorageData, setLocalStorageData] = useState<LocalStorageItem[]>([]);
+   23:     // Extract all localStorage data
+   24:     const items: LocalStorageItem[] = [];
+   26:     for (let i = 0; i < localStorage.length; i++) {
+   27:       const key = localStorage.key(i);
+   29:         const value = localStorage.getItem(key);
+   52:     setLocalStorageData(items);
+   64:     setSelectedItems(localStorageData.map(item => item.key));
+   82:         const item = localStorageData.find(i => i.key === key);
+   86:           // Create a document in a 'localStorage_backup' collection
+   98:           await addDoc(collection(db, 'localStorage_backup'), backupData);
+  118:       const item = localStorageData.find(i => i.key === key);
+  129:   'https://firestore.googleapis.com/v1/projects/YOUR_PROJECT_ID/databases/(default)/documents/localStorage_backup' \\
+  156:             <h2 className="text-xl font-semibold mb-4">Local Storage Data ({localStorageData.length} items)</h2>
+  181:               {localStorageData.map((item, index) => (
+
+app/localStorage-sync/page.tsx:
+  1: import LocalStorageSync from '../components/LocalStorageSync';
+  3: export default function LocalStorageSyncPage() {
+  6:       <LocalStorageSync />
+
+app/migration/page.tsx:
+  23:             Migrate your localStorage data to Firebase for persistent, secure, and cross-device storage.
+
+app/profile/page.tsx:
+  129:     const localProfile = localStorage.getItem('userProfile');
+  164:       const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+  252:   // Load data from localStorage
+  260:         const stored = localStorage.getItem('opinions');
+  270:         const storedProfile = localStorage.getItem('userProfile');
+  283:           // CRITICAL: localStorage ALWAYS wins for financial data (balance, earnings, losses)
+  288:               // Use localStorage balance/earnings/losses if they exist and are different
+  290:                 console.log(`🔄 BALANCE OVERRIDE: Firebase ${finalProfile.balance} → localStorage ${localProfile.balance}`);
+  295:                 console.log(`🔄 EARNINGS OVERRIDE: Firebase ${finalProfile.totalEarnings} → localStorage ${localProfile.totalEarnings}`);
+  300:                 console.log(`🔄 LOSSES OVERRIDE: Firebase ${finalProfile.totalLosses} → localStorage ${localProfile.totalLosses}`);
+  304:               console.log('✅ Final profile after localStorage override:', finalProfile);
+  306:               console.error('Error parsing localStorage profile:', error);
+  312:           // Update localStorage to ensure it has the latest profile
+  313:           localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+  315:           // Fallback to localStorage profile if no auth profile yet
+  321:         const storedAssets = localStorage.getItem('ownedOpinions');
+  327:         const storedTransactions = localStorage.getItem('transactions');
+  333:         const storedBets = localStorage.getItem('advancedBets');
+  342:         const storedShorts = localStorage.getItem('shortPositions');
+  378:       const botsEnabled = localStorage.getItem('botsAutoStart') === 'true';
+  387:   // Save user profile to localStorage
+  390:     localStorage.setItem('userProfile', JSON.stringify(profile));
+  402:       const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  410:       localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+  413:       const globalActivityFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+  421:       localStorage.setItem('globalActivityFeed', JSON.stringify(updatedGlobalFeed));
+  424:       const activityFeed = JSON.parse(localStorage.getItem('activityFeed') || '[]');
+  432:       localStorage.setItem('activityFeed', JSON.stringify(updatedActivityFeed));
+  435:       const advancedBets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+  443:       localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+  446:       const opinionAttributions = JSON.parse(localStorage.getItem('opinionAttributions') || '{}');
+  453:       localStorage.setItem('opinionAttributions', JSON.stringify(opinionAttributions));
+  456:       const shortPositions = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+  465:       localStorage.setItem('shortPositions', JSON.stringify(updatedShorts));
+  502:         // Update localStorage
+  503:         localStorage.setItem('userProfile', JSON.stringify(newProfile));
+  521:     localStorage.setItem('botsAutoStart', 'true');
+  527:     localStorage.setItem('botsAutoStart', 'false');
+  926:                 <h4 style={{ marginBottom: '8px', color: '#374151' }}>localStorage (Should Win)</h4>
+  944:             <strong>How it works:</strong> Your activity updates are stored in localStorage first, then synced to Firebase. 
+  945:             If your balance resets to 10k, use "Force Sync" to push your localStorage data to Firebase.
+
+app/reconciliation-test/page.tsx:
+  125:   const testLocalStorageData = () => {
+  126:     addResult('🔄 Checking localStorage data...');
+  132:         const data = localStorage.getItem(key);
+  149:     // Add a test transaction to localStorage
+  162:     const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+  164:     localStorage.setItem('transactions', JSON.stringify(transactions));
+  166:     addResult('✅ Test transaction added to localStorage');
+  169:     const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+  176:     localStorage.setItem('opinionMarketData', JSON.stringify(marketData));
+  178:     addResult('✅ Test market data added to localStorage');
+  225:           onClick={testLocalStorageData}
+  229:           Check localStorage Data
+  267:           <li>First, click "Simulate Test Activity" to add some test data to localStorage</li>
+  268:           <li>Then click "Check localStorage Data" to verify the data was added</li>
+
+app/users/page.tsx:
+   145:   // Load user profile from auth context or localStorage
+   150:       const storedProfile = localStorage.getItem('userProfile');
+   162:         // Override with localStorage balance if available (transactions update localStorage)
+   179:             // Update localStorage profile with correct username
+   180:             localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+   186:         console.log('Users page: New authenticated user, checking localStorage first');
+   211:           localStorage.setItem('userProfile', JSON.stringify(finalProfile));
+   231:         // Fallback to localStorage profile (for development/testing)
+   250:       const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+   257:       localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+   260:       const globalActivityFeed = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
+   267:       localStorage.setItem('globalActivityFeed', JSON.stringify(updatedGlobalFeed));
+   270:       const advancedBets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+   277:       localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+   295:       const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+   304:       const marketData = JSON.parse(localStorage.getItem('opinionMarketData') || '{}');
+   322:       const existingSnapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+   355:         localStorage.setItem('portfolioSnapshots', JSON.stringify(emergencySnapshots));
+   359:         localStorage.setItem('portfolioSnapshots', dataString);
+   368:         localStorage.removeItem('portfolioSnapshots');
+   379:         localStorage.setItem('portfolioSnapshots', JSON.stringify([freshSnapshot]));
+   393:       const snapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+   434:       const existingSnapshots = JSON.parse(localStorage.getItem('portfolioSnapshots') || '[]');
+   483:         localStorage.setItem('portfolioSnapshots', JSON.stringify(allSnapshots));
+   504:       const shorts = JSON.parse(localStorage.getItem('shortPositions') || '[]');
+   521:       const bets = JSON.parse(localStorage.getItem('advancedBets') || '[]');
+   531:       const botTransactions = JSON.parse(localStorage.getItem('botTransactions') || '[]');
+   585:       const portfolio = localStorage.getItem('userPortfolio');
+   590:       const ownedOpinions = localStorage.getItem('ownedOpinions');
+   602:       const bots = localStorage.getItem('autonomousBots');
+   614:       const botOpinions = JSON.parse(localStorage.getItem('botOpinions') || '[]');
+   704:         const transactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+   758:       const otherUsers = JSON.parse(localStorage.getItem('otherUsers') || '[]');
+   906:     localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+   913:     localStorage.setItem('userProfile', JSON.stringify(updatedUser));
+   923:     const existingTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
+   925:     localStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+   950:     localStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+   959:       localStorage.setItem('userProfile', JSON.stringify(updatedUser));
+   972:       localStorage.setItem('userProfile', JSON.stringify(updatedUser));
+  1060:       const stored = localStorage.getItem('opinions');
+  1069:       const storedProfile = localStorage.getItem('userProfile');
+  1074:       const storedBets = localStorage.getItem('advancedBets');
+
+app/users/[username]/page.tsx:
+  130:   // Safe localStorage helper with storage limit protection
+  131:   const safeLocalStorage = {
+  135:           return localStorage.getItem(key);
+  137:           console.error('Error reading from localStorage:', error);
+  151:             localStorage.setItem(key, JSON.stringify(limitedData));
+  153:             localStorage.setItem(key, value);
+  156:           console.error('Error writing to localStorage:', error);
+  160:               const existingSnapshots = localStorage.getItem('portfolioSnapshots');
+  164:                 localStorage.setItem('portfolioSnapshots', JSON.stringify(reducedSnapshots));
+  165:                 localStorage.setItem(key, value);
+  178:           localStorage.removeItem(key);
+  180:           console.error('Error removing from localStorage:', error);
+  195:       const marketDataStr = safeLocalStorage.getItem('opinionMarketData');
+  228:       const shortsStr = safeLocalStorage.getItem('shortPositions');
+  248:       const betsStr = safeLocalStorage.getItem('advancedBets');
+  334:       const snapshots = JSON.parse(safeLocalStorage.getItem('portfolioSnapshots') || '[]');
+  422:     safeLocalStorage.setItem('advancedBets', JSON.stringify(updatedBets));
+  429:     safeLocalStorage.setItem('userProfile', JSON.stringify(updatedUser));
+  439:     const existingTransactions = JSON.parse(safeLocalStorage.getItem('transactions') || '[]');
+  441:     safeLocalStorage.setItem('transactions', JSON.stringify(updatedTransactions));
+  526:       const botTransactionsStr = safeLocalStorage.getItem('botTransactions');
+  552:       const botsStr = safeLocalStorage.getItem('autonomousBots');
+  567:         const botOpinionsStr = safeLocalStorage.getItem('botOpinions');
+  582:         const currentUserProfileStr = safeLocalStorage.getItem('userProfile');
+  587:           const ownedOpinionsStr = safeLocalStorage.getItem('ownedOpinions');
+  595:           const transactionsStr = safeLocalStorage.getItem('transactions');
+  615:   // Load current user profile from auth context or localStorage
+  620:       const storedProfile = safeLocalStorage.getItem('userProfile');
+  634:         // CRITICAL: localStorage ALWAYS wins for financial data (balance, earnings, losses)
+  639:             // Use localStorage balance/earnings/losses if they exist and are different
+  641:               console.log(`🔄 BALANCE OVERRIDE: Firebase ${finalProfile.balance} → localStorage ${localProfile.balance}`);
+  646:               console.log(`🔄 EARNINGS OVERRIDE: Firebase ${finalProfile.totalEarnings} → localStorage ${localProfile.totalEarnings}`);
+  651:               console.log(`🔄 LOSSES OVERRIDE: Firebase ${finalProfile.totalLosses} → localStorage ${localProfile.totalLosses}`);
+  655:             console.log('✅ Final profile after localStorage override:', finalProfile);
+  657:             console.error('Error parsing localStorage profile:', error);
+  663:         // Update localStorage to ensure it has the latest profile
+  664:         safeLocalStorage.setItem('userProfile', JSON.stringify(finalProfile));
+  667:         console.log('User detail page: New authenticated user, checking localStorage first');
+  672:             console.log('✅ Using localStorage profile for new auth user:', localProfile);
+  675:             console.error('Error parsing localStorage profile:', error);
+  686:           // No localStorage profile, create default
+  695:           safeLocalStorage.setItem('userProfile', JSON.stringify(defaultProfile));
+  698:         // Fallback to localStorage profile (for development/testing)
+  704:             console.error('Error parsing localStorage profile:', error);
+  717:     const storedBets = safeLocalStorage.getItem('advancedBets');
+  722:     const storedStr = safeLocalStorage.getItem('opinions');
+  842:                 const allOpinions = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('opinions') || '[]') : [];
+
+scripts/curl-example.sh:
+    3: # Example script showing how to push localStorage data to Firestore using curl
+   14: echo "This script demonstrates how to push localStorage data to Firestore using curl."
+   27:     echo "You can get this from your browser's localStorage or by signing in programmatically."
+   36: # Example localStorage data
+   54:   "https://firestore.googleapis.com/v1/projects/$FIREBASE_PROJECT_ID/databases/(default)/documents/localStorage_backup" \\
+   69:       "https://firestore.googleapis.com/v1/projects/$FIREBASE_PROJECT_ID/databases/(default)/documents/localStorage_backup" \
+   88: echo "# Push a single localStorage item:"
+   90: echo "  \"https://firestore.googleapis.com/v1/projects/\$FIREBASE_PROJECT_ID/databases/(default)/documents/localStorage_backup\" \\"
+   97: echo "  \"https://firestore.googleapis.com/v1/projects/\$FIREBASE_PROJECT_ID/databases/(default)/documents/localStorage_backup\" \\"
+  102: echo "  \"https://firestore.googleapis.com/v1/projects/\$FIREBASE_PROJECT_ID/databases/(default)/documents/localStorage_backup/DOCUMENT_ID\" \\"
+  106: echo "npm run push-to-firestore push-json ./localStorage-data.json" 
+
+scripts/one-liner.sh:
+   3: # One-liner to extract localStorage and push to Firestore
+   6: echo "🚀 LocalStorage → Firestore One-Liner"
+  22: echo "📋 Step 1: Extract localStorage data"
+  25: echo "localStorage.getItem('ls-backup') || (() => {"
+  26: echo "  const data = Object.keys(localStorage).map(key => ({"
+  27: echo "    key, value: localStorage[key],"
+  28: echo "    isJSON: (() => { try { JSON.parse(localStorage[key]); return true; } catch { return false; } })()"
+  30: echo "  localStorage.setItem('ls-backup', JSON.stringify(data));"
+  40: echo "1. Save your localStorage as JSON file"
+
+scripts/push-to-firestore.js:
+   51:   push-localStorage    Extract localStorage from browser and push to Firestore
+   55:   node push-to-firestore.js push-json ./localStorage-data.json
+   64: async function pushJsonToFirestore(filePath, collectionName = 'localStorage_backup') {
+   81:       // Handle array of localStorage items
+  126: function generateLocalStorageExtractionScript() {
+  128: // Run this in your browser console to extract localStorage data
+  130:   const localStorageData = [];
+  132:   for (let i = 0; i < localStorage.length; i++) {
+  133:     const key = localStorage.key(i);
+  135:       const value = localStorage.getItem(key);
+  148:         localStorageData.push({
+  160:   const dataStr = JSON.stringify(localStorageData, null, 2);
+  166:   link.download = 'localStorage-data.json';
+  171:   console.log('📥 localStorage data downloaded as localStorage-data.json');
+  172:   console.log('💾 Found', localStorageData.length, 'items');
+  174:   return localStorageData;
+  178:   console.log('📋 Browser script to extract localStorage:');
+  184:   console.log('💡 This will download a localStorage-data.json file');
+  185:   console.log('📤 Then run: npm run push-to-firestore push-json ./localStorage-data.json');
+  201:     case 'push-localStorage':
+  202:       generateLocalStorageExtractionScript();
+
+scripts/README.md:
+    1: # localStorage to Firestore Migration Tools
+    3: This directory contains tools to help you migrate your browser's localStorage data to Firestore Cloud Database.
+   11: 3. **Select the localStorage items** you want to upload
+   16: 1. **Extract localStorage data** from your browser
+   25: 3. Review all localStorage items
+   31: #### Step 1: Extract localStorage Data
+   35: npm run extract-localStorage
+   37: This will show you a script to run in your browser console that downloads localStorage as JSON.
+   42: // Extract localStorage data
+   43: const localStorageData = [];
+   44: for (let i = 0; i < localStorage.length; i++) {
+   45:   const key = localStorage.key(i);
+   47:     const value = localStorage.getItem(key);
+   49:       localStorageData.push({
+   64: const dataStr = JSON.stringify(localStorageData, null, 2);
+   69: link.download = 'localStorage-data.json';
+   91: npm run push-to-firestore push-json ./localStorage-data.json
+  135: # Extract localStorage (shows browser script)
+  136: npm run extract-localStorage
+  139: npm run push-to-firestore push-json ./localStorage-data.json
+  150: Your localStorage data will be stored in Firestore with this structure:
+  156:   "key": "originalLocalStorageKey",
+  169: - **Data Privacy**: Only upload localStorage data that you own and are authorized to migrate
+  182: - Ensure your Firestore security rules allow authenticated users to write to the `localStorage_backup` collection
+  193: 2. **Backup**: Keep a local copy of your localStorage data
+  200: ### Upload specific localStorage items
+  203: cat localStorage-data.json | jq '[.[] | select(.key | startswith("myapp_"))]' > filtered-data.json

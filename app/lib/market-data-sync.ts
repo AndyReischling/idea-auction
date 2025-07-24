@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { createMarketDataDocId } from './document-id-utils';
+import { opinionConflictResolver } from './opinion-conflict-resolver';
 
 // -----------------------------------------------------------------------------
 // 🏷️  Types
@@ -87,12 +88,14 @@ export class MarketDataSyncService {
     // First try to increment existing counters. If the doc is missing we fall
     // back to a create‑with‑merge so we never throw “not‑found”.
     try {
-      await updateDoc(docRef, {
-        timesPurchased: action === 'buy' ? increment(1) : increment(0),
-        timesSold: action === 'sell' ? increment(1) : increment(0),
-        lastUpdated: serverTimestamp(),
-        updatedBy: userId,
-      });
+      await opinionConflictResolver.retryOperation(async () => {
+        await updateDoc(docRef, {
+          timesPurchased: action === 'buy' ? increment(1) : increment(0),
+          timesSold: action === 'sell' ? increment(1) : increment(0),
+          lastUpdated: serverTimestamp(),
+          updatedBy: userId,
+        });
+      }, `${action} market data ${text.slice(0, 30)}...`);
     } catch (err) {
       const code = (err as FirestoreError).code;
       if (code !== 'not-found') throw err;
@@ -108,11 +111,13 @@ export class MarketDataSyncService {
         lastUpdated: new Date().toISOString(),
         updatedBy: userId,
       };
-      await setDoc(docRef, baseDoc, { merge: true });
+      await opinionConflictResolver.retryOperation(async () => {
+        await setDoc(docRef, baseDoc, { merge: true });
+      }, `create market data ${text.slice(0, 30)}...`);
     }
 
-    // Price recalculation happens separately so the increment op can finish.
-    await this.recalculatePrice(text);
+    // Price recalculation with conflict resolution
+    await this.safeRecalculatePrice(text);
   }
 
   /** Fetch a single opinion’s market data (server snapshot). */
@@ -154,6 +159,26 @@ export class MarketDataSyncService {
   stopRealtimeSync() {
     this.realtimeUnsubscribes.forEach((u) => u());
     this.realtimeUnsubscribes = [];
+  }
+
+  /**
+   * Safe price recalculation with conflict resolution
+   */
+  private async safeRecalculatePrice(opinionText: string): Promise<void> {
+    await opinionConflictResolver.retryOperation(async () => {
+      const ref = doc(this.marketCol, this.createDocId(opinionText));
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+
+      const data = snap.data() as MarketData;
+      const newPrice = this.calculatePrice(data.timesPurchased, data.timesSold, data.basePrice);
+      if (newPrice !== data.currentPrice) {
+        await updateDoc(ref, {
+          currentPrice: newPrice,
+          lastUpdated: serverTimestamp(),
+        });
+      }
+    }, `recalculate price for ${opinionText.slice(0, 30)}...`);
   }
 
   // ---------------------------------------------------------------------------

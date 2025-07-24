@@ -45,12 +45,14 @@ const serviceAccount = {
 // For now, let's create a browser-based approach since we don't have service account
 console.log('🔄 Creating test data using client-side approach...');
 
+// ❌ HARDCODED OPINIONS ELIMINATED: Using clearly marked test placeholders
+// WARNING: This is DEVELOPMENT TEST DATA ONLY - DO NOT USE IN PRODUCTION
 const testData = {
   opinions: [
     {
       id: 'test-opinion-1',
-      text: 'AI will replace most software engineers within 5 years',
-      author: 'TechVisionary',
+      text: '[TEST PLACEHOLDER OPINION #1 - FOR DEVELOPMENT ONLY]',
+      author: 'TestUser1',
       authorId: 'user-123',
       source: 'user',
       isBot: false,
@@ -59,8 +61,8 @@ const testData = {
     },
     {
       id: 'test-opinion-2', 
-      text: 'Electric vehicles will dominate the market by 2030',
-      author: 'GreenFuture',
+      text: '[TEST PLACEHOLDER OPINION #2 - FOR DEVELOPMENT ONLY]',
+      author: 'TestUser2',
       authorId: 'user-456',
       source: 'user',
       isBot: false,
@@ -69,8 +71,8 @@ const testData = {
     },
     {
       id: 'test-opinion-3',
-      text: 'Remote work will become permanent for most tech companies',
-      author: 'WorkBot',
+      text: '[TEST PLACEHOLDER OPINION #3 - FOR DEVELOPMENT ONLY]',
+      author: 'TestBot1',
       authorId: 'bot-789',
       source: 'bot_generated',
       isBot: true,
@@ -79,8 +81,8 @@ const testData = {
     },
     {
       id: 'test-opinion-4',
-      text: 'Cryptocurrency will replace traditional banking within a decade',
-      author: 'CryptoEnthusiast',
+      text: '[TEST PLACEHOLDER OPINION #4 - FOR DEVELOPMENT ONLY]',
+      author: 'TestUser3',
       authorId: 'user-321',
       source: 'user',
       isBot: false,
@@ -89,8 +91,8 @@ const testData = {
     },
     {
       id: 'test-opinion-5',
-      text: 'Virtual reality will be mainstream for education by 2025',
-      author: 'EduInnovator',
+      text: '[TEST PLACEHOLDER OPINION #5 - FOR DEVELOPMENT ONLY]',
+      author: 'TestUser4',
       authorId: 'user-654',
       source: 'user',
       isBot: false,
@@ -110,8 +112,8 @@ const testData = {
       createdAt: new Date('2023-12-01'),
       updatedAt: new Date('2024-03-01'),
       portfolio: {
-        'AI will replace most software engineers within 5 years': 50,
-        'Electric vehicles will dominate the market by 2030': 25
+        '[TEST PLACEHOLDER OPINION #1 - FOR DEVELOPMENT ONLY]': 50,
+        '[TEST PLACEHOLDER OPINION #2 - FOR DEVELOPMENT ONLY]': 25
       }
     },
     {
@@ -124,8 +126,8 @@ const testData = {
       createdAt: new Date('2024-01-01'),
       updatedAt: new Date('2024-03-01'),
       portfolio: {
-        'Electric vehicles will dominate the market by 2030': 100,
-        'Remote work will become permanent for most tech companies': 30
+        '[TEST PLACEHOLDER OPINION #2 - FOR DEVELOPMENT ONLY]': 100,
+        '[TEST PLACEHOLDER OPINION #3 - FOR DEVELOPMENT ONLY]': 30
       }
     },
     {
@@ -138,8 +140,8 @@ const testData = {
       createdAt: new Date('2023-11-15'),
       updatedAt: new Date('2024-03-01'),
       portfolio: {
-        'Cryptocurrency will replace traditional banking within a decade': 75,
-        'AI will replace most software engineers within 5 years': 20
+        '[TEST PLACEHOLDER OPINION #4 - FOR DEVELOPMENT ONLY]': 75,
+        '[TEST PLACEHOLDER OPINION #1 - FOR DEVELOPMENT ONLY]': 20
       }
     },
     {
@@ -152,15 +154,15 @@ const testData = {
       createdAt: new Date('2024-02-01'),
       updatedAt: new Date('2024-03-01'),
       portfolio: {
-        'Virtual reality will be mainstream for education by 2025': 60,
-        'Remote work will become permanent for most tech companies': 15
+        '[TEST PLACEHOLDER OPINION #5 - FOR DEVELOPMENT ONLY]': 60,
+        '[TEST PLACEHOLDER OPINION #3 - FOR DEVELOPMENT ONLY]': 15
       }
     }
   ],
 
   marketData: [
     {
-      opinionText: 'AI will replace most software engineers within 5 years',
+      opinionText: '[TEST PLACEHOLDER OPINION #1 - FOR DEVELOPMENT ONLY]',
       timesPurchased: 95,
       timesSold: 20,
       currentPrice: 18.50,
@@ -178,7 +180,7 @@ const testData = {
       dailyVolume: 115
     },
     {
-      opinionText: 'Electric vehicles will dominate the market by 2030',
+      opinionText: '[TEST PLACEHOLDER OPINION #2 - FOR DEVELOPMENT ONLY]',
       timesPurchased: 125,
       timesSold: 15,
       currentPrice: 22.30,
@@ -197,7 +199,7 @@ const testData = {
       dailyVolume: 140
     },
     {
-      opinionText: 'Remote work will become permanent for most tech companies',
+      opinionText: '[TEST PLACEHOLDER OPINION #3 - FOR DEVELOPMENT ONLY]',
       timesPurchased: 65,
       timesSold: 30,
       currentPrice: 12.80,
@@ -215,7 +217,7 @@ const testData = {
       dailyVolume: 95
     },
     {
-      opinionText: 'Cryptocurrency will replace traditional banking within a decade',
+      opinionText: '[TEST PLACEHOLDER OPINION #4 - FOR DEVELOPMENT ONLY]',
       timesPurchased: 80,
       timesSold: 45,
       currentPrice: 11.60,
@@ -233,7 +235,7 @@ const testData = {
       dailyVolume: 125
     },
     {
-      opinionText: 'Virtual reality will be mainstream for education by 2025',
+      opinionText: '[TEST PLACEHOLDER OPINION #5 - FOR DEVELOPMENT ONLY]',
       timesPurchased: 60,
       timesSold: 10,
       currentPrice: 16.20,

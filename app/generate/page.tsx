@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import Sidebar from '../components/Sidebar';
-import '../global.css';
+import Header from '../components/ui/Header';
 import styles from './page.module.css';
 import { ScanSmiley } from '@phosphor-icons/react/dist/icons/ScanSmiley';
 import { RssSimple } from '@phosphor-icons/react/dist/icons/RssSimple';
@@ -25,6 +25,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { getAuth } from 'firebase/auth';
+import { opinionConflictResolver } from '../lib/opinion-conflict-resolver';
+import { createMarketDataDocId } from '../lib/document-id-utils';
 
 /**
  * The Opinion page expects each document to expose:
@@ -41,7 +43,6 @@ import { getAuth } from 'firebase/auth';
 type SourceType = 'user' | 'bot_generated';
 
 const useFirestoreOpinionWriter = () => {
-  const opinionsRef = collection(db, 'opinions');
   const auth = getAuth();
 
   return useCallback(
@@ -49,7 +50,7 @@ const useFirestoreOpinionWriter = () => {
       if (!text.trim()) return;
       try {
         const user = auth.currentUser;
-        await addDoc(opinionsRef, {
+        const opinionData = {
           text: text.trim(),
           source, // aligns with OpinionPage expectations
           isBot: source === 'bot_generated',
@@ -57,12 +58,21 @@ const useFirestoreOpinionWriter = () => {
           author: user ? user.displayName || user.email || 'Anonymous' : 'Anonymous',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        // Use consistent ID generation and conflict resolution
+        const opinionId = createMarketDataDocId(text.trim());
+        await opinionConflictResolver.safeCreateOpinion(
+          opinionId,
+          opinionData,
+          `create opinion: ${text.trim().slice(0, 30)}...`
+        );
       } catch (err) {
         console.error('❌ Failed to save opinion to Firestore', err);
+        throw err; // Re-throw to let caller handle
       }
     },
-    [opinionsRef, auth]
+    [auth]
   );
 };
 
@@ -123,10 +133,10 @@ function GenerateOpinions() {
       await saveOpinion(newOpinion, 'bot_generated');
     } catch (err) {
       console.error(err);
-      const fallback = "I bought camouflage pants but couldn't find them.";
-      setOpinion(fallback);
-      setLastGenerated(fallback);
-      await saveOpinion(fallback, 'bot_generated');
+      // ❌ HARDCODED OPINION ELIMINATED: No fallback mock opinions
+      setOpinion('❌ Opinion generation failed - please check your OpenAI API configuration');
+      setLastGenerated('');
+      // Don't save failed generations to Firestore
     } finally {
       setLoading(false);
     }
@@ -148,20 +158,10 @@ function GenerateOpinions() {
    * ------------------------------------------------------------------ */
   return (
     <div className="page-container">
+      <Header hideNavigation={['generate']} />
       <Sidebar />
 
-      <main className="main-content">
-        {/* Header */}
-        <div className={styles.pageHeader}>
-          <div className={styles.headerContent}>
-            <h1 className={styles.headerTitle}>Opinion Generator</h1>
-            <p className={styles.headerSubtitle}>Create and save opinions to trade in the marketplace</p>
-          </div>
-          <div className={styles.headerActions}>
-            <Navigation currentPage="generate" />
-          </div>
-        </div>
-
+      <main className="main-content" style={{ paddingTop: '40px' }}>
         {/* Stats */}
         <div className={styles.statsDisplay}>
           <div className={styles.statItem}>

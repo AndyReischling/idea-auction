@@ -21,11 +21,11 @@ export async function GET(request: NextRequest) {
 
   try {
     // EmbeddingService now stores its vectors in Firestore, no browser fallback
-    const { EmbeddingService } = await import('@/lib/embeddings');
+    const { EmbeddingService } = await import('../../lib/embeddings');
     const embeddingService     = EmbeddingService.getInstance();
 
-    const typeFilter =
-      type && type !== 'all' ? (type as typeof typeFilter) : undefined;
+    const typeFilter: 'opinion' | 'user' | 'activity' | 'transaction' | undefined =
+      type && type !== 'all' ? type : undefined;
     const results   = await embeddingService.searchSimilar(
       query,
       limit,
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { action } = await request.json();
-    const { ContentIndexer } = await import('@/lib/contentIndexer');
+    const { ContentIndexer } = await import('../../lib/contentIndexer');
     const indexer = new ContentIndexer();
 
     switch (action) {
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
         });
 
       case 'clear': {
-        const { EmbeddingService } = await import('@/lib/embeddings');
+        const { EmbeddingService } = await import('../../lib/embeddings');
         EmbeddingService.getInstance().clearEmbeddings();
         return NextResponse.json({
           success: true,

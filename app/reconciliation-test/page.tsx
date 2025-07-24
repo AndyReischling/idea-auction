@@ -167,7 +167,7 @@ export default function ReconciliationTestPage() {
       await setDoc(txRef, {
         userId: user.uid,
         type: 'buy',
-        opinionText: 'Test opinion for reconciliation',
+        opinionText: '[TEST RECONCILIATION - DEVELOPMENT ONLY]',
         amount: 100,
         price: 10.5,
         quantity: 1,
@@ -180,7 +180,7 @@ export default function ReconciliationTestPage() {
       await setDoc(
         mdRef,
         {
-          opinionText: 'Test opinion for reconciliation',
+          opinionText: '[TEST RECONCILIATION - DEVELOPMENT ONLY]',
           timesPurchased: 1,
           timesSold: 0,
           currentPrice: 10.5,

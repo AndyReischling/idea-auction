@@ -303,6 +303,7 @@ export async function calculateTotalExposure(userId: string): Promise<{
       collection(db, 'advanced-bets'),
       where('userId', '==', userId),
       where('status', '==', 'active')
+      // Removed isBot filter - advanced-bets documents don't have this field
     );
     const betsSnapshot = await getDocs(betsQuery);
     const bettingExposure = betsSnapshot.docs.reduce((sum, doc) => {
@@ -315,6 +316,7 @@ export async function calculateTotalExposure(userId: string): Promise<{
       collection(db, 'short-positions'),
       where('userId', '==', userId),
       where('status', '==', 'active')
+      // Removed isBot filter - short-positions documents don't have this field
     );
     const shortsSnapshot = await getDocs(shortsQuery);
     const shortsExposure = shortsSnapshot.docs.reduce((sum, doc) => {
@@ -474,7 +476,9 @@ export async function getBettingPositionsWithCurrentValues(userId: string): Prom
     
     const betsQuery = query(
       collection(db, 'advanced-bets'),
-      where('userId', '==', userId)
+      where('userId', '==', userId),
+      where('status', '==', 'active')
+      // Removed isBot filter - advanced-bets documents don't have this field
     );
     const betsSnapshot = await getDocs(betsQuery);
     
@@ -599,6 +603,7 @@ export async function getShortPositionsWithCurrentValues(userId: string): Promis
     const shortsQuery = query(
       collection(db, 'short-positions'),
       where('userId', '==', userId)
+      // Removed isBot filter - short-positions documents don't have this field
     );
     const shortsSnapshot = await getDocs(shortsQuery);
     

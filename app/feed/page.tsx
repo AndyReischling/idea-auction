@@ -32,7 +32,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import Sidebar from '../components/Sidebar';
-import '../global.css';
+import Header from '../components/ui/Header';
 import styles from './page.module.css';
 import { ScanSmiley } from '@phosphor-icons/react/dist/icons/ScanSmiley';
 import { Balloon } from '@phosphor-icons/react/dist/icons/Balloon';
@@ -45,7 +45,6 @@ import { HandPeace } from '@phosphor-icons/react';
 import { DiceSix } from '@phosphor-icons/react';
 import { ChartLineDown } from '@phosphor-icons/react';
 import AuthButton from '../components/AuthButton';
-import Navigation from '../components/Navigation';
 import ActivityIntegration from '../components/ActivityIntegration';
 import { useAuth } from '../lib/auth-context';
 import { firebaseActivityService, LocalActivityItem } from '../lib/firebase-activity';
@@ -54,6 +53,7 @@ import { realtimeDataService } from '../lib/realtime-data-service';
 import { createActivityId } from '../lib/document-id-utils';
 import { AuthProvider } from '../lib/auth-context';
 import { db } from '../lib/firebase';
+import { unifiedPortfolioService } from '../lib/unified-portfolio-service';
 
 // REAL-TIME FEED: Global Event System for Instant Updates
 class RealTimeFeedManager {
@@ -353,18 +353,41 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     return 'Nearly Impossible';
   };
 
-  // Load target user data for betting
-  const loadTargetUserData = (username: string) => {
-    // Simulate user data - in real app, this would fetch from API/storage
-    const mockUserData = {
-      username: username,
-      portfolioValue: Math.floor(Math.random() * 100000) + 10000,
-      volatility: Math.floor(Math.random() * 30) + 5,
-      recentPerformance: (Math.random() - 0.5) * 20,
-      isCurrentUser: username === currentUser.username,
-      isBot: activity.isBot || false
-    };
-    setTargetUserData(mockUserData);
+  // Load target user data for betting - REAL data from Firestore only
+  const loadTargetUserData = async (username: string) => {
+    try {
+      // ❌ MOCK DATA ELIMINATED: Load real user data from Firestore instead
+      const userData = await unifiedPortfolioService.loadUserPortfolio(username);
+      
+      // Calculate real portfolio value from actual holdings
+      const portfolioValue = userData.reduce((sum: number, holding: any) => 
+        sum + (holding.currentPrice * holding.quantity), 0);
+      
+      // Calculate real performance from actual data
+      const totalPurchaseValue = userData.reduce((sum: number, holding: any) => 
+        sum + (holding.purchasePrice * holding.quantity), 0);
+      const recentPerformance = totalPurchaseValue > 0 
+        ? ((portfolioValue - totalPurchaseValue) / totalPurchaseValue) * 100 
+        : 0;
+
+      // Determine volatility based on portfolio diversity
+      const volatility = userData.length > 5 ? Math.min(30, userData.length * 2) : 5;
+
+      const realUserData = {
+        username: username,
+        portfolioValue: portfolioValue,
+        volatility: volatility,
+        recentPerformance: recentPerformance,
+        isCurrentUser: username === currentUser.username,
+        isBot: activity.isBot || false
+      };
+      
+      setTargetUserData(realUserData);
+    } catch (error) {
+      console.error('Failed to load real user data:', error);
+      // If we can't load real data, don't show anything instead of fake data
+      setTargetUserData(null);
+    }
   };
 
   // Handle portfolio bet placement
@@ -418,15 +441,13 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       balance: currentUser.balance - betForm.amount
     };
     onUpdateUser(updatedUser);
-    safeSetToStorage('userProfile', updatedUser);
 
     // Save bet
-    const existingBets = safeGetFromStorage('advancedBets', []);
+    const existingBets = [];
     const updatedBets = [...existingBets, newBet];
-    safeSetToStorage('advancedBets', updatedBets);
 
     // Add transaction
-    const transactions = safeGetFromStorage('transactions', []);
+    const transactions = [];
     const newTransaction = {
       id: Date.now().toString(),
       type: 'bet_place',
@@ -436,7 +457,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     };
     
     transactions.unshift(newTransaction);
-    safeSetToStorage('transactions', transactions.slice(0, 50));
 
     // Call global feed tracking
     if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
@@ -466,26 +486,7 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     }
   }, [isClient, activity.username, currentUser.username]);
 
-  // Safe localStorage helpers
-  const safeGetFromStorage = (key: string, defaultValue: any = null) => {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key ${key}:`, error);
-      return defaultValue;
-    }
-  };
 
-  const safeSetToStorage = (key: string, value: any) => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  };
 
   // Price calculation matching sidebar logic
   const calculatePrice = (timesPurchased: number, timesSold: number, basePrice: number = 10.00): number => {
@@ -506,37 +507,28 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
   const getOpinionMarketData = (opinionText: string) => {
     if (!isClient) return { timesPurchased: 0, timesSold: 0, currentPrice: 10.00, basePrice: 10.00 };
     
-    const existingData = safeGetFromStorage('opinionMarketData', {});
-    
-    if (existingData[opinionText]) {
-      return existingData[opinionText];
-    }
-    
+    // Return default values since we're not using localStorage
     return { timesPurchased: 0, timesSold: 0, currentPrice: 10.00, basePrice: 10.00 };
   };
 
   // Update market data with new transaction
   const updateOpinionMarketData = (opinionText: string, action: 'buy' | 'sell') => {
-    const existingData = safeGetFromStorage('opinionMarketData', {});
-    
-    if (!existingData[opinionText]) {
-      existingData[opinionText] = { timesPurchased: 0, timesSold: 0, currentPrice: 10.00, basePrice: 10.00 };
-    }
+    // Return default values since we're not using localStorage
+    const marketData = { timesPurchased: 0, timesSold: 0, currentPrice: 10.00, basePrice: 10.00 };
     
     if (action === 'buy') {
-      existingData[opinionText].timesPurchased += 1;
+      marketData.timesPurchased += 1;
     } else {
-      existingData[opinionText].timesSold += 1;
+      marketData.timesSold += 1;
     }
     
-    existingData[opinionText].currentPrice = calculatePrice(
-      existingData[opinionText].timesPurchased,
-      existingData[opinionText].timesSold,
-      existingData[opinionText].basePrice
+    marketData.currentPrice = calculatePrice(
+      marketData.timesPurchased,
+      marketData.timesSold,
+      marketData.basePrice
     );
     
-    safeSetToStorage('opinionMarketData', existingData);
-    return existingData[opinionText];
+    return marketData;
   };
 
   // Calculate sell price (95% of current price)
@@ -571,16 +563,16 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     setMarketData(data);
     setCurrentPrice(data.currentPrice);
 
-    // Check ownership
-    const ownedOpinions = safeGetFromStorage('ownedOpinions', []);
+    // Check ownership - return empty arrays since we're not using localStorage
+    const ownedOpinions = [];
     const owned = ownedOpinions.find((op: any) => op.text === activity.opinionText);
     if (owned) {
       setOwnedQuantity(owned.quantity || 0);
       setAlreadyOwned(true);
     }
 
-    // Check for active short position
-    const shortPositions = safeGetFromStorage('shortPositions', []);
+    // Check for active short position - return empty arrays since we're not using localStorage
+    const shortPositions = [];
     const activeShort = shortPositions.find((short: any) => 
       short.opinionText === activity.opinionText && short.status === 'active'
     );
@@ -591,7 +583,7 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
   const getRapidTradeCount = (opinionText: string, timeframeMinutes: number): number => {
     if (!isClient) return 0;
     
-    const transactions = safeGetFromStorage('transactions', []);
+    const transactions = []; // Return empty array since we're not using localStorage
     const cutoffTime = new Date();
     cutoffTime.setMinutes(cutoffTime.getMinutes() - timeframeMinutes);
     
@@ -650,15 +642,14 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       balance: currentUser.balance - totalCost
     };
     onUpdateUser(updatedUser);
-    safeSetToStorage('userProfile', updatedUser);
 
     // Update market data
     const updatedMarketData = updateOpinionMarketData(activity.opinionText, 'buy');
     setMarketData(updatedMarketData);
     setCurrentPrice(updatedMarketData.currentPrice);
 
-    // Add to owned opinions
-    const ownedOpinions = safeGetFromStorage('ownedOpinions', []);
+    // Add to owned opinions - using empty array since we're not using localStorage
+    const ownedOpinions = [];
     const existingOpinion = ownedOpinions.find((op: any) => op.text === activity.opinionText);
     
     if (existingOpinion) {
@@ -674,14 +665,13 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
         quantity: quantity
       });
     }
-    safeSetToStorage('ownedOpinions', ownedOpinions);
 
     // Update local state
     setOwnedQuantity(ownedQuantity + quantity);
     setAlreadyOwned(true);
 
-    // Add transaction with PRECISE timestamp for rapid trading tracking
-    const transactions = safeGetFromStorage('transactions', []);
+    // Add transaction with PRECISE timestamp for rapid trading tracking - using empty array since we're not using localStorage
+    const transactions = [];
     const newTransaction = {
       id: Date.now().toString(),
       type: 'buy',
@@ -695,7 +685,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     };
     
     transactions.unshift(newTransaction);
-    safeSetToStorage('transactions', transactions.slice(0, 50));
 
     // Call global feed tracking
     if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
@@ -720,8 +709,8 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
   const handleSell = () => {
     if (!activity.opinionText || !alreadyOwned || ownedQuantity === 0 || !isClient) return;
 
-    // Check for active short position penalty
-    const shortPositions = safeGetFromStorage('shortPositions', []);
+    // Check for active short position penalty - using empty array since we're not using localStorage
+    const shortPositions = [];
     const activeShort = shortPositions.find((short: any) => 
       short.opinionText === activity.opinionText && short.status === 'active'
     );
@@ -736,13 +725,11 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
         balance: currentUser.balance - totalPenaltyCost
       };
       onUpdateUser(updatedUser);
-      safeSetToStorage('userProfile', updatedUser);
       
       // Mark short as lost
       const updatedShorts = shortPositions.map((short: any) => 
         short.id === activeShort.id ? { ...short, status: 'lost' } : short
       );
-      safeSetToStorage('shortPositions', updatedShorts);
       setHasActiveShort(false);
       
       setMessage(`⚠️ Short position cancelled! Penalty: ${totalPenaltyCost.toFixed(2)}`);
@@ -759,15 +746,14 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       balance: currentUser.balance + totalReceived
     };
     onUpdateUser(updatedUser);
-    safeSetToStorage('userProfile', updatedUser);
 
     // Update market data
     const updatedMarketData = updateOpinionMarketData(activity.opinionText, 'sell');
     setMarketData(updatedMarketData);
     setCurrentPrice(updatedMarketData.currentPrice);
 
-    // Update owned opinions
-    const ownedOpinions = safeGetFromStorage('ownedOpinions', []);
+    // Update owned opinions - using empty array since we're not using localStorage
+    const ownedOpinions = [];
     const updatedOwnedOpinions = ownedOpinions.map((asset: any) => {
       if (asset.text === activity.opinionText) {
         const newQuantity = asset.quantity - 1;
@@ -780,8 +766,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       return asset;
     }).filter((asset: any) => asset.quantity > 0);
 
-    safeSetToStorage('ownedOpinions', updatedOwnedOpinions);
-
     // Update local state
     const newQuantity = ownedQuantity - 1;
     setOwnedQuantity(newQuantity);
@@ -789,8 +773,8 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       setAlreadyOwned(false);
     }
 
-    // Add transaction
-    const transactions = safeGetFromStorage('transactions', []);
+    // Add transaction - using empty array since we're not using localStorage
+    const transactions = [];
     transactions.unshift({
       id: Date.now().toString(),
       type: 'sell',
@@ -801,7 +785,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       quantity: 1,
       date: new Date().toLocaleDateString()
     });
-    safeSetToStorage('transactions', transactions.slice(0, 50));
 
     // Call global feed tracking
     if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
@@ -857,10 +840,9 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       balance: currentUser.balance - shortSettings.betAmount
     };
     onUpdateUser(updatedUser);
-    safeSetToStorage('userProfile', updatedUser);
 
-    // Create short position
-    const shortPositions = safeGetFromStorage('shortPositions', []);
+    // Create short position - using empty array since we're not using localStorage
+    const shortPositions = [];
     const expirationTime = new Date();
     expirationTime.setHours(expirationTime.getHours() + shortSettings.timeLimit);
 
@@ -879,11 +861,10 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
     };
 
     shortPositions.push(newShort);
-    safeSetToStorage('shortPositions', shortPositions);
     setHasActiveShort(true);
 
-    // Add transaction
-    const transactions = safeGetFromStorage('transactions', []);
+    // Add transaction - using empty array since we're not using localStorage
+    const transactions = [];
     transactions.unshift({
       id: Date.now().toString(),
       type: 'short_place',
@@ -891,7 +872,6 @@ const ActivityDetailModal: React.FC<ActivityDetailModalProps> = ({ activity, onC
       amount: -shortSettings.betAmount,
       date: new Date().toLocaleDateString()
     });
-    safeSetToStorage('transactions', transactions.slice(0, 50));
 
     // Call global feed tracking
     if (typeof window !== 'undefined' && (window as any).addToGlobalFeed) {
@@ -1793,26 +1773,7 @@ export default function FeedPage() {
   const realTimeFeedManager = useRef<RealTimeFeedManager | null>(null);
   const [isAtTop, setIsAtTop] = useState(true);
 
-  // Safe localStorage helpers
-  const safeGetFromStorage = useCallback((key: string, defaultValue: any = null) => {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key ${key}:`, error);
-      return defaultValue;
-    }
-  }, []);
 
-  const safeSetToStorage = useCallback((key: string, value: any) => {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-      console.error(`Error writing to localStorage key ${key}:`, error);
-    }
-  }, []);
 
   // Helper functions - Fixed to handle Firestore Timestamp objects
   const getRelativeTime = useCallback((timestamp: any): string => {
@@ -2168,55 +2129,17 @@ export default function FeedPage() {
       backgroundColor: '#F1F0EC',
       fontFamily: "'Noto Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
     }}>
-      <Sidebar opinions={opinions} />
+      <Header hideNavigation={['feed']} />
+      <Sidebar />
       
       <main className="main-content" style={{ 
         paddingLeft: '20px', 
         paddingRight: '20px', 
-        paddingTop: '115px', 
+        paddingTop: '110px', 
         flex: 1,
         maxWidth: '1200px',
-        margin: '0 auto',
-        marginTop: '95px'
+        margin: '0 auto'
       }}>
-        {/* Header */}
-        <div className="header-section" style={{ 
-          backgroundColor: 'white', 
-          padding: '16px 20px',
-          marginBottom: '20px',
-          marginLeft: '-20px',
-          paddingLeft: '40px',
-          display: 'flex',
-          justifyContent: 'flex-start',
-          alignItems: 'center',
-          gap: '16px',
-          position: 'fixed',
-          top: 0,
-          width: '100%',
-          maxWidth: '1200px',
-          height: '95px',
-          zIndex: 1000
-        }}>
-          <div className="user-header" style={{
-            display: 'flex',
-            alignItems: 'center',
-            flex: 1,
-            maxWidth: '600px'
-          }}>
-            <div className="user-info">
-              <h1 style={{
-                fontSize: '36px',
-                margin: '0',
-                fontWeight: '800',
-                color: '#1a1a1a'
-              }}>Live Feed</h1>
-            </div>
-          </div>
-
-          {/* Navigation Buttons */}
-          <Navigation currentPage="feed" />
-        </div>
-
         {/* Loading Status */}
         {isLoadingFirebase && (
           <div style={{
@@ -2256,7 +2179,7 @@ export default function FeedPage() {
             fontWeight: '600',
             color: '#dc2626'
           }}>
-            ❌ Firebase Error: {firebaseError} (using localStorage fallback)
+            ❌ Firebase Error: {firebaseError}
           </div>
         )}
 

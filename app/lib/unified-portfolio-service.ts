@@ -4,423 +4,330 @@
 
 'use client';
 
-import {
-  calculatePortfolioStats,
-  getUserPositionsWithCurrentPrices,
-  getBettingPositionsWithCurrentValues,
-  getShortPositionsWithCurrentValues,
-  calculateTotalExposure,
-  getCombinedPortfolioPositions
-} from './portfolio-utils';
-import { realtimeDataService } from './realtime-data-service';
-import { doc, onSnapshot, collection, query, where, Unsubscribe } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  getDoc,
+  orderBy, 
+  limit,
+  updateDoc, 
+  setDoc, 
+  deleteDoc, 
+  serverTimestamp,
+  onSnapshot,
+  Timestamp,
+  writeBatch
+} from 'firebase/firestore';
 import { db } from './firebase';
+import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from './portfolio-utils';
+import { realtimeDataService } from './realtime-data-service';
 
-// Portfolio subscription callback types
-type PortfolioStatsCallback = (stats: any) => void;
-type PositionsCallback = (positions: any) => void;
-type ExposureCallback = (exposure: any) => void;
-
-interface PortfolioSubscription {
+// Shared interface for portfolio items
+export interface UserPortfolioItem {
   id: string;
-  userId: string;
-  type: 'stats' | 'positions' | 'exposure' | 'combined';
-  callback: (data: any) => void;
-  unsubscribe?: Unsubscribe;
-  lastUpdate: Date;
-  isActive: boolean;
+  text: string;
+  purchasePrice: number;
+  currentPrice: number;
+  purchaseDate: string;
+  quantity: number;
 }
 
-/**
- * Unified Portfolio Service - Manages all portfolio-related data synchronization
- * Provides real-time updates for portfolio stats, positions, bets, and shorts
- */
+// Shared interface for user leaderboard data
+export interface UserLeaderboardData {
+  uid: string;
+  username: string;
+  joinDate: string;
+  portfolioValue: number;
+  exposure: number;
+  opinionsCount: number;
+  betsCount: number;
+  performanceChange: number;
+  performancePercent: number;
+  volatility: 'Low' | 'Medium' | 'High';
+  holdings: number;
+  topHoldings: Array<{
+    text: string;
+    value: number;
+    currentPrice: number;
+    purchasePrice: number;
+    percentChange: number;
+    quantity: number;
+  }>;
+  isBot: boolean;
+}
+
 export class UnifiedPortfolioService {
   private static instance: UnifiedPortfolioService;
-  private subscriptions = new Map<string, PortfolioSubscription>();
-  private cache = new Map<string, any>();
-  private updateIntervals = new Map<string, NodeJS.Timeout>();
-
-  private constructor() {
-    // Set up cleanup on page unload
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
-        this.cleanup();
-      });
+  
+  public static get Instance(): UnifiedPortfolioService {
+    if (!this.instance) {
+      this.instance = new UnifiedPortfolioService();
     }
-  }
-
-  static getInstance(): UnifiedPortfolioService {
-    if (!UnifiedPortfolioService.instance) {
-      UnifiedPortfolioService.instance = new UnifiedPortfolioService();
-    }
-    return UnifiedPortfolioService.instance;
+    return this.instance;
   }
 
   /**
-   * Subscribe to real-time portfolio statistics
+   * Unified portfolio loading function used by both users list page and individual user pages
+   * This ensures perfect data synchronization between views
    */
-  subscribeToPortfolioStats(userId: string, callback: PortfolioStatsCallback): string {
-    const subscriptionId = `portfolio_stats_${userId}_${Date.now()}`;
-    
-    // Create initial data fetch
-    this.fetchPortfolioStats(userId).then(callback);
-    
-    // Set up real-time updates every 30 seconds
-    const updateInterval = setInterval(async () => {
-      try {
-        const stats = await this.fetchPortfolioStats(userId);
-        callback(stats);
-      } catch (error) {
-        console.error('Error updating portfolio stats:', error);
-      }
-    }, 30000);
-
-    // Set up Firestore listeners for real-time changes
-    const userRef = doc(db, 'users', userId);
-    const unsubscribe = onSnapshot(userRef, async () => {
-      try {
-        const stats = await this.fetchPortfolioStats(userId);
-        callback(stats);
-      } catch (error) {
-        console.error('Error in portfolio stats subscription:', error);
-      }
-    });
-
-    const subscription: PortfolioSubscription = {
-      id: subscriptionId,
-      userId,
-      type: 'stats',
-      callback,
-      unsubscribe,
-      lastUpdate: new Date(),
-      isActive: true
-    };
-
-    this.subscriptions.set(subscriptionId, subscription);
-    this.updateIntervals.set(subscriptionId, updateInterval);
-
-    console.log(`📊 Portfolio stats subscription created: ${subscriptionId}`);
-    return subscriptionId;
-  }
-
-  /**
-   * Subscribe to real-time trading positions (opinions holdings)
-   */
-  subscribeToTradingPositions(userId: string, callback: PositionsCallback): string {
-    const subscriptionId = `trading_positions_${userId}_${Date.now()}`;
-    
-    // Create initial data fetch
-    this.fetchTradingPositions(userId).then(callback);
-    
-    // Set up real-time updates every 15 seconds (more frequent for trading data)
-    const updateInterval = setInterval(async () => {
-      try {
-        const positions = await this.fetchTradingPositions(userId);
-        callback(positions);
-      } catch (error) {
-        console.error('Error updating trading positions:', error);
-      }
-    }, 15000);
-
-    // Set up Firestore listener for user changes
-    const userRef = doc(db, 'users', userId);
-    const unsubscribe = onSnapshot(userRef, async () => {
-      try {
-        const positions = await this.fetchTradingPositions(userId);
-        callback(positions);
-      } catch (error) {
-        console.error('Error in trading positions subscription:', error);
-      }
-    });
-
-    const subscription: PortfolioSubscription = {
-      id: subscriptionId,
-      userId,
-      type: 'positions',
-      callback,
-      unsubscribe,
-      lastUpdate: new Date(),
-      isActive: true
-    };
-
-    this.subscriptions.set(subscriptionId, subscription);
-    this.updateIntervals.set(subscriptionId, updateInterval);
-
-    console.log(`💼 Trading positions subscription created: ${subscriptionId}`);
-    return subscriptionId;
-  }
-
-  /**
-   * Subscribe to real-time betting and shorts positions
-   */
-  subscribeToRiskPositions(userId: string, callback: PositionsCallback): string {
-    const subscriptionId = `risk_positions_${userId}_${Date.now()}`;
-    
-    // Create initial data fetch
-    this.fetchRiskPositions(userId).then(callback);
-    
-    // Set up real-time updates every 20 seconds
-    const updateInterval = setInterval(async () => {
-      try {
-        const positions = await this.fetchRiskPositions(userId);
-        callback(positions);
-      } catch (error) {
-        console.error('Error updating risk positions:', error);
-      }
-    }, 20000);
-
-    // Set up Firestore listeners for bets and shorts collections
-    const betsQuery = query(
-      collection(db, 'advanced-bets'),
-      where('userId', '==', userId)
-    );
-    const shortsQuery = query(
-      collection(db, 'short-positions'),
-      where('userId', '==', userId)
-    );
-
-    const betsUnsub = onSnapshot(betsQuery, async () => {
-      try {
-        const positions = await this.fetchRiskPositions(userId);
-        callback(positions);
-      } catch (error) {
-        console.error('Error in bets subscription:', error);
-      }
-    });
-
-    const shortsUnsub = onSnapshot(shortsQuery, async () => {
-      try {
-        const positions = await this.fetchRiskPositions(userId);
-        callback(positions);
-      } catch (error) {
-        console.error('Error in shorts subscription:', error);
-      }
-    });
-
-    const subscription: PortfolioSubscription = {
-      id: subscriptionId,
-      userId,
-      type: 'positions',
-      callback,
-      unsubscribe: () => {
-        betsUnsub();
-        shortsUnsub();
-      },
-      lastUpdate: new Date(),
-      isActive: true
-    };
-
-    this.subscriptions.set(subscriptionId, subscription);
-    this.updateIntervals.set(subscriptionId, updateInterval);
-
-    console.log(`🎯 Risk positions subscription created: ${subscriptionId}`);
-    return subscriptionId;
-  }
-
-  /**
-   * Subscribe to complete portfolio overview (all data combined)
-   */
-  subscribeToCompletePortfolio(userId: string, callback: (data: any) => void): string {
-    const subscriptionId = `complete_portfolio_${userId}_${Date.now()}`;
-    
-    // Create initial data fetch
-    this.fetchCompletePortfolio(userId).then(callback);
-    
-    // Set up real-time updates every 30 seconds
-    const updateInterval = setInterval(async () => {
-      try {
-        const portfolio = await this.fetchCompletePortfolio(userId);
-        callback(portfolio);
-      } catch (error) {
-        console.error('Error updating complete portfolio:', error);
-      }
-    }, 30000);
-
-    // Set up multiple Firestore listeners
-    const userRef = doc(db, 'users', userId);
-    const betsQuery = query(collection(db, 'advanced-bets'), where('userId', '==', userId));
-    const shortsQuery = query(collection(db, 'short-positions'), where('userId', '==', userId));
-
-    const userUnsub = onSnapshot(userRef, async () => {
-      try {
-        const portfolio = await this.fetchCompletePortfolio(userId);
-        callback(portfolio);
-      } catch (error) {
-        console.error('Error in user subscription:', error);
-      }
-    });
-
-    const betsUnsub = onSnapshot(betsQuery, async () => {
-      try {
-        const portfolio = await this.fetchCompletePortfolio(userId);
-        callback(portfolio);
-      } catch (error) {
-        console.error('Error in bets subscription:', error);
-      }
-    });
-
-    const shortsUnsub = onSnapshot(shortsQuery, async () => {
-      try {
-        const portfolio = await this.fetchCompletePortfolio(userId);
-        callback(portfolio);
-      } catch (error) {
-        console.error('Error in shorts subscription:', error);
-      }
-    });
-
-    const subscription: PortfolioSubscription = {
-      id: subscriptionId,
-      userId,
-      type: 'combined',
-      callback,
-      unsubscribe: () => {
-        userUnsub();
-        betsUnsub();
-        shortsUnsub();
-      },
-      lastUpdate: new Date(),
-      isActive: true
-    };
-
-    this.subscriptions.set(subscriptionId, subscription);
-    this.updateIntervals.set(subscriptionId, updateInterval);
-
-    console.log(`🔄 Complete portfolio subscription created: ${subscriptionId}`);
-    return subscriptionId;
-  }
-
-  /**
-   * Unsubscribe from a portfolio subscription
-   */
-  unsubscribe(subscriptionId: string): void {
-    const subscription = this.subscriptions.get(subscriptionId);
-    if (subscription) {
-      // Clean up Firestore subscription
-      if (subscription.unsubscribe) {
-        subscription.unsubscribe();
-      }
-      
-      // Clean up interval
-      const interval = this.updateIntervals.get(subscriptionId);
-      if (interval) {
-        clearInterval(interval);
-        this.updateIntervals.delete(subscriptionId);
-      }
-      
-      // Remove subscription
-      this.subscriptions.delete(subscriptionId);
-      
-      console.log(`🗑️ Portfolio subscription cleaned up: ${subscriptionId}`);
-    }
-  }
-
-  /**
-   * Get cached portfolio data (useful for immediate UI updates)
-   */
-  getCachedData(userId: string, type: string): any | null {
-    const cacheKey = `${userId}_${type}`;
-    return this.cache.get(cacheKey) || null;
-  }
-
-  /**
-   * Manually refresh all portfolio data for a user
-   */
-  async refreshPortfolio(userId: string): Promise<void> {
+  async loadUserPortfolio(userId: string, userData?: any): Promise<UserPortfolioItem[]> {
     try {
-      console.log(`🔄 Manually refreshing portfolio for user: ${userId}`);
+      console.log(`📊 Loading unified portfolio for user: ${userId}`);
       
-      // Fetch fresh data
-      const [stats, positions, risks, complete] = await Promise.all([
-        this.fetchPortfolioStats(userId),
-        this.fetchTradingPositions(userId),
-        this.fetchRiskPositions(userId),
-        this.fetchCompletePortfolio(userId)
-      ]);
-
-      // Update cache
-      this.cache.set(`${userId}_stats`, stats);
-      this.cache.set(`${userId}_positions`, positions);
-      this.cache.set(`${userId}_risks`, risks);
-      this.cache.set(`${userId}_complete`, complete);
-
-      // Notify all active subscriptions for this user
-      for (const [subscriptionId, subscription] of this.subscriptions) {
-        if (subscription.userId === userId && subscription.isActive) {
-          try {
-            switch (subscription.type) {
-              case 'stats':
-                subscription.callback(stats);
-                break;
-              case 'positions':
-                if (subscriptionId.includes('trading')) {
-                  subscription.callback(positions);
-                } else if (subscriptionId.includes('risk')) {
-                  subscription.callback(risks);
-                }
-                break;
-              case 'combined':
-                subscription.callback(complete);
-                break;
-            }
-          } catch (error) {
-            console.error(`Error notifying subscription ${subscriptionId}:`, error);
+      // Get full user profile data (not just basic user document)
+      const fullUserProfile = await realtimeDataService.getUserProfile(userId);
+      
+      let portfolio: Portfolio;
+      
+      console.log('📊 USER PORTFOLIO LOADING:', {
+        userId,
+        username: fullUserProfile?.username || userData?.username,
+        hasPortfolioV2: !!fullUserProfile?.portfolioV2,
+        hasOldPortfolio: !!fullUserProfile?.portfolio,
+      });
+      
+      try {
+        portfolio = await getUserPortfolio(userId);
+        console.log('✅ USER PORTFOLIO LOADED:', {
+          itemsCount: portfolio.items.length,
+          totalValue: portfolio.totalValue,
+          totalCost: portfolio.totalCost,
+        });
+      } catch (error) {
+        console.warn('Failed to load new portfolio, trying migration...');
+        await migrateUserPortfolio(userId);
+        portfolio = await getUserPortfolio(userId);
+        console.log('🔄 USER PORTFOLIO MIGRATED:', {
+          itemsCount: portfolio.items.length,
+        });
+      }
+      
+      // ✅ BOT FIX: If no regular portfolio found, check bot collections
+      if (portfolio.items.length === 0 && (userData?.isBot || fullUserProfile?.isBot)) {
+        console.log('🤖 TRIGGERING BOT PORTFOLIO FALLBACK for:', userId);
+        console.log('🤖 Reason: Standard portfolio has 0 items');
+        console.log('🤖 userData.isBot:', userData?.isBot);
+        console.log('🤖 fullUserProfile.isBot:', fullUserProfile?.isBot);
+        try {
+          const botPortfolioItems = await this.loadBotPortfolio(userId);
+          if (botPortfolioItems.length > 0) {
+            console.log(`🤖 ✅ SUCCESS: Found ${botPortfolioItems.length} items in bot collections`);
+            return botPortfolioItems;
+          } else {
+            console.log('🤖 ❌ No items found in bot collections either');
           }
+        } catch (botError) {
+          console.warn('🤖 ❌ Failed to load bot portfolio:', botError);
         }
       }
       
-      console.log(`✅ Portfolio refresh completed for user: ${userId}`);
+      // If no items in new portfolio but old portfolio exists, migrate
+      if (portfolio.items.length === 0 && fullUserProfile?.portfolio) {
+        console.log('🔄 Migrating portfolio data...');
+        await migrateUserPortfolio(userId);
+        portfolio = await getUserPortfolio(userId);
+        console.log('🔄 USER PORTFOLIO AFTER MIGRATION:', {
+          itemsCount: portfolio.items.length,
+        });
+      }
+      
+      // Get market data for current prices
+      const marketData = await realtimeDataService.getMarketData();
+      
+      // Filter out invalid portfolio items before calculations
+      const validItems = [];
+      for (const item of portfolio.items) {
+        if (!item.opinionText || 
+            typeof item.opinionText !== 'string' || 
+            !item.opinionText.trim() ||
+            item.opinionText === 'Unknown Opinion' ||
+            item.opinionText === 'Opinion (Unknown)' ||
+            item.opinionText.startsWith('Opinion (')) {
+          console.warn('Skipping invalid portfolio item:', item);
+          continue;
+        }
+        validItems.push(item);
+      }
+      
+      // Transform portfolio items using market data consistently
+      const transformedOpinions: UserPortfolioItem[] = validItems.map(item => ({
+        id: item.opinionId,
+        text: item.opinionText,
+        purchasePrice: item.averagePrice,
+        currentPrice: marketData[item.opinionText]?.currentPrice || item.averagePrice,
+        purchaseDate: new Date(item.lastUpdated).toLocaleDateString(),
+        quantity: item.quantity,
+      }));
+      
+      console.log('📊 UNIFIED PORTFOLIO RESULT:', {
+        userId,
+        username: fullUserProfile?.username || userData?.username,
+        validItemsCount: validItems.length,
+        transformedOpinions: transformedOpinions.length,
+        totalValue: transformedOpinions.reduce((sum, op) => sum + op.currentPrice * op.quantity, 0),
+        sampleItems: transformedOpinions.slice(0, 2).map(op => ({
+          text: op.text,
+          quantity: op.quantity,
+          purchasePrice: op.purchasePrice,
+          currentPrice: op.currentPrice,
+          value: op.currentPrice * op.quantity
+        }))
+      });
+      
+      return transformedOpinions;
+      
     } catch (error) {
-      console.error('Error refreshing portfolio:', error);
+      console.error(`Error loading unified portfolio for user ${userId}:`, error);
+      return [];
     }
-  }
-
-  // Private methods for data fetching
-  private async fetchPortfolioStats(userId: string) {
-    const stats = await calculatePortfolioStats(userId);
-    this.cache.set(`${userId}_stats`, stats);
-    return stats;
-  }
-
-  private async fetchTradingPositions(userId: string) {
-    const positions = await getUserPositionsWithCurrentPrices(userId);
-    this.cache.set(`${userId}_positions`, positions);
-    return positions;
-  }
-
-  private async fetchRiskPositions(userId: string) {
-    const [bets, shorts] = await Promise.all([
-      getBettingPositionsWithCurrentValues(userId),
-      getShortPositionsWithCurrentValues(userId)
-    ]);
-    const risks = { bets, shorts };
-    this.cache.set(`${userId}_risks`, risks);
-    return risks;
-  }
-
-  private async fetchCompletePortfolio(userId: string) {
-    const complete = await getCombinedPortfolioPositions(userId);
-    this.cache.set(`${userId}_complete`, complete);
-    return complete;
   }
 
   /**
-   * Clean up all subscriptions
+   * Get user's bets with consistent filtering
    */
-  cleanup(): void {
-    console.log(`🧹 Cleaning up ${this.subscriptions.size} portfolio subscriptions`);
+  async getUserBets(userId: string): Promise<any[]> {
+    try {
+      const betsQuery = query(
+        collection(db, 'advanced-bets'), 
+        where('userId', '==', userId)
+        // Removed isBot filter - advanced-bets documents don't have this field
+      );
+      const snapshot = await getDocs(betsQuery);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      console.error(`Error loading bets for user ${userId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get user's shorts with consistent filtering
+   */
+  async getUserShorts(userId: string): Promise<any[]> {
+    try {
+      const shortsQuery = query(
+        collection(db, 'short-positions'), 
+        where('userId', '==', userId)
+        // Removed isBot filter - short-positions documents don't have this field
+      );
+      const snapshot = await getDocs(shortsQuery);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      console.error(`Error loading shorts for user ${userId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Calculate top holdings consistently
+   */
+  async calculateTopHoldings(portfolio: UserPortfolioItem[]): Promise<Array<{
+    text: string;
+    value: number;
+    currentPrice: number;
+    purchasePrice: number;
+    percentChange: number;
+    quantity: number;
+  }>> {
+    // Get top holdings - only use valid opinions
+    const sortedOpinions = portfolio
+      .sort((a, b) => {
+        const aValue = a.currentPrice * a.quantity;
+        const bValue = b.currentPrice * b.quantity;
+        return bValue - aValue;
+      })
+      .slice(0, 2);
     
-    // Clean up all subscriptions
-    for (const [subscriptionId] of this.subscriptions) {
-      this.unsubscribe(subscriptionId);
+    // Process top holdings with consistent logic
+    const topHoldings = [];
+    for (const op of sortedOpinions) {
+      const currentPrice = op.currentPrice;
+      const value = currentPrice * op.quantity;
+      const percentChange = op.purchasePrice > 0 ? ((currentPrice - op.purchasePrice) / op.purchasePrice) * 100 : 0;
+      
+      topHoldings.push({
+        text: op.text,
+        value: value,
+        currentPrice: currentPrice,
+        purchasePrice: op.purchasePrice,
+        percentChange: percentChange,
+        quantity: op.quantity
+      });
     }
     
-    // Clear cache
-    this.cache.clear();
-    
-    console.log('✅ Portfolio service cleanup completed');
+    return topHoldings;
+  }
+
+  /**
+   * Load portfolio data from bot-specific collections (fallback for bots)
+   */
+  private async loadBotPortfolio(botId: string): Promise<UserPortfolioItem[]> {
+    try {
+      console.log(`🤖 Loading bot portfolio for: ${botId}`);
+      
+      // Check consolidated bot portfolio first
+      const consolidatedDocRef = doc(db, 'consolidated-bot-portfolios', botId);
+      const consolidatedSnap = await getDoc(consolidatedDocRef);
+      
+      if (consolidatedSnap.exists()) {
+        const consolidatedData = consolidatedSnap.data();
+        console.log(`🤖 Found consolidated bot portfolio with ${consolidatedData.holdings?.length || 0} holdings`);
+        
+        if (consolidatedData.holdings && consolidatedData.holdings.length > 0) {
+          // Get current market data
+          const marketData = await realtimeDataService.getMarketData();
+          
+          return consolidatedData.holdings.map((holding: any) => ({
+            id: holding.opinionId,
+            text: holding.opinionText,
+            purchasePrice: holding.purchasePrice || holding.averagePrice,
+            currentPrice: marketData[holding.opinionText]?.currentPrice || holding.purchasePrice || holding.averagePrice,
+            purchaseDate: new Date(holding.lastUpdated || Date.now()).toLocaleDateString(),
+            quantity: holding.quantity,
+          }));
+        }
+      }
+      
+      // Fallback: Check individual bot portfolio documents
+      console.log('🤖 No consolidated portfolio, checking individual bot documents...');
+      const botPortfoliosQuery = query(collection(db, 'bot-portfolios'));
+      const botPortfoliosSnap = await getDocs(botPortfoliosQuery);
+      const botPortfolioItems = botPortfoliosSnap.docs.filter(doc => 
+        doc.id.startsWith(botId + '_') && doc.data().qty > 0
+      );
+      
+      if (botPortfolioItems.length > 0) {
+        console.log(`🤖 Found ${botPortfolioItems.length} individual bot portfolio items`);
+        const marketData = await realtimeDataService.getMarketData();
+        
+        return botPortfolioItems.map(doc => {
+          const data = doc.data();
+          return {
+            id: data.opinionId,
+            text: data.opinionText,
+            purchasePrice: data.avgPrice,
+            currentPrice: marketData[data.opinionText]?.currentPrice || data.avgPrice,
+            purchaseDate: new Date(data.updatedAt?.toDate?.() || Date.now()).toLocaleDateString(),
+            quantity: data.qty,
+          };
+        });
+      }
+      
+      console.log('🤖 No bot portfolio data found in any collection');
+      return [];
+      
+    } catch (error) {
+      console.error(`Error loading bot portfolio for ${botId}:`, error);
+      if ((error as any)?.code === 'permission-denied') {
+        console.error('🔒 FIRESTORE PERMISSIONS: Bot collections (consolidated-bot-portfolios, bot-portfolios) are not accessible');
+        console.error('🔧 FIX NEEDED: Update Firestore security rules to allow reading bot collections');
+      }
+      return [];
+    }
   }
 }
 
-// Export singleton instance
-export const unifiedPortfolioService = UnifiedPortfolioService.getInstance(); 
+export const unifiedPortfolioService = UnifiedPortfolioService.Instance; 

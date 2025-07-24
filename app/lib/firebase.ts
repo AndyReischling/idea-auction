@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore, enableNetwork, disableNetwork } from 'firebase/firestore';
 import { getAnalytics, Analytics } from 'firebase/analytics';
 
 // Firebase configuration
@@ -29,6 +29,31 @@ export const auth: Auth = getAuth(app);
 
 // Initialize Cloud Firestore and get a reference to the service
 export const db: Firestore = getFirestore(app);
+
+// Add network resilience for connection issues
+if (typeof window !== 'undefined') {
+  // Monitor online/offline status
+  window.addEventListener('online', () => {
+    console.log('🌐 Network back online - re-enabling Firestore');
+    enableNetwork(db);
+  });
+  
+  window.addEventListener('offline', () => {
+    console.log('📴 Network offline - Firestore will use cache');
+    // Don't disable network here - let Firestore handle it automatically
+  });
+
+  // Handle unhandled promise rejections (common with network errors)
+  window.addEventListener('unhandledrejection', (event) => {
+    if (event.reason?.message?.includes('firestore') || 
+        event.reason?.message?.includes('QUIC') ||
+        event.reason?.message?.includes('ERR_NETWORK')) {
+      console.warn('🔧 Firestore network error handled:', event.reason.message);
+      // Don't show error to user for network issues
+      event.preventDefault();
+    }
+  });
+}
 
 // Initialize Analytics (only in browser environment)
 export const analytics: Analytics | null = typeof window !== 'undefined' ? getAnalytics(app) : null;

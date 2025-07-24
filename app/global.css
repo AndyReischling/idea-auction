@@ -115,7 +115,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .main-content {
-  padding: 0px;
+  padding: 0px 16px;
   flex: 1;
   max-width: 1200px;
   margin: 0 auto;
@@ -1096,5 +1096,30 @@ a { color: inherit; text-decoration: none; }
   
   .card:hover {
     transform: translateY(-2px) !important;
+  }
+}
+
+/* Opinion Cards Grid - Responsive Layout */
+.opinion-cards-grid {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .opinion-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .opinion-cards-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .opinion-cards-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
   }
 }

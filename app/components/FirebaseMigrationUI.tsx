@@ -117,7 +117,7 @@ class AutonomousBotSystem {
   // 🕐  tick – one decision loop
   // ----------------------------------------------------------------------------
   private async tick(bot: BotProfile) {
-    // pick a random opinion (mock – replace with your selector)
+    // Select a random opinion from available real opinions in Firestore
     const opinions: OpinionRef[] = this.market.getAllOpinionRefs();
     if (!opinions.length) return;
     const op = opinions[Math.floor(Math.random() * opinions.length)];

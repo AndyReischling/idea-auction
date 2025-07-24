@@ -207,18 +207,16 @@ export class ContentIndexer {
   // ---------------------------------------------------------------------------
   private async getTransactions(isBot: boolean | null = null): Promise<any[]> {
     const base = collection(db, 'transactions');
-    const q = isBot === null ? base : query(base, where('isBot', '==', isBot));
+    // Removed isBot filtering - transactions documents don't have this field
+    const q = base;
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
   }
 
   async indexTransactions(): Promise<void> {
     try {
-      const [userTx, botTx] = await Promise.all([
-        this.getTransactions(false),
-        this.getTransactions(true),
-      ]);
-      const allTx = [...userTx, ...botTx];
+      // Get all transactions since isBot field doesn't exist in documents
+      const allTx = await this.getTransactions();
 
       const items = allTx
         .filter((t) => t.opinionText)

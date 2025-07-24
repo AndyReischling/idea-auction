@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY, // This is failing
+  apiKey: process.env.OPENAI_API_KEY, 
 });
 
 export async function POST(req: NextRequest) {
@@ -69,26 +69,12 @@ Return **only** the new opinion.`;
     console.error('API Key length:', process.env.OPENAI_API_KEY?.length);
     console.error('API Key first 10 chars:', process.env.OPENAI_API_KEY?.slice(0, 10));
     
-    // Fallback to mock opinions if OpenAI fails
-    const mockOpinions = [
-      "I'm not saying I'm always right, but I can't recall a time when I was wrong. But hey, it's all part of the charm.",
-      "The best way to predict the future is to invent it yourself, then immediately forget where you put it.",
-      "My therapist says I have a pre-existing condition of not knowing when to stop talking.",
-      "I took the money I was saving for retirement and bought a really good pen.",
-      "Confidence is what you have before you understand the problem, which explains most of my life decisions.",
-      "I'm not lazy, I'm just highly motivated to do nothing.",
-      "My diet is basically see food and eat food, but pronounced with a really pretentious accent.",
-      "I went to buy some camouflage pants the other day but couldn't find any.",
-      "The early bird might get the worm, but the second mouse gets the cheese.",
-      "I haven't slept for ten days, because that would be too long."
-    ];
-    
-    const randomOpinion = mockOpinions[Math.floor(Math.random() * mockOpinions.length)];
-    
+    // ❌ MOCK DATA ELIMINATED: No more fallback mock opinions
+    // Return error instead of fake data - user must fix OpenAI integration
     return NextResponse.json({ 
-      opinion: randomOpinion,
-      fallback: true 
-    });
+      error: 'Opinion generation failed - OpenAI API not available',
+      details: 'Please check your OpenAI API key configuration'
+    }, { status: 500 });
   }
 }
 

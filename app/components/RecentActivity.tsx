@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, onSnapshot, getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { FirebaseActivityService } from '../lib/firebase-activity';
 import type { LocalActivityItem } from '../lib/firebase-activity';
@@ -22,6 +22,29 @@ interface RecentActivityProps {
   title?: string;
 }
 
+// Helper function to check if a userId corresponds to a bot
+async function checkIfUserIsBot(userId: string): Promise<boolean> {
+  try {
+    // Check if userId exists in autonomous-bots collection
+    const botDoc = await getDoc(doc(db, 'autonomous-bots', userId));
+    if (botDoc.exists()) {
+      return true;
+    }
+
+    // Also check users collection for isBot flag
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      return userData?.isBot === true || userData?.botId != null;
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error checking if user is bot:', error);
+    return false; // Default to regular user on error
+  }
+}
+
 export default function RecentActivity({ userId, maxItems = 15, title = "Recent Activity" }: RecentActivityProps) {
   const [activities, setActivities] = useState<LocalActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,9 +58,18 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
         if (userId) {
           // Set up real-time subscriptions for user activities
           const unsubscriptions: (() => void)[] = [];
-          const userActivities: LocalActivityItem[] = [];
+          
+          // First, check if this userId is a bot by checking the autonomous-bots collection
+          const isUserBot = await checkIfUserIsBot(userId);
+          console.log(`🔍 RecentActivity: Checking activities for userId: ${userId}, isBot: ${isUserBot}`);
+          
+          // 🔍 DEBUG: Additional logging to track data flow
+          console.log('🔍 RecentActivity COMPONENT DEBUG:');
+          console.log('📍 Component received userId:', userId);
+          console.log('📍 Component received title:', title);
+          console.log('📊 About to query collections with this userId:', userId);
 
-          // REAL-TIME SUBSCRIPTION 1: User transactions
+          // REAL-TIME SUBSCRIPTION 1: User transactions (always included for both bots and users)
           const transactionsQuery = query(
             collection(db, 'transactions'),
             where('userId', '==', userId),
@@ -47,6 +79,17 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
             const transactionActivities: LocalActivityItem[] = [];
             snapshot.forEach((doc) => {
               const data = doc.data();
+              
+              // ✅ CRITICAL FIX: Verify userId matches to prevent data leakage
+              if (data.userId !== userId) {
+                console.warn('⚠️ RecentActivity: Skipping activity with mismatched userId:', {
+                  expectedUserId: userId,
+                  actualUserId: data.userId,
+                  docId: doc.id
+                });
+                return; // Skip this activity
+              }
+              
               const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : (data.date || new Date().toISOString());
               
               let username = data.username || data.metadata?.username || 'Anonymous';
@@ -54,7 +97,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
                 username = `Bot_${data.botId}`;
               }
               
-              transactionActivities.push({
+              const activity = {
                 id: `transactions-${doc.id}`,
                 type: data.type,
                 username: username,
@@ -70,7 +113,20 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
                 timestamp: timestamp,
                 relativeTime: getRelativeTime(timestamp),
                 isBot: data.isBot || !!data.botId
+              };
+              
+              // 🔍 DEBUG: Log each activity being added
+              console.log('🔍 RecentActivity: Found valid transaction activity:', {
+                docId: doc.id,
+                expectedUserId: userId,
+                actualUserId: data.userId,
+                username: activity.username,
+                type: activity.type,
+                opinionText: activity.opinionText?.slice(0, 50) + '...',
+                isBot: activity.isBot
               });
+              
+              transactionActivities.push(activity);
             });
             
             // Update state with combined activities
@@ -83,50 +139,7 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
           });
           unsubscriptions.push(unsubscribeTransactions);
 
-          // REAL-TIME SUBSCRIPTION 2: Bot transactions
-          const botTransactionsQuery = query(
-            collection(db, 'transactions'),
-            where('botId', '==', userId),
-            limit(100)
-          );
-          const unsubscribeBotTransactions = onSnapshot(botTransactionsQuery, (snapshot) => {
-            const botTransactionActivities: LocalActivityItem[] = [];
-            snapshot.forEach((doc) => {
-              const data = doc.data();
-              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : (data.date || new Date().toISOString());
-              
-              let username = data.username || data.metadata?.username || `Bot_${data.botId}`;
-              
-              botTransactionActivities.push({
-                id: `bot-transactions-${doc.id}`,
-                type: data.type,
-                username: username,
-                opinionText: data.opinionText,
-                opinionId: data.opinionId,
-                amount: data.amount || 0,
-                price: data.price || data.metadata?.price,
-                quantity: data.quantity || data.metadata?.quantity,
-                targetUser: data.targetUser || data.metadata?.targetUser,
-                betType: data.betType || data.metadata?.betType,
-                targetPercentage: data.targetPercentage || data.metadata?.targetPercentage,
-                timeframe: data.timeframe,
-                timestamp: timestamp,
-                relativeTime: getRelativeTime(timestamp),
-                isBot: true
-              });
-            });
-            
-            // Update state with combined activities
-            setActivities(prevActivities => {
-              const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-transactions-'));
-              const combined = [...botTransactionActivities, ...otherActivities];
-              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-              return combined.slice(0, maxItems);
-            });
-          });
-          unsubscriptions.push(unsubscribeBotTransactions);
-
-          // REAL-TIME SUBSCRIPTION 3: Activity feed
+          // REAL-TIME SUBSCRIPTION 2: Activity feed for user (always included)
           const activityFeedQuery = query(
             collection(db, 'activity-feed'),
             where('userId', '==', userId),
@@ -136,12 +149,31 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
             const activityFeedItems: LocalActivityItem[] = [];
             snapshot.forEach((doc) => {
               const data = doc.data();
+              
+              // ✅ CRITICAL FIX: Verify userId matches to prevent data leakage
+              if (data.userId !== userId) {
+                console.warn('⚠️ RecentActivity: Skipping activity-feed with mismatched userId:', {
+                  expectedUserId: userId,
+                  actualUserId: data.userId,
+                  docId: doc.id
+                });
+                return; // Skip this activity
+              }
+              
               const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
               
               let username = data.username || data.user || 'Anonymous';
               if (data.botId && (username === 'Anonymous' || !username)) {
                 username = `Bot_${data.botId}`;
               }
+              
+              console.log('🔍 RecentActivity: Found valid activity-feed item:', {
+                docId: doc.id,
+                expectedUserId: userId,
+                actualUserId: data.userId,
+                username: username,
+                type: data.type || data.action || 'generate'
+              });
               
               activityFeedItems.push({
                 id: `activity-feed-${doc.id}`,
@@ -172,48 +204,98 @@ export default function RecentActivity({ userId, maxItems = 15, title = "Recent 
           });
           unsubscriptions.push(unsubscribeActivityFeed);
 
-          // REAL-TIME SUBSCRIPTION 4: Bot activity feed
-          const botActivityFeedQuery = query(
-            collection(db, 'activity-feed'),
-            where('botId', '==', userId),
-            limit(100)
-          );
-          const unsubscribeBotActivityFeed = onSnapshot(botActivityFeedQuery, (snapshot) => {
-            const botActivityFeedItems: LocalActivityItem[] = [];
-            snapshot.forEach((doc) => {
-              const data = doc.data();
-              const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+          // REAL-TIME SUBSCRIPTION 3 & 4: Bot-specific activities (ONLY if userId is actually a bot)
+          if (isUserBot) {
+            console.log(`🤖 User ${userId} is a bot - including bot-specific activity subscriptions`);
+            
+            // Bot transactions
+            const botTransactionsQuery = query(
+              collection(db, 'transactions'),
+              where('botId', '==', userId),
+              limit(100)
+            );
+            const unsubscribeBotTransactions = onSnapshot(botTransactionsQuery, (snapshot) => {
+              const botTransactionActivities: LocalActivityItem[] = [];
+              snapshot.forEach((doc) => {
+                const data = doc.data();
+                const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : (data.date || new Date().toISOString());
+                
+                let username = data.username || data.metadata?.username || `Bot_${data.botId}`;
+                
+                botTransactionActivities.push({
+                  id: `bot-transactions-${doc.id}`,
+                  type: data.type,
+                  username: username,
+                  opinionText: data.opinionText,
+                  opinionId: data.opinionId,
+                  amount: data.amount || 0,
+                  price: data.price || data.metadata?.price,
+                  quantity: data.quantity || data.metadata?.quantity,
+                  targetUser: data.targetUser || data.metadata?.targetUser,
+                  betType: data.betType || data.metadata?.betType,
+                  targetPercentage: data.targetPercentage || data.metadata?.targetPercentage,
+                  timeframe: data.timeframe,
+                  timestamp: timestamp,
+                  relativeTime: getRelativeTime(timestamp),
+                  isBot: true
+                });
+              });
               
-              let username = data.username || data.user || `Bot_${data.botId || doc.id}`;
-              
-              botActivityFeedItems.push({
-                id: `bot-activity-feed-${doc.id}`,
-                type: data.type || data.action || 'generate',
-                username: username,
-                opinionText: data.opinionText || data.text || data.description,
-                opinionId: data.opinionId,
-                amount: data.amount || data.value || 0,
-                price: data.price,
-                quantity: data.quantity,
-                targetUser: data.targetUser,
-                betType: data.betType,
-                targetPercentage: data.targetPercentage,
-                timeframe: data.timeframe,
-                timestamp: timestamp,
-                relativeTime: getRelativeTime(timestamp),
-                isBot: true
+              // Update state with combined activities
+              setActivities(prevActivities => {
+                const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-transactions-'));
+                const combined = [...botTransactionActivities, ...otherActivities];
+                combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                return combined.slice(0, maxItems);
               });
             });
-            
-            // Update state with combined activities
-            setActivities(prevActivities => {
-              const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-activity-feed-'));
-              const combined = [...botActivityFeedItems, ...otherActivities];
-              combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-              return combined.slice(0, maxItems);
+            unsubscriptions.push(unsubscribeBotTransactions);
+
+            // Bot activity feed
+            const botActivityFeedQuery = query(
+              collection(db, 'activity-feed'),
+              where('botId', '==', userId),
+              limit(100)
+            );
+            const unsubscribeBotActivityFeed = onSnapshot(botActivityFeedQuery, (snapshot) => {
+              const botActivityFeedItems: LocalActivityItem[] = [];
+              snapshot.forEach((doc) => {
+                const data = doc.data();
+                const timestamp = data.timestamp?.toDate?.() ? data.timestamp.toDate().toISOString() : new Date(data.timestamp).toISOString();
+                
+                let username = data.username || data.user || `Bot_${data.botId || doc.id}`;
+                
+                botActivityFeedItems.push({
+                  id: `bot-activity-feed-${doc.id}`,
+                  type: data.type || data.action || 'generate',
+                  username: username,
+                  opinionText: data.opinionText || data.text || data.description,
+                  opinionId: data.opinionId,
+                  amount: data.amount || data.value || 0,
+                  price: data.price,
+                  quantity: data.quantity,
+                  targetUser: data.targetUser,
+                  betType: data.betType,
+                  targetPercentage: data.targetPercentage,
+                  timeframe: data.timeframe,
+                  timestamp: timestamp,
+                  relativeTime: getRelativeTime(timestamp),
+                  isBot: true
+                });
+              });
+              
+              // Update state with combined activities
+              setActivities(prevActivities => {
+                const otherActivities = prevActivities.filter(a => !a.id.startsWith('bot-activity-feed-'));
+                const combined = [...botActivityFeedItems, ...otherActivities];
+                combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                return combined.slice(0, maxItems);
+              });
             });
-          });
-          unsubscriptions.push(unsubscribeBotActivityFeed);
+            unsubscriptions.push(unsubscribeBotActivityFeed);
+          } else {
+            console.log(`👤 User ${userId} is a regular user - skipping bot-specific activity subscriptions`);
+          }
 
           console.log('🔄 Set up real-time activity subscriptions for user:', userId);
           

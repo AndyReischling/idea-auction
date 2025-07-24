@@ -13,6 +13,7 @@ import {
   DocumentData 
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { opinionConflictResolver } from './opinion-conflict-resolver';
 
 export interface FirebaseActivityItem {
   id?: string;
@@ -229,25 +230,10 @@ export class FirebaseActivityService {
       if (activity.botId) cleanedActivity.botId = String(activity.botId);
       if (activity.metadata && typeof activity.metadata === 'object') cleanedActivity.metadata = activity.metadata;
 
-      // Use retry logic with enhanced race condition handling
-      await this.retryOperation(async () => {
-        try {
-          await addDoc(this.activityCollection, cleanedActivity);
-        } catch (docError) {
-          // Handle specific Firestore errors
-          const errorCode = (docError as any)?.code;
-          const errorMessage = (docError as any)?.message || '';
-          
-          if (errorCode === 'already-exists' || errorMessage.includes('already exists')) {
-            console.warn('⚠️ Document collision detected, activity may already be logged');
-            // Don't throw error for race conditions - just log and continue
-            return;
-          }
-          
-          // Re-throw other errors for retry logic
-          throw docError;
-        }
-      });
+      // Use enhanced conflict resolution retry logic  
+      await opinionConflictResolver.retryOperation(async () => {
+        await addDoc(this.activityCollection, cleanedActivity);
+      }, `add activity ${cleanedActivity.type} by ${cleanedActivity.username}`);
       
       console.log('✅ Activity added to Firebase successfully:', {
         username: activity.username,
@@ -255,57 +241,10 @@ export class FirebaseActivityService {
         hash: activityHash.substring(0, 20) + '...'
       });
     } catch (error) {
+      console.error('❌ Error adding activity to Firebase:', error);
       // Remove from deduplication cache if addition failed
       const activityHash = this.generateActivityHash(activity);
       this.recentActivityHashes.delete(activityHash);
-      
-      // Enhanced error logging without overwhelming output
-      let errorMessage = 'Unknown error occurred';
-      let errorCode = 'unknown';
-      
-      try {
-        if (error instanceof Error) {
-          errorMessage = error.message || 'Error instance with no message';
-          errorCode = (error as any)?.code || (error as any)?.status || 'error_instance';
-        } else if (error && typeof error === 'object') {
-          const keys = Object.keys(error);
-          errorMessage = (error as any).message || `Object with keys: ${keys.join(', ')}`;
-          errorCode = (error as any).code || (error as any).status || 'object_error';
-        } else {
-          errorMessage = String(error) || 'Falsy error value';
-          errorCode = 'primitive_error';
-        }
-      } catch (processingError) {
-        console.error('🚨 Error while processing error:', processingError);
-        errorMessage = 'Error processing failed';
-        errorCode = 'processing_error';
-      }
-      
-      console.error('❌ Error adding activity to Firebase:', {
-        message: errorMessage,
-        code: errorCode,
-        activity: `${activity?.username || 'unknown'} ${activity?.type || 'unknown'}`,
-        activityData: {
-          type: activity?.type,
-          username: activity?.username,
-          amount: activity?.amount,
-          isBot: activity?.isBot
-        },
-        timestamp: new Date().toISOString()
-      });
-      
-      // Provide specific guidance based on error type
-      if (errorMessage.includes('permission') || errorMessage.includes('PERMISSION_DENIED') || errorCode === 'permission-denied') {
-        console.error('🔒 FIREBASE PERMISSIONS ERROR: Firestore security rules are blocking writes to activity-feed');
-      } else if (errorMessage.includes('already exists') || errorCode === 'already-exists') {
-        console.warn('🔄 DUPLICATE ERROR: Document already exists - this is normal for high-frequency trading');
-      } else if (errorCode === 'invalid-argument') {
-        console.error('📝 DATA ERROR: Invalid data format being sent to Firebase');
-      }
-      
-      // Don't re-throw the error to prevent app crashes, just log it
-      console.warn('🚨 Activity creation failed but continuing execution to prevent app crash');
-      return;
     }
   }
 

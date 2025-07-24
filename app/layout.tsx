@@ -1,38 +1,13 @@
-'use client';
-
 import './global.css';
-import { useEffect } from 'react';
-import setupUnifiedSystem from './lib/unified-system';
 import { AuthProvider } from './lib/auth-context';
-import MigrationUI from './components/MigrationUI';
-import { useMigration } from './hooks/useMigration';
-import BotManager from './components/BotManager';
-
-function MigrationWrapper({ children }: { children: React.ReactNode }) {
-  const migration = useMigration();
-
-  return (
-    <>
-      <BotManager />
-      {children}
-      {migration.showUI && (
-        <MigrationUI onClose={migration.hideMigrationUI} autoStart={false} />
-      )}
-    </>
-  );
-}
+import ClientLayout from './ClientLayout';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Initialise once on the client
-  useEffect(() => {
-    setupUnifiedSystem();
-  }, []);
-
   return (
     <html lang="en">
       <body>
         <AuthProvider>
-          <MigrationWrapper>{children}</MigrationWrapper>
+          <ClientLayout>{children}</ClientLayout>
         </AuthProvider>
       </body>
     </html>

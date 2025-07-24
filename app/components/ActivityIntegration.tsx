@@ -21,8 +21,8 @@ interface ActivityIntegrationProps {
  * ActivityIntegration
  * --------------------------------------------------------------
  * A bridge that ensures the GlobalActivityTracker gets real-time updates
- * of the user profile from Firestore. The main initialization is now handled
- * by the auth context, but we still need to listen for profile changes.
+ * of the user profile from Firestore. Also provides hooks for triggering
+ * immediate data refreshes when activity occurs.
  */
 const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }) => {
   const { user } = useAuth();
@@ -67,6 +67,11 @@ const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }
               const data = snap.data() as UserProfile;
               console.log('🔥 ActivityIntegration: Profile updated from Firestore:', data);
               updateTrackerProfile(data);
+              
+              // Dispatch a custom event to notify other components of profile changes
+              window.dispatchEvent(new CustomEvent('user-profile-updated', { 
+                detail: { userId: user.uid, profile: data } 
+              }));
             } else {
               console.warn('⚠️ ActivityIntegration: User document does not exist:', user.uid);
             }

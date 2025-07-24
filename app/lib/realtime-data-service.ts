@@ -25,6 +25,7 @@ import {
 import { auth, db } from "./firebase";
 import { User } from "firebase/auth";
 import { createMarketDataDocId } from "./document-id-utils";
+import { opinionConflictResolver } from "./opinion-conflict-resolver";
 
 // -----------------------------------------------------------------------------
 // 🔖  Types
@@ -357,27 +358,46 @@ export class RealtimeDataService {
   // ✍️  Write helpers
   // ---------------------------------------------------------------------------
   async updateUserProfile(uid: string, updates: any) {
-    await updateDoc(doc(this.collections.users, uid), { ...updates, updatedAt: serverTimestamp() });
+    await opinionConflictResolver.retryOperation(async () => {
+      await updateDoc(doc(this.collections.users, uid), { ...updates, updatedAt: serverTimestamp() });
+    }, `update user profile ${uid}`);
     this.updateCache(`userProfile_${uid}`, { ...(await this.getUserProfile(uid)), ...updates });
   }
 
   async addOpinion(text: string) {
     if (!this.currentUser) throw new Error("Not signed in");
     const id = createMarketDataDocId(text);
-    await setDoc(doc(this.collections.opinions, id), {
+    const opinionData = {
       text,
       createdBy: this.currentUser.uid,
-      createdAt: serverTimestamp(),
-    });
+      authorId: this.currentUser.uid,
+      author: this.currentUser.displayName || this.currentUser.email || 'Anonymous',
+      source: 'user' as const,
+      isBot: false,
+    };
+    
+    await opinionConflictResolver.safeCreateOpinion(
+      id,
+      opinionData,
+      `add opinion: ${text.slice(0, 30)}...`
+    );
   }
 
   async addTransaction(tx: any) {
     if (!this.currentUser) throw new Error("Not signed in");
-    await setDoc(doc(this.collections.transactions, tx.id), { ...tx, userId: this.currentUser.uid, timestamp: serverTimestamp() });
+    if (!tx || !tx.id) throw new Error("Invalid transaction");
+    const userId = this.currentUser.uid;
+    await opinionConflictResolver.retryOperation(async () => {
+      await setDoc(doc(this.collections.transactions, tx.id), { ...tx, userId, timestamp: serverTimestamp() });
+    }, `add transaction ${tx.id}`);
   }
 
   async updateUserPortfolio(uid: string, ownedOpinions: any[]) {
-    await setDoc(doc(this.collections.userPortfolios, uid), { userId: uid, ownedOpinions, lastUpdated: serverTimestamp() }, { merge: true });
+    await opinionConflictResolver.safeUpdatePortfolio(
+      uid,
+      { ownedOpinions },
+      `update portfolio ${uid}`
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -431,7 +451,7 @@ export class RealtimeDataService {
       source: "firebase",
       isStale: false,
     };
-    setTimeout(() => (this.cache[key].isStale = true), 30_000);
+    setTimeout(() => (this.cache[key].isStale = true), 5_000); // Reduced from 30s to 5s for more real-time data
   }
 
   clearCache() {

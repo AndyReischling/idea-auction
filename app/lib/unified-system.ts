@@ -27,6 +27,7 @@ import {
 import { db } from "./firebase";
 import { firebaseActivityService } from "./firebase-activity";
 import { createMarketDataDocId, createTransactionId } from "./document-id-utils";
+import { opinionConflictResolver } from "./opinion-conflict-resolver";
 
 // ---------------------------------------------------------------------------
 // 1.  PRICE CALCULATION (unchanged)
@@ -90,7 +91,9 @@ class FSMarketDataManager {
       liquidityScore: 0,
       dailyVolume: 0,
     };
-    await setDoc(ref, baseline);
+    await opinionConflictResolver.retryOperation(async () => {
+      await setDoc(ref, baseline);
+    }, `create baseline market data ${opinionText.slice(0, 30)}...`);
     return baseline;
   }
 
@@ -197,7 +200,9 @@ class FSTransactionManager {
 
   async save(tx: UnifiedTransaction) {
     const ref = doc(collection(db, "transactions"), tx.id);
-    await setDoc(ref, { ...tx, timestamp: serverTimestamp() });
+    await opinionConflictResolver.retryOperation(async () => {
+      await setDoc(ref, { ...tx, timestamp: serverTimestamp() });
+    }, `save transaction ${tx.id}`);
 
     // Determine username: prefer metadata username, then look up by botId or userId
     let username = tx.metadata?.username || tx.userId || "anon";

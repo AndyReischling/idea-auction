@@ -50,7 +50,7 @@ async function testBotPermissions() {
   try {
     const opinionDoc = doc(collection(db, 'opinions'));
     await setDoc(opinionDoc, {
-      text: 'Test bot-generated opinion',
+      text: '[TEST PERMISSION CHECK - DEVELOPMENT ONLY]',
       author: 'TestBot_001',
       isBot: true,
       source: 'bot_generation',
@@ -68,7 +68,7 @@ async function testBotPermissions() {
     const shortDoc = doc(collection(db, 'short-positions'));
     await setDoc(shortDoc, {
       botId: 'test_bot_123',
-      opinionText: 'Test opinion for shorting',
+      opinionText: '[TEST SHORTING PERMISSION - DEVELOPMENT ONLY]',
       startPrice: 10.0,
       amount: 100,
       status: 'test',

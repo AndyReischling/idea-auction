@@ -298,9 +298,28 @@ export default function BetPage() {
     : 0;
   const currentUserActiveBets = ownedOpinions.length;
 
-  // Mock calculations for exposure and volatility - these would need real bet data
-  const MOCK_EXPOSURE = 700; // This should be calculated from actual bet data
-  const MOCK_VOLATILITY = 19.9; // This should be calculated from portfolio variance
+  // ❌ MOCK DATA ELIMINATED: Calculate real exposure and volatility from actual data
+  const calculateRealExposure = () => {
+    // Calculate real exposure from user's actual short positions and bet exposure
+    const shortExposure = (targetProfile as any)?.shortExposure || 0;
+    const betExposure = (targetProfile as any)?.betExposure || 0;
+    return shortExposure + betExposure;
+  };
+  
+  const calculateRealVolatility = () => {
+    // Calculate real volatility based on portfolio diversity and price variance
+    if (ownedOpinions.length === 0) return 0;
+    
+    const prices = ownedOpinions.map(op => op.currentPrice);
+    const avgPrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+    const variance = prices.reduce((sum, price) => sum + Math.pow(price - avgPrice, 2), 0) / prices.length;
+    const volatility = Math.sqrt(variance) / avgPrice * 100;
+    
+    return Math.min(Math.max(volatility, 0), 100); // Clamp between 0-100%
+  };
+
+  const REAL_EXPOSURE = calculateRealExposure();
+  const REAL_VOLATILITY = calculateRealVolatility();
 
   const handleSubmitBet = async () => {
     if (!user || !currentUserProfile || !targetProfile) {
@@ -664,7 +683,7 @@ export default function BetPage() {
                   margin: '0',
                   color: 'var(--text-primary)',
                 }}>
-                  {MOCK_VOLATILITY}%
+                  {REAL_VOLATILITY.toFixed(1)}%
                 </p>
               </div>
             </div>
