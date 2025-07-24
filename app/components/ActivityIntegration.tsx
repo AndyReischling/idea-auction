@@ -1,9 +1,9 @@
-// components/ActivityIntegration.tsx
-// Minimal component that just ensures global functions are available
-
-'use client';
+"use client";
 
 import { useEffect } from 'react';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuth } from '../lib/auth-context';
 
 interface UserProfile {
   username: string;
@@ -17,92 +17,92 @@ interface ActivityIntegrationProps {
   userProfile?: UserProfile;
 }
 
-const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({
-  userProfile
-}) => {
+/**
+ * ActivityIntegration
+ * --------------------------------------------------------------
+ * A bridge that ensures the GlobalActivityTracker gets real-time updates
+ * of the user profile from Firestore. Also provides hooks for triggering
+ * immediate data refreshes when activity occurs.
+ */
+const ActivityIntegration: React.FC<ActivityIntegrationProps> = ({ userProfile }) => {
+  const { user } = useAuth();
+
   useEffect(() => {
-    const initializeGlobalTracker = async () => {
+    let unsubscribe: (() => void) | undefined;
+
+    const init = async () => {
       try {
-        console.log('🔧 Initializing global activity tracking system...');
-        
-        // Import the global tracker (this will set up window globals)
         const { default: globalActivityTracker } = await import('./GlobalActivityTracker');
-        
-        // Set current user if provided
-        if (userProfile) {
-          globalActivityTracker.setCurrentUser(userProfile);
-        } else {
-          // Load from localStorage if no userProfile provided
-          const storedProfile = localStorage.getItem('userProfile');
-          if (storedProfile) {
-            try {
-              const parsed = JSON.parse(storedProfile);
-              globalActivityTracker.setCurrentUser(parsed);
-            } catch (error) {
-              console.error('Error parsing stored user profile:', error);
+        console.log('🔧 ActivityIntegration: Setting up real-time profile updates for user:', user?.uid);
+
+        // Helper to update tracker with profile changes
+        const updateTrackerProfile = (profile: UserProfile) => {
+          const userData = {
+            uid: user?.uid || '',
+            username: profile.username,
+            balance: profile.balance,
+            totalEarnings: profile.totalEarnings,
+            totalLosses: profile.totalLosses,
+            joinDate: ((profile.joinDate as any)?.toDate ? (profile.joinDate as any).toDate() : new Date(profile.joinDate as any)),
+            createdAt: new Date(), // We don't have this in the UserProfile interface
+            updatedAt: new Date()
+          };
+          
+          console.log('👤 ActivityIntegration: Updating tracker with user data:', userData);
+          globalActivityTracker.updateCurrentUser(userData);
+        };
+
+        // If a profile was passed as prop (e.g. SSR), update immediately
+        if (userProfile && user?.uid) {
+          console.log('👤 ActivityIntegration: Using provided userProfile:', userProfile);
+          updateTrackerProfile(userProfile);
+        }
+
+        // Listen to live profile updates via Firestore
+        if (user?.uid) {
+          const userDoc = doc(db, 'users', user.uid);
+          console.log('🔧 ActivityIntegration: Setting up Firestore profile subscription for:', user.uid);
+          unsubscribe = onSnapshot(userDoc, snap => {
+            if (snap.exists()) {
+              const data = snap.data() as UserProfile;
+              console.log('🔥 ActivityIntegration: Profile updated from Firestore:', data);
+              updateTrackerProfile(data);
+              
+              // Dispatch a custom event to notify other components of profile changes
+              window.dispatchEvent(new CustomEvent('user-profile-updated', { 
+                detail: { userId: user.uid, profile: data } 
+              }));
+            } else {
+              console.warn('⚠️ ActivityIntegration: User document does not exist:', user.uid);
             }
-          }
+          }, (error) => {
+            console.error('❌ ActivityIntegration: Profile subscription error:', error);
+          });
         }
 
-        // Listen for user profile changes from localStorage
-        const handleStorageChange = (e: StorageEvent) => {
-          if (e.key === 'userProfile' && e.newValue) {
-            try {
-              const updatedUser = JSON.parse(e.newValue);
-              globalActivityTracker.setCurrentUser(updatedUser);
-              console.log('👤 User profile updated from storage:', updatedUser.username);
-            } catch (error) {
-              console.error('Error parsing updated user profile:', error);
-            }
-          }
-        };
-
-        // Listen for manual user profile updates
-        const handleUserProfileUpdate = (event: CustomEvent) => {
-          const updatedUser = event.detail;
-          globalActivityTracker.setCurrentUser(updatedUser);
-          console.log('👤 User profile updated from event:', updatedUser.username);
-        };
-
-        // Add event listeners
-        window.addEventListener('storage', handleStorageChange);
-        window.addEventListener('userProfileUpdated', handleUserProfileUpdate as EventListener);
-
-        console.log('✅ Global activity tracking system initialized successfully!');
-        console.log('🎯 The following functions are now available globally:');
-        console.log('   - addToGlobalFeed() ✅');
-        console.log('   - trackTrade() ✅');
-        console.log('   - interceptBuyTransaction() ✅');
-        console.log('   - interceptSellTransaction() ✅');
-
-        // Test to make sure functions are available
-        if (typeof (window as any).addToGlobalFeed === 'function') {
-          console.log('✅ addToGlobalFeed is ready');
-        } else {
-          console.error('❌ addToGlobalFeed not available!');
-        }
-
-        if (typeof (window as any).trackTrade === 'function') {
-          console.log('✅ trackTrade is ready');
-        } else {
-          console.error('❌ trackTrade not available!');
-        }
-
-        // Cleanup function
-        return () => {
-          window.removeEventListener('storage', handleStorageChange);
-          window.removeEventListener('userProfileUpdated', handleUserProfileUpdate as EventListener);
-        };
-
-      } catch (error) {
-        console.error('❌ Failed to initialize global activity tracking:', error);
+        console.log('✅ ActivityIntegration: Real-time profile updates initialized');
+      } catch (err) {
+        console.error('❌ ActivityIntegration: Failed to initialize profile updates', err);
       }
     };
 
-    initializeGlobalTracker();
-  }, [userProfile]);
+    // Only initialize if we have a user
+    if (user?.uid) {
+      console.log('🔧 ActivityIntegration: Initializing for authenticated user:', user.uid);
+      init();
+    } else {
+      console.log('⚠️ ActivityIntegration: No authenticated user, skipping initialization');
+    }
 
-  // This component doesn't render anything visible
+    return () => {
+      if (unsubscribe) {
+        console.log('🔧 ActivityIntegration: Cleaning up profile subscription');
+        unsubscribe();
+      }
+    };
+  }, [user, userProfile]);
+
+  // No visible output
   return null;
 };
 

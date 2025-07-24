@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, auth } from './firebase';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -13,10 +15,20 @@ export interface EmbeddingData {
   createdAt: string;
 }
 
+/**
+ * Singleton service that manages embeddings.
+ *
+ * 1. Generates embeddings via OpenAI
+ * 2. Caches them in memory (Map<id, EmbeddingData>) for the session
+ * 3. Persists the cache in **Firestore** under `embeddings/{uid}`
+ */
 export class EmbeddingService {
   private static instance: EmbeddingService;
   private embeddings: Map<string, EmbeddingData> = new Map();
 
+  // ─────────────────────────────────────────────────────────────
+  // ⚙️  Singleton access
+  // ─────────────────────────────────────────────────────────────
   static getInstance(): EmbeddingService {
     if (!EmbeddingService.instance) {
       EmbeddingService.instance = new EmbeddingService();
@@ -24,159 +36,150 @@ export class EmbeddingService {
     return EmbeddingService.instance;
   }
 
-  constructor() {
+  private constructor() {
+    // fire‑and‑forget; no need to await in the ctor
     this.loadEmbeddings();
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 🔮 OpenAI helpers
+  // ─────────────────────────────────────────────────────────────
   async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await openai.embeddings.create({
-        model: "text-embedding-ada-002",
-        input: text.replace(/\n/g, ' ').trim(),
-      });
-      return response.data[0].embedding;
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      throw error;
-    }
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: text.replace(/\n/g, ' ').trim(),
+    });
+    return response.data[0].embedding;
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 📌 CRUD
+  // ─────────────────────────────────────────────────────────────
   async addEmbedding(
     id: string,
     text: string,
     type: EmbeddingData['type'],
     metadata: Record<string, any> = {}
   ): Promise<void> {
-    try {
-      const embedding = await this.generateEmbedding(text);
-      const embeddingData: EmbeddingData = {
-        id,
-        text,
-        embedding,
-        type,
-        metadata,
-        createdAt: new Date().toISOString(),
-      };
+    const embedding = await this.generateEmbedding(text);
+    const embeddingData: EmbeddingData = {
+      id,
+      text,
+      embedding,
+      type,
+      metadata,
+      createdAt: new Date().toISOString(),
+    };
 
-      this.embeddings.set(id, embeddingData);
-      this.saveEmbeddings();
-      
-      console.log(`✅ Added embedding for ${type}: ${id}`);
-    } catch (error) {
-      console.error(`Failed to add embedding for ${id}:`, error);
-    }
+    this.embeddings.set(id, embeddingData);
+    await this.saveEmbeddings();
+    console.log(`✅ Added embedding → ${type}: ${id}`);
   }
 
   async searchSimilar(
     query: string,
-    limit: number = 10,
+    limit = 10,
     typeFilter?: EmbeddingData['type']
   ): Promise<Array<EmbeddingData & { similarity: number }>> {
-    try {
-      const queryEmbedding = await this.generateEmbedding(query);
-      const results: Array<EmbeddingData & { similarity: number }> = [];
+    const queryEmbedding = await this.generateEmbedding(query);
+    const results: Array<EmbeddingData & { similarity: number }> = [];
 
-      for (const [id, embeddingData] of this.embeddings) {
-        // Apply type filter if specified
-        if (typeFilter && embeddingData.type !== typeFilter) {
-          continue;
-        }
-
-        const similarity = this.cosineSimilarity(queryEmbedding, embeddingData.embedding);
-        results.push({
-          ...embeddingData,
-          similarity,
-        });
-      }
-
-      // Sort by similarity (highest first) and limit results
-      return results
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, limit);
-    } catch (error) {
-      console.error('Search error:', error);
-      return [];
+    for (const [, embeddingData] of this.embeddings) {
+      if (typeFilter && embeddingData.type !== typeFilter) continue;
+      const sim = this.cosineSimilarity(queryEmbedding, embeddingData.embedding);
+      results.push({ ...embeddingData, similarity: sim });
     }
-  }
 
-  private cosineSimilarity(vecA: number[], vecB: number[]): number {
-    if (vecA.length !== vecB.length) return 0;
-    
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-    
-    const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
-    return magnitude === 0 ? 0 : dotProduct / magnitude;
-  }
-
-  private loadEmbeddings(): void {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('semanticEmbeddings');
-        if (stored) {
-          const data = JSON.parse(stored);
-          this.embeddings = new Map(Object.entries(data));
-          console.log(`📚 Loaded ${this.embeddings.size} embeddings from storage`);
-        }
-      } catch (error) {
-        console.error('Error loading embeddings:', error);
-      }
-    }
-  }
-
-  private saveEmbeddings(): void {
-    if (typeof window !== 'undefined') {
-      try {
-        const data = Object.fromEntries(this.embeddings);
-        localStorage.setItem('semanticEmbeddings', JSON.stringify(data));
-      } catch (error) {
-        console.error('Error saving embeddings:', error);
-      }
-    }
-  }
-
-  // Batch operations for better performance
-  async batchAddEmbeddings(items: Array<{
-    id: string;
-    text: string;
-    type: EmbeddingData['type'];
-    metadata?: Record<string, any>;
-  }>): Promise<void> {
-    console.log(`🔄 Processing ${items.length} items for embedding...`);
-    
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      try {
-        await this.addEmbedding(item.id, item.text, item.type, item.metadata || {});
-        
-        // Add delay to respect OpenAI rate limits
-        if (i > 0 && i % 10 === 0) {
-          console.log(`📊 Processed ${i}/${items.length} embeddings...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      } catch (error) {
-        console.error(`Failed to process item ${item.id}:`, error);
-      }
-    }
-    
-    console.log(`✅ Completed embedding ${items.length} items`);
+    return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
   }
 
   getEmbeddingCount(): number {
     return this.embeddings.size;
   }
 
-  clearEmbeddings(): void {
+  async clearEmbeddings(): Promise<void> {
     this.embeddings.clear();
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('semanticEmbeddings');
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      try {
+        await deleteDoc(doc(db, 'embeddings', uid));
+      } catch (err) {
+        console.error('Error deleting embeddings doc:', err);
+      }
     }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 🧮 Helpers
+  // ─────────────────────────────────────────────────────────────
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    let dot = 0,
+      normA = 0,
+      normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    return denom === 0 ? 0 : dot / denom;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // ☁️ Firestore persistence
+  // ─────────────────────────────────────────────────────────────
+  private async loadEmbeddings(): Promise<void> {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return; // user not signed in yet
+
+    try {
+      const snap = await getDoc(doc(db, 'embeddings', uid));
+      if (snap.exists()) {
+        const vectors = snap.data().vectors as Record<string, EmbeddingData>;
+        this.embeddings = new Map(Object.entries(vectors));
+        console.log(`📚 Loaded ${this.embeddings.size} embeddings from Firestore`);
+      }
+    } catch (err) {
+      console.error('Error loading embeddings from Firestore:', err);
+    }
+  }
+
+  private async saveEmbeddings(): Promise<void> {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    try {
+      await setDoc(
+        doc(db, 'embeddings', uid),
+        { vectors: Object.fromEntries(this.embeddings) },
+        { merge: true }
+      );
+    } catch (err) {
+      console.error('Error saving embeddings to Firestore:', err);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 🔄 Batch add for large datasets (respects rate limits)
+  // ─────────────────────────────────────────────────────────────
+  async batchAddEmbeddings(items: Array<{
+    id: string;
+    text: string;
+    type: EmbeddingData['type'];
+    metadata?: Record<string, any>;
+  }>): Promise<void> {
+    console.log(`🔄 Processing ${items.length} items for embedding…`);
+    for (let i = 0; i < items.length; i++) {
+      const { id, text, type, metadata } = items[i];
+      try {
+        await this.addEmbedding(id, text, type, metadata);
+        // naive rate‑limit guard: pause every 10 calls
+        if (i > 0 && i % 10 === 0) await new Promise(r => setTimeout(r, 1000));
+      } catch (err) {
+        console.error(`Failed to embed ${id}:`, err);
+      }
+    }
+    console.log('✅ Completed batch embedding');
   }
 }

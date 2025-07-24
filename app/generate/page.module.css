@@ -156,9 +156,9 @@
 
 .generateButton {
   padding: 12px 24px;
-  background: var(--soft-blue);
+  background: var(--bg-card);
   color: var(--text-primary);
-  border: none;
+  border: 2px solid var(--border-primary);
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--font-size-base);
@@ -172,8 +172,8 @@
 }
 
 .generateButton:hover:not(:disabled) {
-  background: var(--lime-green);
-  color: var(--text-black);
+  background: var(--green);
+  color: var(--white);
   transform: translateY(-2px);
 }
 
@@ -226,9 +226,9 @@
 
 .submitButton {
   padding: 12px 24px;
-  background: var(--lime-green);
-  color: var(--text-black);
-  border: none;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 2px solid var(--border-primary);
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--font-size-base);
@@ -241,8 +241,9 @@
   gap: 8px;
 }
 
-.submitButton:hover {
-  background: var(--lime-bright);
+.submitButton:hover:not(:disabled) {
+  background: var(--green);
+  color: var(--white);
   transform: translateY(-2px);
 }
 

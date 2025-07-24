@@ -1,0 +1,254 @@
+"use client";
+
+/**
+ * FEED ‑ Firestore‑first edition (2025‑07‑10)
+ * --------------------------------------------------------------
+ *  ▸ every reference to browser localStorage has been removed
+ *  ▸ real‑time data now streams straight from Firestore using
+ *    `onSnapshot` listeners (opinions • activity‑feed • user doc)
+ *  ▸ helper services (`firebaseActivityService`, `realtimeDataService`)
+ *    keep the API surface almost identical to the legacy version—
+ *    only the persistence layer changed.
+ */
+
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import { useRouter } from "next/navigation";
+import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import ActivityDetailModal from "@/components/ActivityDetailModal"; // unchanged
+import Sidebar from "@/components/Sidebar";
+import AuthButton from "@/components/AuthButton";
+import ActivityIntegration from "@/components/ActivityIntegration";
+import {
+  firebaseActivityService,
+  LocalActivityItem,
+} from "@/lib/firebase-activity";
+import { useAuth } from "@/lib/auth-context";
+import styles from "./page.module.css";
+
+// -----------------------------------------------------------------------------
+// 🗂️  Types reused from the legacy file (trimmed for brevity)
+// -----------------------------------------------------------------------------
+interface ActivityFeedItem {
+  id: string;
+  type:
+    | "buy"
+    | "sell"
+    | "bet_place"
+    | "bet_win"
+    | "bet_loss"
+    | "generate"
+    | "earn"
+    | "short_place"
+    | "short_win"
+    | "short_loss";
+  username: string;
+  opinionText?: string;
+  opinionId?: string;
+  amount: number;
+  price?: number;
+  quantity?: number;
+  targetUser?: string;
+  betType?: "increase" | "decrease";
+  targetPercentage?: number;
+  timeframe?: number;
+  timestamp: string;
+  relativeTime: string;
+  isBot?: boolean;
+}
+
+interface UserProfile {
+  username: string;
+  balance: number;
+  joinDate?: string;
+  totalEarnings?: number;
+  totalLosses?: number;
+}
+
+// -----------------------------------------------------------------------------
+// 🧮  Helpers (no localStorage!)
+// -----------------------------------------------------------------------------
+const getRelativeTime = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+
+// -----------------------------------------------------------------------------
+// 📡  Real‑time Firestore hooks
+// -----------------------------------------------------------------------------
+function useActivityFeed(limitDocs = 200) {
+  const [feed, setFeed] = useState<ActivityFeedItem[]>([]);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "activity-feed"),
+      orderBy("timestamp", "desc"),
+      limit(limitDocs)
+    );
+
+    const unsub = onSnapshot(q, snap => {
+      const items: ActivityFeedItem[] = snap.docs.map(d => {
+        const data: any = d.data();
+        return {
+          id: d.id,
+          ...data,
+          relativeTime: getRelativeTime(data.timestamp),
+        };
+      });
+      setFeed(items);
+    });
+
+    return () => unsub();
+  }, [limitDocs]);
+
+  return feed;
+}
+
+function useOpinions() {
+  const [opinions, setOpinions] = useState<{ id: string; text: string }[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, "opinions"), orderBy("createdAt", "desc"), limit(500));
+    const unsub = onSnapshot(q, snap => {
+      setOpinions(snap.docs.map(d => ({ id: d.id, text: d.data().opinionText })));
+    });
+    return () => unsub();
+  }, []);
+
+  return opinions;
+}
+
+// -----------------------------------------------------------------------------
+// 🚀  Add activity (writes directly to Firestore)
+// -----------------------------------------------------------------------------
+async function addToActivityFeed(partial: Omit<ActivityFeedItem, "id" | "relativeTime">) {
+  await firebaseActivityService.addActivity({
+    ...partial,
+    timestamp: partial.timestamp || new Date().toISOString(),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 🌐  Main component – FeedPage
+// -----------------------------------------------------------------------------
+export default function FeedPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  // live collections
+  const activityFeed = useActivityFeed();
+  const opinions = useOpinions();
+
+  // local ui state
+  const [selectedActivity, setSelectedActivity] = useState<ActivityFeedItem | null>(null);
+  const [showModal, setShowModal] = useState(false);
+
+  // current user profile (real‑time)
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(collection(db, "users"), snap => {
+      const doc = snap.docs.find(d => d.id === user.uid);
+      if (doc) setProfile(doc.data() as UserProfile);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  const handleActivityClick = (a: ActivityFeedItem) => {
+    setSelectedActivity(a);
+    setShowModal(true);
+  };
+
+  // -------------------------------------------------------------------------
+  // 🔧  UI helpers (icons, descriptions) – kept exactly as legacy version
+  // -------------------------------------------------------------------------
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case "buy":
+        return "💰";
+      case "sell":
+        return "✋";
+      case "short_place":
+      case "short_win":
+      case "short_loss":
+        return "📉";
+      default:
+        return "📈";
+    }
+  };
+
+  const formatActivityDescription = (a: ActivityFeedItem) => {
+    switch (a.type) {
+      case "buy":
+        return `${a.username} bought ${a.quantity || 1}× \"${a.opinionText}\"`;
+      case "sell":
+        return `${a.username} sold ${a.quantity || 1}× \"${a.opinionText}\"`;
+      case "generate":
+        return `${a.username} generated a new opinion`;
+      default:
+        return `${a.username} did ${a.type}`;
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // 🖼️  Render
+  // -------------------------------------------------------------------------
+  return (
+    <div className="page-container">
+      {/* tiny integration component sets the tracker global (no LS) */}
+      {profile && <ActivityIntegration userProfile={profile} />}
+
+      <Sidebar opinions={opinions} />
+
+      <main className="main-content">
+        <header className="sticky top-0 z-50 bg-white border-b px-6 py-4 flex items-center gap-4">
+          <h1 className="text-2xl font-extrabold">Live Feed</h1>
+          <AuthButton />
+        </header>
+
+        <ul className="divide-y max-h-[70vh] overflow-auto">
+          {activityFeed.map(a => (
+            <li
+              key={a.id}
+              className="px-6 py-4 hover:bg-gray-50 cursor-pointer"
+              onClick={() => handleActivityClick(a)}
+            >
+              <div className="flex items-center gap-3">
+                <span>{getActivityIcon(a.type)}</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{formatActivityDescription(a)}</p>
+                  <p className="text-xs text-gray-500">{a.relativeTime}</p>
+                </div>
+                <span
+                  className={`text-sm font-semibold ${a.amount >= 0 ? "text-green-600" : "text-red-600"}`}
+                >
+                  {a.amount >= 0 ? "+" : "-"}${Math.abs(a.amount).toFixed(2)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {/* detail modal */}
+        {showModal && selectedActivity && (
+          <ActivityDetailModal
+            activity={selectedActivity}
+            onClose={() => setShowModal(false)}
+            currentUser={profile as UserProfile}
+            onUpdateUser={() => {/* profile updates come from Firestore now */}}
+          />
+        )}
+      </main>
+    </div>
+  );
+}

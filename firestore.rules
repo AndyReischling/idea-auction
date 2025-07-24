@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ───────────── USER AUTHENTICATION ───────────── */
+    match /users/{userId} {
+      // public read access for leaderboards, author names, and user profiles
+      allow read: if true;
+      // allow authenticated users to write their own profile OR allow bot system to create bot entries
+      allow write: if (request.auth != null && request.auth.uid == userId)
+        || (request.resource.data.keys().hasAny(['isBot', 'botId']))
+        || (resource.data.keys().hasAny(['isBot', 'botId']));
+    }
+
+    /* username registry for uniqueness checks */
+    match /usernames/{username} {
+      allow read: if true;                 // public "isNameTaken" check
+      allow write: if request.auth != null;
+    }
+
+    /* ───────────── OPINIONS ───────────── */
+    match /opinions/{opinionId} {
+      allow read: if true;                 // opinions are publicly readable
+      allow write: if request.auth != null // authenticated users can create/update opinions
+        || (request.resource.data.isBot == true)                    // allow bot-generated opinions
+        || (request.resource.data.source in ['bot_generation', 'bot_system']);  // allow bot sources
+    }
+
+    /* ───────────── MARKET DATA ───────────── */
+    match /market-data/{marketId} {
+      allow read: if true;                 // market data is publicly readable
+      allow write: if request.auth != null // authenticated users can update market data
+        || (request.resource.data.source in ['bot_system', 'unified-system', 'reconciliation']);
+    }
+
+    /* ───────────── TRANSACTIONS ───────────── */
+    match /transactions/{transactionId} {
+      // Allow authenticated users to read transactions (for user profiles, activity feeds, etc.)
+      allow read: if request.auth != null;
+      allow write: if request.auth != null // authenticated users can create transactions
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system', 'reconciliation']);
+    }
+
+    /* ───────────── SHORT POSITIONS ───────────── */
+    match /short-positions/{positionId} {
+      // Allow authenticated users to read short positions (for user profiles and leaderboard)
+      allow read: if request.auth != null;
+      allow write: if (request.auth != null && request.auth.uid == resource.data.userId)
+        || (request.resource.data.botId != null);  // allow bots to create short positions
+    }
+
+    /* ───────────── ADVANCED BETS ───────────── */
+    match /advanced-bets/{betId} {
+      // Allow authenticated users to read bets (for leaderboard and user profiles)
+      allow read: if request.auth != null;
+      allow write: if request.auth != null // Allow authenticated users to create/update bets
+        || (request.resource.data.botId != null);  // allow bots to place bets
+    }
+
+    /* ───────────── USER PORTFOLIOS ───────────── */
+    match /user-portfolios/{userId} {
+      // Allow authenticated users to read all portfolios (for leaderboard and user profiles)
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId; // Only allow writing to your own portfolio
+    }
+
+    /* ───────────── AUTONOMOUS BOTS ───────────── */
+    match /autonomous-bots/{botId} {
+      allow read: if true; // Allow public reads for bots
+      allow write: if request.auth != null // Allow authenticated users to manage bots
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+    
+    /* ───────────── BOT PORTFOLIOS ───────────── */
+    match /bot-portfolios/{document} {
+      allow read: if true; // ✅ FIX: Allow public reads for bot profile pages
+      allow write: if request.auth != null // Allow system to manage bot portfolios
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+
+    /* ───────────── CONSOLIDATED BOT PORTFOLIOS ───────────── */
+    match /consolidated-bot-portfolios/{botId} {
+      allow read: if true; // ✅ FIX: Allow public reads for bot profile pages
+      allow write: if request.auth != null // Allow system to manage consolidated bot portfolios
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+
+    /* ───────────── BOT TRANSACTIONS ───────────── */
+    match /bot-transactions/{transactionId} {
+      allow read: if request.auth != null; // Allow authenticated users to read bot transactions
+      allow write: if request.auth != null // Allow system to manage bot transactions
+        || (request.resource.data.isBot == true)
+        || (request.resource.data.metadata.source in ['bot_system', 'unified-system']);
+    }
+
+    /* ───────────── ACTIVITY FEED ───────────── */
+    match /activity-feed/{activityId} {
+      allow read: if true;                // live ticker is publicly visible (allow queries by userId and botId)
+
+      // authenticated users can write
+      allow write: if request.auth != null
+        || (request.resource.data.isBot == true)                     // bot payload
+        || (request.resource.data.metadata.source in ['bot_system', 'reconciliation', 'migration']);
+    }
+
+    /* optional aggregated feeds */
+    match /global-activity-feed/{id} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
+    match /user-activity-feeds/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    /* ───────────── BOT SETTINGS ───────────── */
+    match /bot-settings/{settingId} {
+      allow read: if true; // Allow public read for bot system initialization
+      allow write: if request.auth != null // Allow authenticated users to manage bot settings
+        || (request.resource.data.source in ['bot_system', 'bot_manager']); // Allow bot system writes
+    }
+
+    /* ───────────── ADMIN COLLECTIONS ───────────── */
+    match /admin/{document=**} {
+      allow read, write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    /* ───────────── SYSTEM COLLECTIONS ───────────── */
+    match /system/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    /* ───────────── PUBLIC LEADERBOARD ───────────── */
+    match /public-leaderboard/{document=**} {
+      allow read: if true;  // Public read access for top 5 traders
+      allow write: if request.auth != null; // Only authenticated users can update
+    }
+  }
+}

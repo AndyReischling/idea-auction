@@ -44,8 +44,8 @@ export default function BotControlPanel() {
     // Load initial bot data
     loadBotData();
     
-    // Set up interval to refresh data
-    const interval = setInterval(loadBotData, 5000); // Update every 5 seconds
+    // Set up interval to refresh data less frequently to improve performance
+    const interval = setInterval(loadBotData, 30000); // Update every 30 seconds
     
     return () => clearInterval(interval);
   }, []);

@@ -1,17 +1,94 @@
+// =============================================================================
+// app/users/[username]/page.tsx – View another user's profile with same styling as profile page
+// -----------------------------------------------------------------------------
+//  ✦ Fetches user data by username instead of current user
+//  ✦ Uses exact same UI structure as profile page
+//  ✦ Shows other user's portfolio, bets, and activity
+// =============================================================================
+
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import { useAuth } from '../../lib/auth-context';
+import { firebaseDataService } from '../../lib/firebase-data-service';
+import ActivityIntegration from '../../components/ActivityIntegration';
+import { collection, query, where, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import { calculateMultiplier, calculatePayout } from '../../lib/multiplier-utils';
+import { getUserPortfolio, migrateUserPortfolio, type Portfolio } from '../../lib/portfolio-utils';
+import { realtimeDataService } from '../../lib/realtime-data-service';
+import { unifiedPortfolioService } from '../../lib/unified-portfolio-service';
 import Sidebar from '../../components/Sidebar';
-import styles from '../page.module.css';
-import { ScanSmiley, Balloon, Wallet, CurrencyCircleDollar, ChartLine, Folder, DiceSix, BookOpenText, Play, CurrencyDollar, Rss } from '@phosphor-icons/react';
+import AuthButton from '../../components/AuthButton';
+import AuthStatusIndicator from '../../components/AuthStatusIndicator';
+import Navigation from '../../components/Navigation';
+import RecentActivity from '../../components/RecentActivity';
+import FirestoreDataDiagnostic from '../../components/FirestoreDataDiagnostic';
+import styles from '../../page.module.css';
+import {
+  Wallet, User, Coins, ScanSmiley, RssSimple, Balloon, SignOut,
+} from '@phosphor-icons/react';
 
+// Diagnostic function to debug bot portfolio data
+async function debugBotPortfolioData(botId: string, botUsername: string) {
+  console.log('🔍 DIAGNOSTIC START:', { botId, botUsername });
+  
+  try {
+    // Check consolidated-bot-portfolios
+    const consolidatedRef = doc(db, 'consolidated-bot-portfolios', botId);
+    const consolidatedSnap = await getDoc(consolidatedRef);
+    console.log('📊 Consolidated portfolio exists:', consolidatedSnap.exists());
+    if (consolidatedSnap.exists()) {
+      const data = consolidatedSnap.data();
+      console.log('📊 Consolidated portfolio data:', data);
+    }
+
+    // Check bot-portfolios collection
+    const botPortfoliosQuery = query(collection(db, 'bot-portfolios'));
+    const botPortfoliosSnap = await getDocs(botPortfoliosQuery);
+    const botDocs = botPortfoliosSnap.docs.filter(doc => doc.id.startsWith(botId + '_'));
+    console.log('📊 Individual bot portfolio docs found:', botDocs.length);
+    botDocs.forEach(doc => {
+      console.log('📊 Bot portfolio doc:', doc.id, doc.data());
+    });
+
+    // Check user-portfolios (in case bot data is stored there)
+    const userPortfolioRef = doc(db, 'user-portfolios', botId);
+    const userPortfolioSnap = await getDoc(userPortfolioRef);
+    console.log('📊 User portfolio exists:', userPortfolioSnap.exists());
+    if (userPortfolioSnap.exists()) {
+      const data = userPortfolioSnap.data();
+      console.log('📊 User portfolio data:', data);
+    }
+
+    // Check transactions for this bot
+    const transactionsQuery = query(
+      collection(db, 'transactions'),
+      where('userId', '==', botId),
+      limit(5)
+    );
+    const transactionsSnap = await getDocs(transactionsQuery);
+    console.log('📊 Bot transactions found:', transactionsSnap.size);
+    transactionsSnap.docs.forEach(doc => {
+      console.log('📊 Bot transaction:', doc.data());
+    });
+
+  } catch (error) {
+    console.error('❌ DIAGNOSTIC ERROR:', error);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Data shapes (firestore docs already match these)
+// ──────────────────────────────────────────────────────────────────────────────
 interface UserProfile {
   username: string;
   balance: number;
   joinDate: string;
   totalEarnings: number;
   totalLosses: number;
+  uid: string;
 }
 
 interface OpinionAsset {
@@ -23,1352 +100,1278 @@ interface OpinionAsset {
   quantity: number;
 }
 
+interface Transaction {
+  id: string;
+  type: 'buy' | 'sell' | 'earn' | 'short_win' | 'short_loss' | 'short_place';
+  amount: number;
+  date: string;
+  opinionText?: string;
+}
+
+// Portfolio Bet Interface (matches your existing implementation)
+interface PortfolioBet {
+  id: string;
+  targetUser: string;
+  betType: 'increase' | 'decrease';
+  targetPercentage: number;
+  timeframe: number; // days
+  amount: number;
+  potentialPayout: number;
+  status: 'active' | 'won' | 'lost' | 'expired';
+  placedDate: string;
+  expiryDate: string;
+  riskMultiplier: number;
+}
+
+// Short Position Interface (matches your existing implementation)
 interface ShortPosition {
   id: string;
   opinionText: string;
   opinionId: string;
-  betAmount: number;
   targetDropPercentage: number;
-  startingPrice: number;
-  targetPrice: number;
+  betAmount: number;
   potentialWinnings: number;
-  expirationDate: string;
+  status: 'active' | 'won' | 'lost' | 'expired';
   createdDate: string;
-  status: 'active' | 'won' | 'lost' | 'expired';
-  botId?: string;
+  expirationDate: string;
+  startingPrice: number;
+  currentPrice: number;
+  targetPrice: number;
+  progress: number; // percentage progress toward target
+  sharesObligation: number; // shares you'd need to buy if closed early
 }
 
-interface AdvancedBet {
-  id: string;
-  bettor: string;
-  targetUser: string;
-  betType: 'increase' | 'decrease';
-  targetPercentage: number;
-  amount: number;
-  timeFrame: number;
-  initialPortfolioValue: number;
-  currentPortfolioValue: number;
-  placedDate: string;
-  expiryDate: string;
-  status: 'active' | 'won' | 'lost' | 'expired';
-  multiplier: number;
-  potentialPayout: number;
-  volatilityRating: 'Low' | 'Medium' | 'High' | 'Extreme';
-}
+// Real data - removed mock data
 
-interface Transaction {
-  id: string;
-  type: 'buy' | 'sell' | 'earn' | 'bet_win' | 'bet_loss' | 'bet_place' | 'short_place' | 'short_win' | 'short_loss';
-  amount: number;
-  date: string;
-  description?: string;
-  opinionText?: string;
-  quantity?: number;
-}
-
-interface BettingActivity {
-  id: string;
-  type: 'portfolio_bet' | 'short_bet';
-  title: string;
-  subtitle: string;
-  amount: number;
-  potentialPayout: number;
-  status: 'active' | 'won' | 'lost' | 'expired';
-  placedDate: string;
-  expiryDate: string;
-  daysRemaining?: number;
-  additionalInfo?: string;
-  multiplier?: number;
-  volatilityRating?: string;
-  targetUser?: string;
-  opinionText?: string;
-  progress?: number;
-  actualLoss?: number;
-  opinionId?: string;
-}
-
-// NEW: Betting form interface
-interface BetForm {
-  betType: 'increase' | 'decrease';
-  targetPercentage: number;
-  amount: number;
-  timeFrame: number;
-}
-
+// ──────────────────────────────────────────────────────────────────────────────
 export default function UserDetailPage() {
   const { username } = useParams();
-  const router = useRouter();
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+
+  // 📄 User profile being viewed
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isBot, setIsBot] = useState<boolean>(false);
+
+  // 💼 Portfolio & assets
   const [ownedOpinions, setOwnedOpinions] = useState<OpinionAsset[]>([]);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+
+  // 🧾 Transactions
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+
+  // All opinion texts → used for sidebar links
   const [allOpinions, setAllOpinions] = useState<string[]>([]);
-  const [combinedBettingActivity, setCombinedBettingActivity] = useState<BettingActivity[]>([]);
-  const [isBot, setIsBot] = useState(false);
-  const [botId, setBotId] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false);
+
+  // Real bets and shorts data
+  const [userBets, setUserBets] = useState<any[]>([]);
+  const [userShorts, setUserShorts] = useState<any[]>([]);
   
-  // NEW: Betting states
-  const [showBetModal, setShowBetModal] = useState(false);
-  const [currentUser, setCurrentUser] = useState<UserProfile>({
-    username: 'OpinionTrader123',
-    balance: 10000,
-    joinDate: new Date().toLocaleDateString(),
-    totalEarnings: 0,
-    totalLosses: 0
-  });
-  const [message, setMessage] = useState('');
-  const [betForm, setBetForm] = useState<BetForm>({
-    betType: 'increase',
-    targetPercentage: 15,
-    amount: 100,
-    timeFrame: 7
-  });
-  const [activeBets, setActiveBets] = useState<AdvancedBet[]>([]);
+  // Real-time activity updates
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
-  // Safe localStorage helper with storage limit protection
-  const safeLocalStorage = {
-    getItem: (key: string) => {
-      if (typeof window !== 'undefined' && isClient) {
-        try {
-          return localStorage.getItem(key);
-        } catch (error) {
-          console.error('Error reading from localStorage:', error);
-          return null;
-        }
-      }
-      return null;
-    },
+  // Check if current user is viewing their own profile - only check when we have complete data
+  const isOwnProfile = !loading && user && profile && (
+    user.displayName === profile.username || 
+    user.email?.split('@')[0] === profile.username ||
+    user.uid === profile.uid ||
+    // Also check if the URL username matches the current user's username stored in their profile
+    (typeof username === 'string' && decodeURIComponent(username) === user.displayName) ||
+    (typeof username === 'string' && decodeURIComponent(username) === user.email?.split('@')[0])
+  );
+
+  // ── Initial data load ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof username !== 'string') return;
     
-    setItem: (key: string, value: string) => {
-      if (typeof window !== 'undefined' && isClient) {
-        try {
-          if (key === 'portfolioSnapshots') {
-            const data = JSON.parse(value);
-            const maxSnapshots = 100;
-            const limitedData = data.slice(-maxSnapshots);
-            localStorage.setItem(key, JSON.stringify(limitedData));
-          } else {
-            localStorage.setItem(key, value);
-          }
-        } catch (error: any) {
-          console.error('Error writing to localStorage:', error);
-          if (error?.name === 'QuotaExceededError' && key !== 'portfolioSnapshots') {
-            console.warn('Storage quota exceeded, attempting cleanup...');
-            try {
-              const existingSnapshots = localStorage.getItem('portfolioSnapshots');
-              if (existingSnapshots) {
-                const snapshots = JSON.parse(existingSnapshots);
-                const reducedSnapshots = snapshots.slice(-50);
-                localStorage.setItem('portfolioSnapshots', JSON.stringify(reducedSnapshots));
-                localStorage.setItem(key, value);
+    let unsubscriptions: (() => void)[] = [];
+    
+    const fetchUserData = async () => {
+      setLoading(true);
+      try {
+        const uname = decodeURIComponent(username);
+        
+        // 1️⃣ Fetch the user by username - check both users and autonomous-bots collections
+        let targetUser = await firebaseDataService.getUserByUsername(uname);
+        let userIsBot = false;
+        
+        // If not found in users collection, check autonomous-bots collection
+        if (!targetUser) {
+          console.log('🔍 User not found in users collection, checking autonomous-bots...');
+          try {
+            const autonomousBotsRef = collection(db, "autonomous-bots");
+            const autonomousBotsSnap = await getDocs(autonomousBotsRef);
+            
+            // Look for bot with matching username
+            console.log('🔍 DEBUG: Searching for bot:', uname);
+            for (const botDoc of autonomousBotsSnap.docs) {
+              const botData = botDoc.data();
+              const botUsername = botData.personality?.name || botData.username || `Bot_${botDoc.id}`;
+              console.log('🔍 DEBUG: Checking bot:', botUsername, 'with doc ID:', botDoc.id);
+              console.log('🔍 DEBUG: Bot data fields:', { 
+                'personality.name': botData.personality?.name,
+                'username': botData.username,
+                'docId': botDoc.id 
+              });
+              
+              if (botUsername === uname || botDoc.id === uname || (`bot_${botDoc.id}` === uname)) {
+                                 // Found the bot! Create a user-like object
+                 targetUser = {
+                   uid: botDoc.id, // ✅ FIX: Use botDoc.id (document ID) consistently
+                   username: botUsername,
+                   balance: botData.balance || 0,
+                   totalEarnings: botData.totalEarnings || 0,
+                   totalLosses: botData.totalLosses || 0,
+                   joinDate: botData.joinDate || new Date().toISOString(),
+                   ...botData  // Include all other bot properties
+                 } as any;
+                                 userIsBot = true;
+                console.log('🤖 Found bot user:', botUsername, 'with ID:', botDoc.id);
+                console.log('🔍 DEBUG: Bot Identity Check');
+                console.log('🆔 Document ID (for queries):', botDoc.id);
+                console.log('👤 Display Username:', botUsername);
+                console.log('⚡ Bot Active Status:', botData.isActive);
+                console.log('💰 Bot Balance:', botData.balance);
+                console.log('📅 Last Active:', botData.lastActive);
+                break;
               }
-            } catch (retryError) {
-              console.error('Failed to save even after cleanup:', retryError);
             }
+          } catch (error) {
+            console.error('❌ Error checking autonomous-bots:', error);
           }
         }
-      }
-    },
-    
-    removeItem: (key: string) => {
-      if (typeof window !== 'undefined' && isClient) {
-        try {
-          localStorage.removeItem(key);
-        } catch (error) {
-          console.error('Error removing from localStorage:', error);
+        
+        if (!targetUser) {
+          console.error('❌ User not found in either users or autonomous-bots collections:', uname);
+          setLoading(false);
+          return;
         }
-      }
-    }
-  };
 
-  const safeSlice = (text: string | null | undefined, maxLength: number = 50): string => {
-    if (!text || typeof text !== 'string') return 'Unknown text';
-    return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
-  };
+        // Validate that user has required uid field (check both uid and id)
+        const userId = targetUser.uid || (targetUser as any).id;
 
-  const getCurrentPrice = (opinionText: string): number => {
-    if (!isClient) return 10;
-    
-    try {
-      const marketDataStr = safeLocalStorage.getItem('opinionMarketData');
-      if (marketDataStr) {
-        const marketData = JSON.parse(marketDataStr);
-        if (marketData[opinionText]) {
-          return marketData[opinionText].currentPrice;
+        // 🔍 DEBUG: Add comprehensive logging to identify the username/userId mismatch issue
+        console.log('🔍 DETAILED USER RESOLUTION DEBUG:');
+        console.log('📍 URL Username:', uname);
+        console.log('👤 Found User Object:', {
+          uid: targetUser.uid,
+          id: (targetUser as any).id,
+          username: targetUser.username,
+          displayUsername: (targetUser as any).personality?.name || targetUser.username,
+          isBot: userIsBot,
+          balance: targetUser.balance
+        });
+        console.log('🆔 Resolved UserId for queries:', userId);
+        console.log('📊 This userId will be used for:');
+        console.log('  - Portfolio queries: user-portfolios/' + userId);
+        console.log('  - Activity queries: activity-feed?userId=' + userId);
+        console.log('  - Transactions: transactions?userId=' + userId);
+        console.log('  - Recent Activity Component userId:', userId);
+
+        // ✅ DIAGNOSTIC: Debug bot portfolio data
+        if (userIsBot) {
+          console.log('🔍 DIAGNOSTIC: Running bot portfolio data check...');
+          await debugBotPortfolioData(userId, targetUser.username);
         }
-      }
-      return 10;
-    } catch (error) {
-      return 10;
-    }
-  };
 
-  const getDaysRemaining = (expiryDate: string): number => {
-    const expiry = new Date(expiryDate);
-    const now = new Date();
-    const diffTime = expiry.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  };
-
-  const getHoursRemaining = (expirationDate: string): number => {
-    const expiry = new Date(expirationDate);
-    const now = new Date();
-    const diffTime = expiry.getTime() - now.getTime();
-    const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
-    return Math.max(0, diffHours);
-  };
-
-  const getUserShorts = (username: string, botId?: string): ShortPosition[] => {
-    if (!isClient) return [];
-    
-    try {
-      const shortsStr = safeLocalStorage.getItem('shortPositions');
-      if (!shortsStr) return [];
-      
-      const shorts = JSON.parse(shortsStr);
-      return shorts.filter((short: ShortPosition) => {
-        if (botId) {
-          return short.botId === botId;
-        } else {
-          return !short.botId && username === decodeURIComponent(username as string);
+        if (!userId) {
+          console.error('❌ User missing uid/id field:', targetUser);
+          setLoading(false);
+          return;
         }
-      });
-    } catch {
-      return [];
-    }
-  };
 
-  const getUserBets = (username: string): AdvancedBet[] => {
-    if (!isClient) return [];
-    
-    try {
-      const betsStr = safeLocalStorage.getItem('advancedBets');
-      if (!betsStr) return [];
-      
-      const bets = JSON.parse(betsStr);
-      return bets.filter((bet: AdvancedBet) => bet.bettor === username);
-    } catch {
-      return [];
-    }
-  };
-
-  // NEW: Betting calculation functions
-  const calculateBetMultiplier = (
-    betType: 'increase' | 'decrease',
-    targetPercentage: number,
-    timeFrame: number,
-    userVolatility: number,
-    recentPerformance: number
-  ): number => {
-    let baseMultiplier = 1.0;
-    
-    if (targetPercentage >= 1 && targetPercentage <= 5) {
-      baseMultiplier = 1.2;
-    } else if (targetPercentage > 5 && targetPercentage <= 15) {
-      baseMultiplier = 1.5;
-    } else if (targetPercentage > 15 && targetPercentage <= 25) {
-      baseMultiplier = 2.0;
-    } else if (targetPercentage > 25 && targetPercentage <= 40) {
-      baseMultiplier = 3.0;
-    } else if (targetPercentage > 40 && targetPercentage <= 60) {
-      baseMultiplier = 4.0;
-    } else if (targetPercentage > 60 && targetPercentage <= 80) {
-      baseMultiplier = 5.0;
-    } else if (targetPercentage > 80 && targetPercentage <= 100) {
-      baseMultiplier = 6.0;
-    }
-    
-    let timeMultiplier = 1.0;
-    if (timeFrame <= 1) {
-      timeMultiplier = 1.5;
-    } else if (timeFrame <= 3) {
-      timeMultiplier = 1.3;
-    } else if (timeFrame <= 7) {
-      timeMultiplier = 1.0;
-    } else if (timeFrame <= 14) {
-      timeMultiplier = 0.9;
-    } else {
-      timeMultiplier = 0.8;
-    }
-    
-    const volatilityFactor = Math.max(0.8, Math.min(2.0, userVolatility));
-    
-    const trendAlignment = betType === 'increase' 
-      ? (recentPerformance > 5 ? 0.7 : recentPerformance < -5 ? 1.4 : 1.0)
-      : (recentPerformance < -5 ? 0.7 : recentPerformance > 5 ? 1.4 : 1.0);
-    
-    const finalMultiplier = baseMultiplier * timeMultiplier * volatilityFactor * trendAlignment;
-    
-    return Math.max(1.1, Math.min(15.0, Math.round(finalMultiplier * 10) / 10));
-  };
-
-  const getVolatilityRating = (percentage: number): 'Low' | 'Medium' | 'High' | 'Extreme' => {
-    if (percentage >= 1 && percentage <= 10) return 'Low';
-    if (percentage > 10 && percentage <= 30) return 'Medium';
-    if (percentage > 30 && percentage <= 70) return 'High';
-    return 'Extreme';
-  };
-
-  const calculatePotentialLoss = (amount: number, multiplier: number): number => {
-    return amount * multiplier;
-  };
-
-  const getPerformanceClass = (percentage: number) => {
-    if (percentage >= 0) return 'positive';
-    return 'negative';
-  };
-
-  const calculatePortfolioVolatility = (opinions: OpinionAsset[]): number => {
-    if (opinions.length === 0) return 1.0;
-    
-    if (opinions.length <= 3) return 2.0;
-    if (opinions.length <= 7) return 1.5;
-    return 1.0;
-  };
-
-  const calculateReal7DayPerformance = (username: string, currentValue: number, botId?: string): number => {
-    try {
-      const snapshots = JSON.parse(safeLocalStorage.getItem('portfolioSnapshots') || '[]');
-      const now = new Date();
-      const sevenDaysAgo = now.getTime() - (7 * 24 * 60 * 60 * 1000);
-      
-      const userSnapshots = snapshots.filter((snap: any) => {
-        if (botId) {
-          return snap.botId === botId && snap.timestamp >= sevenDaysAgo;
-        } else {
-          return snap.userId === username && !snap.botId && snap.timestamp >= sevenDaysAgo;
-        }
-      });
-      
-      if (userSnapshots.length === 0) {
-        return 0;
-      }
-      
-      userSnapshots.sort((a: any, b: any) => a.timestamp - b.timestamp);
-      const oldestSnapshot = userSnapshots[0];
-      
-      if (oldestSnapshot.portfolioValue <= 0) {
-        return 0;
-      }
-      
-      const performanceChange = ((currentValue - oldestSnapshot.portfolioValue) / oldestSnapshot.portfolioValue) * 100;
-      
-      return Math.max(-95, Math.min(500, performanceChange));
-      
-    } catch (error) {
-      console.error('Error calculating 7-day performance:', error);
-      return 0;
-    }
-  };
-
-  // NEW: Place bet function
-  const placeBet = () => {
-    if (!userProfile) return;
-
-    if (userProfile.username === currentUser.username) {
-      setMessage('You cannot bet on your own portfolio!');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    if (betForm.amount <= 0 || betForm.amount > currentUser.balance) {
-      setMessage('Invalid bet amount or insufficient funds!');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    const portfolioValue = ownedOpinions.reduce((total, opinion) => 
-      total + (opinion.currentPrice * opinion.quantity), 0
-    );
-
-    const volatility = calculatePortfolioVolatility(ownedOpinions);
-    const recentPerformance = calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined);
-
-    const multiplier = calculateBetMultiplier(
-      betForm.betType,
-      betForm.targetPercentage,
-      betForm.timeFrame,
-      volatility,
-      recentPerformance
-    );
-
-    const potentialPayout = Math.round(betForm.amount * multiplier);
-    const potentialLoss = calculatePotentialLoss(betForm.amount, multiplier);
-    const volatilityRating = getVolatilityRating(betForm.targetPercentage);
-
-    const newBet: AdvancedBet = {
-      id: Date.now().toString(),
-      bettor: currentUser.username,
-      targetUser: userProfile.username,
-      betType: betForm.betType,
-      targetPercentage: betForm.targetPercentage,
-      amount: betForm.amount,
-      timeFrame: betForm.timeFrame,
-      initialPortfolioValue: portfolioValue,
-      currentPortfolioValue: portfolioValue,
-      placedDate: new Date().toLocaleDateString(),
-      expiryDate: new Date(Date.now() + betForm.timeFrame * 24 * 60 * 60 * 1000).toLocaleDateString(),
-      status: 'active',
-      multiplier,
-      potentialPayout,
-      volatilityRating
-    };
-
-    const updatedBets = [...activeBets, newBet];
-    setActiveBets(updatedBets);
-    safeLocalStorage.setItem('advancedBets', JSON.stringify(updatedBets));
-
-    const updatedUser = {
-      ...currentUser,
-      balance: currentUser.balance - betForm.amount
-    };
-    setCurrentUser(updatedUser);
-    safeLocalStorage.setItem('userProfile', JSON.stringify(updatedUser));
-
-    const newTransaction: Transaction = {
-      id: Date.now().toString(),
-      type: 'bet_place',
-      amount: -betForm.amount,
-      date: new Date().toLocaleDateString(),
-      description: `Bet on ${userProfile.username}: ${betForm.betType} ${betForm.targetPercentage}% in ${betForm.timeFrame}d (${multiplier}x multiplier)`
-    };
-
-    const existingTransactions = JSON.parse(safeLocalStorage.getItem('transactions') || '[]');
-    const updatedTransactions = [newTransaction, ...existingTransactions.slice(0, 9)];
-    safeLocalStorage.setItem('transactions', JSON.stringify(updatedTransactions));
-
-    setMessage(`Bet placed! $${betForm.amount} on ${userProfile.username} portfolio ${betForm.betType === 'increase' ? 'increasing' : 'decreasing'} by ${betForm.targetPercentage}% in ${betForm.timeFrame} days. Potential payout: $${potentialPayout} (${multiplier}x) | Risk: $${potentialLoss} if lost`);
-    setShowBetModal(false);
-    setTimeout(() => setMessage(''), 10000);
-  };
-
-  // Validate percentage range (1%-100%)
-  const validateBetPercentage = (percentage: number): boolean => {
-    return percentage >= 1 && percentage <= 100;
-  };
-
-  // Calculate actual loss amount for failed portfolio bets
-  const calculateBetLoss = (bet: AdvancedBet): number => {
-    return bet.amount * bet.multiplier;
-  };
-
-  // Get difficulty label for display
-  const getDifficultyLabel = (percentage: number): string => {
-    if (percentage >= 1 && percentage <= 10) return 'Easy';
-    if (percentage > 10 && percentage <= 25) return 'Medium';
-    if (percentage > 25 && percentage <= 50) return 'Hard';
-    return 'Extreme';
-  };
-
-  const combineBettingActivities = (bets: AdvancedBet[], shorts: ShortPosition[]) => {
-    const activities: BettingActivity[] = [];
-
-    bets.forEach(bet => {
-      const actualLoss = bet.status === 'lost' ? calculateBetLoss(bet) : undefined;
-      
-      const percentageDisplay = validateBetPercentage(bet.targetPercentage) 
-        ? `${bet.targetPercentage}%` 
-        : `${bet.targetPercentage}% (Invalid range: must be 1-100%)`;
-
-      const difficultyLabel = getDifficultyLabel(bet.targetPercentage);
-
-      activities.push({
-        id: `bet_${bet.id}`,
-        type: 'portfolio_bet',
-        title: `Portfolio Bet: ${bet.targetUser}`,
-        subtitle: `Betting $${bet.amount} on ${bet.betType} by ${percentageDisplay} (${difficultyLabel})`,
-        amount: bet.amount,
-        potentialPayout: bet.potentialPayout,
-        status: bet.status,
-        placedDate: bet.placedDate,
-        expiryDate: bet.expiryDate,
-        daysRemaining: bet.status === 'active' ? getDaysRemaining(bet.expiryDate) : undefined,
-        additionalInfo: `${bet.timeFrame} days | ${bet.volatilityRating} volatility | ${bet.multiplier}x multiplier`,
-        multiplier: bet.multiplier,
-        volatilityRating: bet.volatilityRating,
-        targetUser: bet.targetUser,
-        actualLoss: actualLoss
-      });
-    });
-
-    shorts.forEach(short => {
-      const currentPrice = getCurrentPrice(short.opinionText);
-      const progress = ((short.startingPrice - currentPrice) / (short.startingPrice - short.targetPrice)) * 100;
-      const hoursRemaining = short.status === 'active' ? getHoursRemaining(short.expirationDate) : 0;
-      
-      activities.push({
-        id: `short_${short.id}`,
-        type: 'short_bet',
-        title: `Short Bet: Opinion #${short.opinionId}`,
-        subtitle: `Betting $${short.betAmount} on ${short.targetDropPercentage}% price drop`,
-        amount: short.betAmount,
-        potentialPayout: short.potentialWinnings,
-        status: short.status,
-        placedDate: new Date(short.createdDate).toLocaleDateString(),
-        expiryDate: new Date(short.expirationDate).toLocaleDateString(),
-        daysRemaining: short.status === 'active' ? Math.ceil(hoursRemaining / 24) : undefined,
-        additionalInfo: `$${short.startingPrice} → $${short.targetPrice} | ${hoursRemaining}h remaining`,
-        opinionText: short.opinionText,
-        progress: Math.max(0, Math.min(100, progress)),
-        opinionId: short.opinionId
-      });
-    });
-
-    activities.sort((a, b) => new Date(b.placedDate).getTime() - new Date(a.placedDate).getTime());
-    return activities;
-  };
-
-  const getUserBotTransactions = (botId: string): Transaction[] => {
-    if (!isClient) return [];
-    
-    try {
-      const botTransactionsStr = safeLocalStorage.getItem('botTransactions');
-      if (!botTransactionsStr) return [];
-      
-      const botTransactions = JSON.parse(botTransactionsStr);
-      return botTransactions
-        .filter((t: any) => t.botId === botId)
-        .map((t: any) => ({
-          id: t.id,
-          type: t.type,
-          amount: t.amount,
-          date: t.date,
-          description: t.opinionText || t.description,
-          opinionText: t.opinionText
-        }))
-        .slice(0, 10);
-    } catch {
-      return [];
-    }
-  };
-
-  const loadUserData = async () => {
-    if (!isClient) return;
-    
-    const targetUsername = decodeURIComponent(username as string);
-    
-    try {
-      const botsStr = safeLocalStorage.getItem('autonomousBots');
-      const bots = botsStr ? JSON.parse(botsStr) : [];
-      const bot = bots.find((b: any) => b.username === targetUsername);
-      
-      if (bot) {
-        setIsBot(true);
-        setBotId(bot.id);
-        setUserProfile({
-          username: bot.username,
-          balance: bot.balance,
-          joinDate: bot.joinDate,
-          totalEarnings: bot.totalEarnings,
-          totalLosses: bot.totalLosses
+        console.log(`✅ User data loaded successfully:`, {
+          username: targetUser.username,
+          uid: userId,
+          isBot: userIsBot,
+          isOwnProfile: false, // Will be calculated after profile state is set
+          portfolioItems: 'Loading...',
+          bets: 'Loading...',
+          shorts: 'Loading...',
+          transactions: 'Loading...'
         });
 
-        const botOpinionsStr = safeLocalStorage.getItem('botOpinions');
-        const botOpinions = botOpinionsStr ? JSON.parse(botOpinionsStr) : [];
-        const userOpinions = botOpinions
-          .filter((opinion: any) => opinion.botId === bot.id)
-          .map((opinion: any) => ({
-            id: opinion.id,
-            text: opinion.text,
-            purchasePrice: opinion.purchasePrice,
-            currentPrice: getCurrentPrice(opinion.text),
-            purchaseDate: opinion.purchaseDate,
-            quantity: opinion.quantity
-          }));
-        setOwnedOpinions(userOpinions);
-        setRecentTransactions(getUserBotTransactions(bot.id));
-      } else {
-        const currentUserProfileStr = safeLocalStorage.getItem('userProfile');
-        const currentUserProfile = currentUserProfileStr ? JSON.parse(currentUserProfileStr) : {};
-        if (currentUserProfile.username === targetUsername) {
-          setUserProfile(currentUserProfile);
-          
-          const ownedOpinionsStr = safeLocalStorage.getItem('ownedOpinions');
-          const ownedOpinions = ownedOpinionsStr ? JSON.parse(ownedOpinionsStr) : [];
-          const updatedOpinions = ownedOpinions.map((opinion: OpinionAsset) => ({
-            ...opinion,
-            currentPrice: getCurrentPrice(opinion.text)
-          }));
-          setOwnedOpinions(updatedOpinions);
+        // ✅ DEBUG: Log userId being used for queries
+        console.log('🔍 DEBUG: userId for queries:', userId);
 
-          const transactionsStr = safeLocalStorage.getItem('transactions');
-          const transactions = transactionsStr ? JSON.parse(transactionsStr) : [];
-          setRecentTransactions(transactions.slice(0, 10));
+        // ✅ FIX: Convert UserProfile types to match local interface
+        const userProfile: UserProfile = {
+          username: targetUser.username,
+          balance: targetUser.balance,
+          joinDate: targetUser.joinDate instanceof Date ? targetUser.joinDate.toISOString() : (targetUser.joinDate || new Date().toISOString()),
+          totalEarnings: targetUser.totalEarnings || 0,
+          totalLosses: targetUser.totalLosses || 0,
+          uid: userId,
+        };
+        
+        setProfile(userProfile);
+        setIsBot(userIsBot);
+        setLoading(false);
+
+        // 🔄 SET UP REAL-TIME SUBSCRIPTIONS FOR ALL DATA
+
+        // REAL-TIME SUBSCRIPTION 1: User profile data  
+        console.log('🔍 DEBUG: Setting up profile subscription - userIsBot:', userIsBot, 'userId:', userId);
+        if (userIsBot) {
+          // ✅ BOT FIX: Subscribe to autonomous-bots collection for bots
+          console.log('🤖 Setting up bot profile subscription for:', userId);
+          const botDocRef = doc(db, 'autonomous-bots', userId);
+          const unsubscribeBot = onSnapshot(botDocRef, (snapshot) => {
+            if (snapshot.exists()) {
+              const botData = snapshot.data();
+              const botUsername = botData.personality?.name || botData.username || `Bot_${userId}`;
+              console.log('🤖 Bot profile subscription triggered - username:', botUsername, 'balance:', botData.balance);
+              const updatedProfile: UserProfile = {
+                username: botUsername,
+                balance: botData.balance || 0,
+                joinDate: botData.joinDate || new Date().toISOString(),
+                totalEarnings: botData.totalEarnings || 0,
+                totalLosses: botData.totalLosses || 0,
+                uid: userId,
+              };
+              setProfile(updatedProfile);
+              console.log('🤖 Bot profile updated:', botUsername, 'Balance:', botData.balance);
+            } else {
+              console.log('🤖 ❌ Bot document does not exist for ID:', userId);
+            }
+          });
+          unsubscriptions.push(unsubscribeBot);
+        } else {
+          // ✅ Regular user subscription to users collection
+          const userDocRef = query(collection(db, 'users'), where('uid', '==', userId));
+          const unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
+            if (!snapshot.empty) {
+              const userData = snapshot.docs[0].data();
+              const updatedProfile: UserProfile = {
+                username: userData.username || (profile?.username || 'Unknown'),
+                balance: userData.balance || 0,
+                joinDate: userData.joinDate instanceof Date ? userData.joinDate.toISOString() : (userData.joinDate || profile?.joinDate || new Date().toISOString()),
+                totalEarnings: userData.totalEarnings || 0,
+                totalLosses: userData.totalLosses || 0,
+                uid: userId,
+              };
+              setProfile(updatedProfile);
+              console.log('🔄 User profile updated:', updatedProfile.username, 'Balance:', updatedProfile.balance);
+            }
+          });
+          unsubscriptions.push(unsubscribeUser);
         }
+
+        // REAL-TIME SUBSCRIPTION 2: Portfolio data - real-time subscription instead of intervals
+        const setupPortfolioSubscription = async () => {
+          // Initial load
+          const portfolioData = await unifiedPortfolioService.loadUserPortfolio(userId, { ...targetUser, isBot: userIsBot });
+          setOwnedOpinions(portfolioData);
+          console.log(`🔄 Portfolio initially loaded:`, portfolioData.length, 'opinions');
+          
+          // Set up real-time subscription to user-portfolios collection
+          const portfolioRef = doc(db, 'user-portfolios', userId);
+          const unsubscribePortfolio = onSnapshot(portfolioRef, async (snapshot) => {
+            if (snapshot.exists()) {
+              console.log('🔄 Portfolio document updated, reloading...');
+              const refreshedData = await unifiedPortfolioService.loadUserPortfolio(userId, { ...targetUser, isBot: userIsBot });
+              setOwnedOpinions(refreshedData);
+              console.log(`🔄 Portfolio refreshed via real-time update:`, refreshedData.length, 'opinions');
+            }
+          });
+          unsubscriptions.push(unsubscribePortfolio);
+          
+          // Also subscribe to market data changes for price updates
+          const marketDataQuery = collection(db, 'market-data');
+          const unsubscribeMarket = onSnapshot(marketDataQuery, async (snapshot) => {
+            // Only refresh if there are actual changes
+            if (!snapshot.metadata.hasPendingWrites) {
+              console.log('🔄 Market data updated, refreshing portfolio prices...');
+              const refreshedData = await unifiedPortfolioService.loadUserPortfolio(userId, { ...targetUser, isBot: userIsBot });
+              setOwnedOpinions(refreshedData);
+            }
+          });
+          unsubscriptions.push(unsubscribeMarket);
+        };
+        
+        await setupPortfolioSubscription();
+
+        // REAL-TIME SUBSCRIPTION 3: User bets - real-time subscription
+        const setupBetsSubscription = () => {
+          const betsQuery = query(
+            collection(db, 'advanced-bets'), 
+            where('userId', '==', userId)
+          );
+          const unsubscribeBets = onSnapshot(betsQuery, (snapshot) => {
+            const betsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUserBets(betsData);
+            console.log(`🔄 Bets updated via real-time subscription:`, betsData.length, 'bets');
+          });
+          unsubscriptions.push(unsubscribeBets);
+        };
+        
+        setupBetsSubscription();
+
+        // REAL-TIME SUBSCRIPTION 4: User shorts - real-time subscription
+        const setupShortsSubscription = () => {
+          const shortsQuery = query(
+            collection(db, 'short-positions'), 
+            where('userId', '==', userId)
+          );
+          const unsubscribeShorts = onSnapshot(shortsQuery, (snapshot) => {
+            const shortsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUserShorts(shortsData);
+            console.log(`🔄 Shorts updated via real-time subscription:`, shortsData.length, 'short positions');
+          });
+          unsubscriptions.push(unsubscribeShorts);
+        };
+        
+        setupShortsSubscription();
+        
+
+
+        // REAL-TIME SUBSCRIPTION 5: Transactions
+        const transactionsQuery = query(
+          collection(db, 'transactions'),
+          where('userId', '==', userId),
+          // Removed isBot filter - transactions documents don't have this field
+          limit(200)
+        );
+        const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+          const txData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const processedTransactions = txData.map((tx: any) => ({
+            id: tx.id,
+            type: tx.type,
+            amount: tx.amount,
+            date: tx.date,
+            opinionText: tx.opinionText,
+          }));
+          
+          // Sort transactions by most recent first
+          processedTransactions.sort(
+            (a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          
+          setTransactions(processedTransactions);
+          console.log('🔄 Transactions updated:', processedTransactions.length, 'transactions');
+        });
+        unsubscriptions.push(unsubscribeTransactions);
+
+        // REAL-TIME SUBSCRIPTION 6: Activity feed with immediate data refresh triggers
+        const setupActivitySubscription = () => {
+          const activityQuery = query(
+            collection(db, 'activity-feed'),
+            where('userId', '==', userId),
+            limit(20)
+          );
+          
+          const unsubscribeActivity = onSnapshot(activityQuery, async (snapshot: any) => {
+            const activities = snapshot.docs.map((doc: any) => ({
+              id: doc.id,
+              ...doc.data(),
+              timestamp: doc.data().timestamp?.toDate?.()?.toISOString() || new Date().toISOString()
+            }));
+            
+            // Sort by most recent first
+            activities.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            setRecentActivity(activities);
+            console.log('🔄 Activity feed updated:', activities.length, 'activities');
+            
+            // ✅ CRITICAL FIX: Validate that activities belong to the correct user
+            if (activities.length > 0) {
+              const invalidActivities = activities.filter((activity: any) => {
+                // Check if activity username matches expected user or if it's clearly from a different user
+                const isValidActivity = (
+                  activity.userId === userId ||
+                  activity.username === targetUser?.username ||
+                  activity.username === (targetUser as any)?.personality?.name ||
+                  (userIsBot && activity.isBot && activity.username?.includes(userId))
+                );
+                
+                if (!isValidActivity) {
+                  console.warn('⚠️ Found activity that may not belong to current user:', {
+                    expectedUserId: userId,
+                    expectedUsername: targetUser?.username,
+                    activityUserId: activity.userId,
+                    activityUsername: activity.username,
+                    activityType: activity.type
+                  });
+                }
+                
+                return !isValidActivity;
+              });
+              
+              if (invalidActivities.length > 0) {
+                console.error('❌ DATA INCONSISTENCY: Found activities that don\'t match current user');
+                console.error('❌ This indicates a data integrity issue that needs to be resolved');
+                console.error('❌ Expected user:', { userId, username: targetUser?.username });
+                console.error('❌ Invalid activities:', invalidActivities.map((a: any) => ({ username: a.username, type: a.type })));
+              }
+            }
+            
+            // CRITICAL: When new activity occurs, immediately refresh all data
+            if (!snapshot.metadata.hasPendingWrites && activities.length > 0) {
+              console.log('🔄 New activity detected, triggering immediate data refresh...');
+              
+              // Refresh portfolio data
+              try {
+                const refreshedPortfolio = await unifiedPortfolioService.loadUserPortfolio(userId, { ...targetUser, isBot: userIsBot });
+                setOwnedOpinions(refreshedPortfolio);
+                console.log('✅ Portfolio refreshed after activity');
+              } catch (error) {
+                console.warn('Failed to refresh portfolio after activity:', error);
+              }
+            }
+          });
+          unsubscriptions.push(unsubscribeActivity);
+        };
+        
+        setupActivitySubscription();
+
+        // REAL-TIME SUBSCRIPTION 7: Global activity events for immediate updates
+        const handleGlobalActivityUpdate = async (event: any) => {
+          const { userId: eventUserId } = event.detail;
+          if (eventUserId === userId) {
+            console.log('🔄 Global activity event received, refreshing all data for user:', eventUserId);
+            
+            // Refresh all data immediately when global activity occurs
+            try {
+              const [refreshedPortfolio, refreshedBets, refreshedShorts] = await Promise.all([
+                unifiedPortfolioService.loadUserPortfolio(userId, { ...targetUser, isBot: userIsBot }),
+                unifiedPortfolioService.getUserBets(userId),
+                unifiedPortfolioService.getUserShorts(userId)
+              ]);
+              
+              setOwnedOpinions(refreshedPortfolio);
+              setUserBets(refreshedBets);
+              setUserShorts(refreshedShorts);
+              console.log('✅ All data refreshed after global activity event');
+            } catch (error) {
+              console.warn('Failed to refresh data after global activity event:', error);
+            }
+          }
+        };
+        
+        // Listen for global activity events
+        window.addEventListener('user-activity-updated', handleGlobalActivityUpdate);
+        window.addEventListener('user-profile-updated', handleGlobalActivityUpdate);
+        unsubscriptions.push(() => {
+          window.removeEventListener('user-activity-updated', handleGlobalActivityUpdate);
+          window.removeEventListener('user-profile-updated', handleGlobalActivityUpdate);
+        });
+
+        // Load sidebar opinions (one-time)
+        try {
+          const allOpinions = await firebaseDataService.searchOpinions('', 500);
+          setAllOpinions(allOpinions.map(op => op.text));
+        } catch (error) {
+          console.warn('Could not load sidebar opinions:', error);
+        }
+
+      } catch (error) {
+        console.error('Error loading user data:', error);
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const userBets = getUserBets(targetUsername);
-      const userShorts = getUserShorts(targetUsername, bot?.id);
-      const activities = combineBettingActivities(userBets, userShorts);
-      setCombinedBettingActivity(activities);
-
-    } catch (error) {
-      console.error('Error loading user data:', error);
-    }
-  };
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
+    // Start the async fetch
+    fetchUserData();
     
-    // Load current user profile
-    const storedProfile = safeLocalStorage.getItem('userProfile');
-    if (storedProfile) {
-      setCurrentUser(JSON.parse(storedProfile));
-    }
+    // Return synchronous cleanup function
+    return () => {
+      console.log('🧹 Cleaning up', unsubscriptions.length, 'subscriptions for user:', username);
+      unsubscriptions.forEach(unsub => unsub());
+    };
+  }, [username]);
 
-    // Load active bets
-    const storedBets = safeLocalStorage.getItem('advancedBets');
-    if (storedBets) {
-      setActiveBets(JSON.parse(storedBets));
-    }
-    
-    const storedStr = safeLocalStorage.getItem('opinions');
-    if (storedStr) {
-      const parsed = JSON.parse(storedStr);
-      const validOpinions = parsed.filter((op: any) => op && typeof op === 'string' && op.trim().length > 0);
-      setAllOpinions(validOpinions);
-    }
+  if (loading || !profile) return <div className="loading">Loading…</div>;
 
-    if (username) {
-      loadUserData();
-    }
-  }, [username, isClient]);
+  // ✅ FIX: Accurate derived calculations
+  const portfolioValue = ownedOpinions.reduce(
+    (t, o) => t + o.currentPrice * o.quantity,
+    0
+  );
+  
+  // ✅ FIX: More accurate P&L calculation
+  // P&L = Current Portfolio Value + Current Balance + Total Earnings - Total Losses - Starting Balance (10000)
+  const startingBalance = 10000; // Default starting balance for all users
+  const realizedPnL = profile.totalEarnings - profile.totalLosses; // Realized gains/losses from trades
+  const unrealizedPnL = ownedOpinions.reduce((total, opinion) => {
+    return total + ((opinion.currentPrice - opinion.purchasePrice) * opinion.quantity);
+  }, 0); // Unrealized gains/losses from current positions
+  const pnl = realizedPnL + unrealizedPnL; // Total P&L
+  
+  const activeBets = userBets.length; // ✅ FIX: Use actual bet count, not opinion count
 
-  if (!userProfile || !isClient) {
-    return (
-      <div className="page-container">
-        <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
-        <main className="main-content">
-          <div style={{ textAlign: 'center', padding: '40px' }}>
-            <p>Loading user profile...</p>
-          </div>
-        </main>
-      </div>
-    );
+  // ✅ FIX: Enhanced data validation and calculations using real data
+  if (profile) {
+    console.log(`📊 PROFILE DEBUG - IsBot: ${isBot}, Username: "${profile.username}", Balance: ${profile.balance}`);
+    console.log(`📊 ${profile.username} Profile Data:`, {
+      portfolioValue: portfolioValue.toFixed(2),
+      balance: profile.balance.toFixed(2),
+      realizedPnL: realizedPnL.toFixed(2),
+      unrealizedPnL: unrealizedPnL.toFixed(2),
+      totalPnL: pnl.toFixed(2),
+      ownedOpinions: ownedOpinions.length,
+      userBets: userBets.length,
+      userShorts: userShorts.length,
+      activeBets: activeBets
+    });
   }
 
-  const portfolioValue = ownedOpinions.reduce((total, opinion) => 
-    total + (opinion.currentPrice * opinion.quantity), 0
-  );
+  // Portfolio Betting Exposure & Volatility Calculations - using real data
+  const activeBetsData = userBets.filter((bet: any) => bet.status === 'active');
+  const activeShortsData = userShorts.filter((short: any) => short.status === 'active');
+  
+  // Total Exposure: Amount at risk from active bets and shorts
+  const betsExposure = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.amount || 0), 0);
+  const shortsExposure = activeShortsData.reduce((sum: number, short: any) => sum + (short.betAmount || short.amount || 0), 0);
+  const totalExposure = betsExposure + shortsExposure;
+  
+  // Portfolio Volatility: Potential swing range as percentage of total portfolio value
+  const maxBetsWin = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.potentialPayout || bet.amount * 2 || 0), 0);
+  const maxBetsLoss = activeBetsData.reduce((sum: number, bet: any) => sum + (bet.amount || 0), 0);
+  const maxShortsWin = activeShortsData.reduce((sum: number, short: any) => sum + (short.potentialWinnings || short.amount * 1.5 || 0), 0);
+  const maxShortsLoss = activeShortsData.reduce((sum: number, short: any) => sum + (short.betAmount || short.amount || 0), 0);
+  
+  const maxWinScenario = maxBetsWin + maxShortsWin;
+  const maxLossScenario = maxBetsLoss + maxShortsLoss;
+  const totalSwingRange = maxWinScenario - (-maxLossScenario); // Total potential swing
+  
+  // Calculate volatility as percentage of total portfolio value (including betting positions)
+  const totalPortfolioValue = portfolioValue + profile.balance;
+  const portfolioVolatility = totalPortfolioValue > 0 ? (totalSwingRange / totalPortfolioValue) * 100 : 0;
 
-  const totalGainsLosses = ownedOpinions.reduce((total, opinion) => 
-    total + ((opinion.currentPrice - opinion.purchasePrice) * opinion.quantity), 0
-  );
-
-  const totalActiveBets = combinedBettingActivity.filter(activity => activity.status === 'active').length;
-
-  const isCurrentUser = userProfile.username === currentUser.username;
-
+  // ── UI ──────────────────────────────────────────────────────────────────────
   return (
     <div className="page-container">
-      <Sidebar opinions={allOpinions.map((text, i) => ({ id: i.toString(), text }))} />
-      
-      <main className="main-content" style={{ paddingLeft: '20px', paddingRight: '20px', paddingTop: '0', marginTop: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '24px', padding: '24px 0 8px 0', borderBottom: '1px solid #eee', marginBottom: '16px', paddingRight: '20px' }}>
-          <h1 style={{ 
-            margin: 0, 
-            fontSize: '28px', 
-            fontWeight: '700',
-            color: 'var(--text-primary)',
+      <Sidebar />
+
+      <main className="main-content">
+        {/* Header */}
+        <div className="header-section">
+          <div style={{ flex: 1 }}></div>
+          
+          <div className="navigation-buttons" style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            marginLeft: '20px'
+            gap: '0px',
+            flexWrap: 'nowrap',
+            justifyContent: 'flex-start',
+            minWidth: 'max-content',
+            overflow: 'visible',
+            order: -1,
           }}>
-            <ScanSmiley size={32} />  {userProfile.username}
-          </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-            <a href="/feed" className="nav-button feed">
-              <Rss size={24} /> Live Feed
+            {/* Username Section */}
+            <div className="nav-button" style={{
+              padding: '0px 20px',
+              color: 'var(--text-black)',
+              borderRight: '1px solid var(--border-primary)',
+              fontSize: 'var(--font-size-md)',
+              fontWeight: '400',
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-number)',
+              gap: '12px',
+              background: 'transparent',
+              cursor: 'default',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <div className="user-avatar" style={{ 
+                backgroundColor: isBot ? '#10b981' : undefined 
+              }}>
+                {isBot ? '🤖' : profile.username[0]}
+              </div>
+              <div>
+                <div className="user-name" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {profile.username}
+                  {isBot && (
+                    <span style={{
+                      backgroundColor: '#10b981',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '10px',
+                      fontWeight: '700'
+                    }}>
+                      BOT
+                    </span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>🤖 Bots: Active Globally</p>
+                <p style={{ margin: 0, fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+                  {isBot ? 'Autonomous Trading Bot • ' : ''}Member since {new Date(profile.joinDate).toLocaleDateString()} | Opinion Trader & Collector
+                </p>
+              </div>
+            </div>
+
+            {/* Signed In */}
+            <div className="nav-button" style={{
+              padding: '0px 20px',
+              color: 'var(--text-black)',
+              borderRight: '1px solid var(--border-primary)',
+              fontSize: 'var(--font-size-md)',
+              fontWeight: '400',
+              display: 'flex',
+              alignItems: 'center',
+              fontFamily: 'var(--font-number)',
+              gap: '12px',
+              background: 'transparent',
+              cursor: 'default',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--green)',
+              }} />
+              Signed In
+            </div>
+
+            {/* View Traders */}
+            <a href="/users" className="nav-button">
+              <ScanSmiley size={24} />
+              View Traders
             </a>
-            <a href="/generate" className="nav-button generate">
-              <Balloon size={24} /> Generate Opinion
+
+            {/* Live Feed */}
+            <a href="/feed" className="nav-button">
+              <RssSimple size={24} />
+              Live Feed
             </a>
-            <a href="/users" className="nav-button traders">
-              <ScanSmiley size={24} /> View Traders
+
+            {/* Generate */}
+            <a href="/generate" className="nav-button">
+              <Balloon size={24} />
+              Generate
             </a>
-            <a href="/" className="nav-button traders">
-              <Wallet size={24} /> My Portfolio
-            </a>
+
+            {/* Sign Out */}
+            <button className="auth-button" onClick={() => window.location.href = '/auth'}>
+              <SignOut size={24} />
+              Sign Out
+            </button>
           </div>
         </div>
 
-        <div className={styles.walletOverview} style={{ marginTop: '36px' }}>
-          <div className={`${styles.walletCard} ${styles.balance}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
-              <CurrencyCircleDollar size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
-              <span style={{ marginLeft: 0 }}>Wallet Balance</span>
-            </h3>
-            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>${userProfile.balance.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.portfolio}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
-              <ChartLine size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
-              <span style={{ marginLeft: 0 }}>Portfolio Value</span>
-            </h3>
-            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>${portfolioValue.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.pnl} ${totalGainsLosses >= 0 ? styles.positive : styles.negative}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
-              <Folder size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
-              <span style={{ marginLeft: 0 }}>P&L</span>
-            </h3>
-            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>{totalGainsLosses >= 0 ? '+' : ''}${totalGainsLosses.toLocaleString()}</p>
-          </div>
-
-          <div className={`${styles.walletCard} ${styles.bets}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: 0 }}>
-              <DiceSix size={24} style={{ verticalAlign: 'middle', marginLeft: '-16px', marginRight: 8 }} />
-              <span style={{ marginLeft: 0 }}>Active Bets</span>
-            </h3>
-            <p style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, textAlign: 'center' }}>{totalActiveBets}</p>
-          </div>
+        {/* Global Bot Status Notification */}
+        <div style={{
+          background: 'var(--light-green)',
+          color: 'var(--black)',
+          padding: '12px 20px',
+          margin: '20px 0',
+          borderRadius: 'var(--radius-sm)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: 'var(--font-size-sm)',
+        }}>
+          <span>AI traders are active across all pages - they'll keep trading even when you navigate away</span>
+          <button style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--black)',
+            cursor: 'pointer',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: '600',
+          }}>
+            Stop Global Bots
+          </button>
         </div>
 
-        {/* Portfolio Holdings Section - grid card style */}
-        <div style={{ margin: '32px 0' }}>
-          <h2 className="section-title" style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <DiceSix size={28} style={{ verticalAlign: 'middle' }} /> My Opinion Portfolio
+        {/* Dashboard Metrics */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(6, 1fr)',
+          gap: '1px',
+          background: 'var(--border-primary)',
+          margin: '20px 0',
+        }}>
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              Wallet Balance
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: 'var(--text-primary)',
+            }}>
+              ${profile.balance.toFixed(2)}
+            </p>
+          </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              Portfolio Value
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: 'var(--text-primary)',
+            }}>
+              ${portfolioValue.toFixed(2)}
+            </p>
+          </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              P&L {/* Total realized + unrealized gains/losses */}
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: pnl >= 0 ? 'var(--green)' : 'var(--red)',
+            }}>
+              {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
+            </p>
+            <p style={{
+              fontSize: 'var(--font-size-xs)',
+              margin: '4px 0 0 0',
+              color: 'var(--text-secondary)',
+            }}>
+              Realized: {realizedPnL >= 0 ? '+' : ''}${realizedPnL.toFixed(2)} | 
+              Unrealized: {unrealizedPnL >= 0 ? '+' : ''}${unrealizedPnL.toFixed(2)}
+            </p>
+          </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              {isOwnProfile ? 'Total Opinions' : 'Active Bets'}
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: 'var(--text-primary)',
+            }}>
+              {isOwnProfile ? ownedOpinions.length : activeBets}
+            </p>
+          </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              {isOwnProfile ? 'Total Earnings' : 'Exposure'}
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: isOwnProfile ? 'var(--green)' : (totalExposure > 0 ? 'var(--red)' : 'var(--text-primary)'),
+            }}>
+              {isOwnProfile ? `$${(profile.totalEarnings || 0).toFixed(2)}` : `$${totalExposure.toFixed(2)}`}
+            </p>
+            </div>
+
+          <div style={{
+            background: 'var(--white)',
+            padding: '20px',
+            textAlign: 'center',
+          }}>
+            <h3 style={{
+              fontSize: 'var(--font-size-sm)',
+              margin: '0 0 8px 0',
+              color: 'var(--text-secondary)',
+              fontWeight: '400',
+            }}>
+              Portfolio Volatility
+            </h3>
+            <p style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: '700',
+              margin: '0',
+              color: portfolioVolatility > 100 ? 'var(--red)' : 
+                     portfolioVolatility > 50 ? 'var(--yellow)' : 'var(--green)',
+            }}>
+              {portfolioVolatility.toFixed(2)}%
+            </p>
+                  </div>
+            </div>
+
+        {/* Opinion Portfolio */}
+        <section style={{ margin: '40px 0' }}>
+          <h2 style={{ 
+            fontSize: 'var(--font-size-xl)',
+            fontWeight: '700',
+            margin: '0 0 20px 0',
+            color: 'var(--text-primary)',
+            paddingLeft: '32px',
+          }}>
+            {profile.username}'s Opinion Portfolio
           </h2>
-          {ownedOpinions.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
-              {ownedOpinions.map((opinion, index) => {
-                const gain = (opinion.currentPrice - opinion.purchasePrice) * opinion.quantity;
-                const gainPct = ((opinion.currentPrice - opinion.purchasePrice) / opinion.purchasePrice) * 100;
-                
-                // Find the correct opinion index in the opinions array
-                const allOpinions = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('opinions') || '[]') : [];
-                const opinionIndex = allOpinions.findIndex((op: string) => op === opinion.text);
-                const opinionId = opinionIndex !== -1 ? opinionIndex : opinion.id;
-                
-                return (
-                  <a
-                    key={index}
-                    href={`/opinion/${opinionId}`}
+
+          {ownedOpinions.length === 0 ? (
+            <div className="empty-state">{profile.username} doesn't own any opinions yet.</div>
+          ) : (
+            <div style={{
+              background: 'var(--white)',
+              paddingLeft: '32px',
+              paddingRight: '32px',
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gridTemplateRows: 'repeat(2, 1fr)',
+                gap: '20px',
+              }}>
+                {/* Grid items ordered by: most recent (top-left), 2nd most recent (top-middle), 3rd most recent (top-right), 4th most recent (bottom-left), 5th most recent (bottom-middle), 6th most recent (bottom-right) */}
+                {ownedOpinions
+                  .sort((a, b) => new Date(b.purchaseDate).getTime() - new Date(a.purchaseDate).getTime())
+                  .slice(0, 6)
+                  .map((o, index) => {
+                    const gain = (o.currentPrice - o.purchasePrice) * o.quantity;
+                    const pct = ((o.currentPrice - o.purchasePrice) / o.purchasePrice) * 100;
+                    return (
+                      <a
+                        key={`${o.id}-${index}`}
+                        href={`/opinion/${o.id}`}
+                        style={{
+                          background: 'var(--white)',
+                          padding: '20px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '16px',
+                          minHeight: '200px',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          transition: 'background var(--transition)',
+                          border: '1px solid var(--border-secondary)',
+                          borderRadius: 'var(--radius-md)',
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--bg-light)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'var(--white)';
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <p style={{
+                            fontSize: 'var(--font-size-md)',
+                            fontWeight: '500',
+                            margin: '0 0 8px 0',
+                            color: 'var(--text-primary)',
+                            lineHeight: '1.4',
+                          }}>
+                            {o.text}
+                          </p>
+                          <p style={{
+                            fontSize: 'var(--font-size-xs)',
+                            color: 'var(--text-secondary)',
+                            margin: '0',
+                          }}>
+                            Purchased: {new Date(o.purchaseDate).toLocaleDateString()} | Qty: {o.quantity}
+                          </p>
+                      </div>
+                        
+                        <div style={{ 
+                          borderTop: '1px solid var(--border-secondary)',
+                          paddingTop: '12px',
+                          marginTop: 'auto',
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-end',
+                            gap: '8px',
+                          }}>
+                            <div>
+                              <p style={{
+                                fontSize: 'var(--font-size-xs)',
+                                color: 'var(--text-secondary)',
+                                margin: '0',
+                              }}>
+                                Bought: ${o.purchasePrice.toFixed(2)}
+                              </p>
+                              <p style={{
+                                fontSize: 'var(--font-size-lg)',
+                                fontWeight: '700',
+                                margin: '4px 0 0 0',
+                                color: 'var(--text-primary)',
+                              }}>
+                                ${o.currentPrice.toFixed(2)}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{
+                                fontSize: 'var(--font-size-sm)',
+                                margin: '0',
+                                color: pct >= 0 ? 'var(--green)' : 'var(--red)',
+                                fontWeight: '600',
+                              }}>
+                                {pct >= 0 ? '+' : ''}${gain.toFixed(2)} ({pct.toFixed(2)}%)
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </a>
+                    );
+                  })}
+              </div>
+              
+              {/* View All Opinions Button */}
+              {ownedOpinions.length > 6 && (
+                    <div style={{ 
+                  display: 'flex',
+                  justifyContent: 'center',
+                  marginTop: '24px',
+                }}>
+                  <button 
                     style={{
-                      background: '#fff',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      padding: '16px',
-                      boxShadow: '0 1px 4px rgba(0,0,0,0.03)',
-                      display: 'block',
+                      background: 'var(--green)',
+                      color: 'var(--white)',
+                      padding: '12px 24px',
+                      borderRadius: 'var(--radius-sm)',
                       textDecoration: 'none',
-                      transition: 'box-shadow 0.2s, transform 0.2s',
+                      fontSize: 'var(--font-size-sm)',
+                      fontWeight: '600',
+                      border: 'none',
                       cursor: 'pointer',
-                      color: '#222',
+                      transition: 'all var(--transition)',
                     }}
-                    onMouseOver={e => {
-                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(16,185,129,0.10)';
-                      e.currentTarget.style.transform = 'scale(1.03)';
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#0d6b47';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
                     }}
-                    onMouseOut={e => {
-                      e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.03)';
-                      e.currentTarget.style.transform = 'scale(1)';
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'var(--green)';
+                      e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >
-                    <div style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '8px', color: '#222', lineHeight: 1.2 }}>{opinion.text}</div>
-                    <div style={{ color: '#666', fontSize: '0.95rem', marginBottom: '10px' }}>
-                      Purchased: {opinion.purchaseDate} | Qty: {opinion.quantity}
+                    View All {ownedOpinions.length} Opinions
+                  </button>
                     </div>
-                    <div style={{ color: '#444', fontSize: '1rem', marginBottom: '6px' }}>Bought: ${opinion.purchasePrice}</div>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                      <span style={{ fontWeight: 900, fontSize: '1.5rem', color: '#111' }}>${opinion.currentPrice.toFixed(2)}</span>
-                      <span style={{ fontWeight: 700, fontSize: '1rem', color: gain >= 0 ? '#16a34a' : '#dc2626' }}>
-                        {gain >= 0 ? '+' : ''}${gain.toFixed(2)} ({gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%)
-                      </span>
-                    </div>
-                  </a>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ 
-              padding: '20px', 
-              textAlign: 'center', 
-              color: '#666',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px'
-            }}>
-              <p>📭 No holdings to display</p>
-              <p style={{ fontSize: '14px' }}>
-                {isBot ? 'This bot has not made any trades yet' : 'This user has not purchased any opinions yet'}
-              </p>
+              )}
             </div>
           )}
-        </div>
+        </section>
 
-        {/* NEW: Prominent Bet on Portfolio Button */}
-        {!isCurrentUser && (
-          <div style={{ 
-            marginBottom: '30px',
-            display: 'flex',
-            justifyContent: 'center'
+        {/* Portfolio Bets and Shorts */}
+        <section style={{ margin: '40px 0' }}>
+          <h2 style={{ 
+            fontSize: 'var(--font-size-xl)',
+            fontWeight: '700',
+            margin: '0 0 20px 0',
+            color: 'var(--text-primary)',
+            paddingLeft: '32px',
+          }}>
+            {profile.username}'s Portfolio Bets and Shorts
+          </h2>
+
+          <div style={{
+            background: 'var(--white)',
+            paddingLeft: '32px',
+            paddingRight: '32px',
+            paddingBottom: '20px',
+          }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
+              gap: '20px',
+            }}>
+              {/* BET Positions */}
+              {userBets.map((position: any) => (
+                <div key={position.id} style={{
+                  background: 'var(--white)',
+                  padding: '20px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-secondary)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
+                  }}>
+                    <h3 style={{
+                      fontSize: 'var(--font-size-md)',
+                      fontWeight: '600',
+                      margin: '0',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.4',
+                      maxWidth: '70%',
+                    }}>
+                      {position.title || `Bet on ${position.targetUser || 'Unknown'}` || 'Portfolio Bet'}
+                    </h3>
+                    <div style={{
+                      background: 'var(--green)',
+                      color: 'var(--white)',
+                      padding: '4px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: '700',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {position.type || position.betType || 'BET'}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '16px',
+                  }}>
+                    Placed: {position.placedDate || 'N/A'} | {position.daysHeld || 0} days | {position.multiplier || 'N/A'} multiplier
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '4px',
+                      }}>
+                        Wagered: ${(position.wagered || position.betAmount || 0).toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-lg)',
+                        fontWeight: '700',
+                        color: 'var(--text-primary)',
+                      }}>
+                        ${(position.currentValue || position.betAmount || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div style={{
+                      textAlign: 'right',
+                    }}>
+                      <div style={{
+                        fontSize: 'var(--font-size-sm)',
+                        fontWeight: '600',
+                        color: 'var(--green)',
+                      }}>
+                        +${(position.potential || position.potentialWinnings || 0).toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--green)',
+                      }}>
+                        (+{(position.percentage || position.targetPercentage || 0).toFixed(2)}%)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* SHORT Positions */}
+              {userShorts.map((position: any) => (
+                <div key={position.id} style={{
+                  background: 'var(--white)',
+                  padding: '20px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-secondary)',
+                  position: 'relative',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
+                  }}>
+                    <h3 style={{
+                      fontSize: 'var(--font-size-md)',
+                      fontWeight: '600',
+                      margin: '0',
+                      color: 'var(--text-primary)',
+                      lineHeight: '1.4',
+                      maxWidth: '70%',
+                    }}>
+                      {position.title || position.opinionText || 'Short Position'}
+                    </h3>
+                    <div style={{
+                      background: 'var(--red)',
+                      color: 'var(--white)',
+                      padding: '4px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: '700',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {position.type || 'SHORT'}
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 'var(--font-size-xs)',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '16px',
+                  }}>
+                    Shorted: {position.shortedDate || position.createdDate || 'N/A'} | {position.dropTarget || position.targetDropPercentage || 0}% drop target | {position.progress || 0}% progress
+                  </div>
+
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-end',
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize: 'var(--font-size-xs)',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '4px',
+                      }}>
+                        Entry: ${(position.entry || position.startingPrice || 0).toFixed(2)}
+                      </div>
+                      <div style={{
+                        fontSize: 'var(--font-size-lg)',
+                        fontWeight: '700',
+                        color: 'var(--text-primary)',
+                      }}>
+                        ${(position.currentValue || position.targetPrice || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div style={{
+                      textAlign: 'right',
+                    }}>
+                      <div style={{
+                        fontSize: 'var(--font-size-sm)',
+                        fontWeight: '600',
+                        color: 'var(--text-secondary)',
+                      }}>
+                        {position.shares || 'N/A'} shares obligation
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Recent Activity Section */}
+        <RecentActivity userId={profile?.uid} maxItems={15} title={`${profile?.username}'s Recent Activity`} />
+        
+        {/* 🔍 FIRESTORE DATA DIAGNOSTIC */}
+        {process.env.NODE_ENV === 'development' && (
+          <FirestoreDataDiagnostic />
+        )}
+        
+        {/* 🔍 DEBUG: Display diagnostic information temporarily */}
+        {process.env.NODE_ENV === 'development' && (
+          <div style={{
+            background: '#f0f0f0',
+            padding: '20px',
+            margin: '20px 0',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontFamily: 'monospace',
+            color: '#333'
+          }}>
+            <h4>🔍 Debug Info (Development Only)</h4>
+            <p><strong>URL Username:</strong> {username}</p>
+            <p><strong>Profile UID:</strong> {profile?.uid}</p>
+            <p><strong>Profile Username:</strong> {profile?.username}</p>
+            <p><strong>Is Bot:</strong> {isBot ? 'Yes' : 'No'}</p>
+            <p><strong>Portfolio Items:</strong> {ownedOpinions.length}</p>
+            <p><strong>User Bets:</strong> {userBets.length}</p>
+            <p><strong>User Shorts:</strong> {userShorts.length}</p>
+            <p><strong>Recent Activity:</strong> {recentActivity.length}</p>
+          </div>
+        )}
+
+        {/* Floating BET Button - Only show for other users, not own profile */}
+        {!isOwnProfile && (
+          <div style={{
+            position: 'fixed',
+            bottom: '40px',
+            right: '40px',
+            zIndex: 1000,
+            padding: '3px',
+            background: 'var(--black)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
           }}>
             <button
-              onClick={() => setShowBetModal(true)}
+              onClick={() => window.location.href = `/bet/${username}`}
               style={{
-                width: '100%',
-                maxWidth: '600px',
-                padding: '20px 40px',
-                fontSize: '20px',
-                fontWeight: '700',
-                backgroundColor: '#f59e0b',
-                color: 'white',
+                width: '80px',
+                height: '80px',
+                background: 'var(--yellow)',
+                color: 'var(--black)',
                 border: 'none',
-                borderRadius: '16px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--font-size-sm)',
+                fontWeight: '700',
                 cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.3)',
+                transition: 'all var(--transition)',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '12px'
+                gap: '4px',
+                textTransform: 'uppercase',
+                letterSpacing: '1px'
               }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = '#d97706';
+              onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 6px 20px rgba(245, 158, 11, 0.4)';
+                e.currentTarget.style.background = 'var(--light-yellow)';
               }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = '#f59e0b';
-                e.currentTarget.style.transform = 'translateY(0px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.3)';
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.background = 'var(--yellow)';
               }}
             >
-              🎯 Bet on Portfolio
+              <Coins size={20} weight="bold" />
+              BET
             </button>
           </div>
         )}
-
-        <section className="section">
-          <h2 className="section-title" style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <DiceSix size={28} style={{ verticalAlign: 'middle' }} /> User Portfolio Bets & Short Positions
-          </h2>
-          
-          {combinedBettingActivity.length === 0 ? (
-            <div className="empty-state">
-              <p>{isBot ? 'This bot hasn\'t placed any bets or short positions yet!' : 'This user hasn\'t placed any bets or short positions yet!'}</p>
-              <p>{isBot ? 'The bot will start making strategic bets as it develops confidence.' : 'They can bet on portfolios (1-100% range with multiplied losses) or short specific opinions.'}</p>
-            </div>
-          ) : (
-            <div className={styles.betGrid}>
-              {combinedBettingActivity.slice(0, 10).map((activity) => {
-                return (
-                  <div className={styles.betCard} key={activity.id}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
-                      {/* Left: Main Content */}
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', marginTop: '8px', marginLeft: '-12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                          {activity.type === 'short_bet' && (
-                            <>
-                              <span style={{ background: '#fde047', color: '#000', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                SHORT
-                            </span>
-                              {activity.status === 'lost' && (
-                                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  LOST
-                            </span>
-                              )}
-                              {activity.status === 'won' && (
-                                <span style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  WON
-                            </span>
-                              )}
-                              {activity.status === 'expired' && (
-                                <span style={{ background: '#222', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  EXPIRED
-                                </span>
-                              )}
-                            </>
-                          )}
-                          {!(activity.type === 'short_bet') && (
-                            <>
-                              {activity.status === 'active' && (
-                                <span className={`${styles.betStatus} ${styles[activity.status]}`} style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  ACTIVE
-                                </span>
-                              )}
-                              {activity.status === 'won' && (
-                                <span style={{ background: '#22c55e', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  WON
-                                </span>
-                              )}
-                              {activity.status === 'lost' && (
-                                <span style={{ background: '#ef4444', color: '#fff', borderRadius: '16px', padding: '2px 16px', fontWeight: 700, fontSize: '14px', letterSpacing: '0.5px', display: 'inline-block', minWidth: '70px', textAlign: 'center' }}>
-                                  LOST
-                                </span>
-                              )}
-                            </>
-                          )}
-                          {activity.status === 'active' && activity.daysRemaining !== null && (
-                            <span style={{ color: 'var(--text-secondary)', fontWeight: 700, fontSize: '16px', marginLeft: '8px' }}>{activity.daysRemaining} days left</span>
-                          )}
-                        </div>
-                        {activity.type === 'short_bet' ? (
-                          <a href={`/opinion/${activity.opinionId}`} style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 700, fontSize: '1.15rem', marginBottom: '2px', cursor: 'pointer' }}>
-                          {activity.title}
-                          </a>
-                        ) : (
-                          <div style={{ fontWeight: 700, fontSize: '1.15rem', marginBottom: '2px', color: 'var(--text-primary)' }}>{activity.title}</div>
-                        )}
-                        <div style={{ color: 'var(--text-secondary)', fontSize: '15px', marginBottom: '6px' }}>{activity.subtitle}</div>
-                        {activity.type === 'short_bet' && activity.opinionText && (
-                          <div style={{ fontStyle: 'italic', margin: '8px 0', padding: '8px', background: '#f8f9fa', borderRadius: '4px', fontSize: '13px', color: '#555' }}>
-                            "{safeSlice(activity.opinionText, 60)}"
-                          </div>
-                        )}
-                        {activity.type === 'short_bet' && activity.status === 'active' && activity.progress !== undefined && (
-                          <div style={{ marginTop: '8px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px', color: 'var(--text-tertiary)' }}>
-                              <span>Progress to target:</span>
-                              <span>{activity.progress.toFixed(1)}%</span>
-                            </div>
-                            <div style={{ width: '100%', height: '6px', backgroundColor: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
-                              <div style={{
-                                width: `${Math.min(100, activity.progress)}%`,
-                                height: '100%',
-                                backgroundColor: activity.progress >= 100 ? '#10b981' : activity.progress >= 50 ? '#f59e0b' : '#ef4444',
-                                transition: 'width 0.3s ease'
-                              }} />
-                            </div>
-                          </div>
-                        )}
-                        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--text-tertiary)', marginTop: '10px', flexWrap: 'wrap' }}>
-                          {activity.additionalInfo && <span>{activity.additionalInfo}</span>}
-                          {activity.multiplier && (
-                            !activity.additionalInfo?.includes('multiplier') &&
-                              <span>8x multiplier</span>
-                          )}
-                        </div>
-                      </div>
-                      {/* Right: Meta/Stats */}
-                      <div style={{ textAlign: 'right', minWidth: '140px', flexShrink: 0, marginTop: '0px', marginRight: '8px' }}>
-                        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '2px', color: activity.status === 'won' ? '#22c55e' : activity.status === 'lost' ? '#ef4444' : 'var(--text-primary)' }}>
-                          {activity.status === 'won' ? `Won $${activity.potentialPayout}` :
-                           activity.status === 'lost' ? (activity.type === 'portfolio_bet' && activity.actualLoss ? `Lost $${activity.actualLoss} (${activity.amount} × ${activity.multiplier}x)` : `Lost $${activity.amount}`) :
-                           activity.status === 'active' ? `Potential: $${activity.potentialPayout}` :
-                           'Expired'}
-                        </div>
-                        <div style={{ color: 'var(--text-tertiary)', fontSize: '13px', marginBottom: '2px' }}>Placed: {activity.placedDate}</div>
-                        {activity.status === 'active' && (
-                          <div style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Expires: {activity.expiryDate}</div>
-                        )}
-                        {activity.status === 'active' && activity.type === 'portfolio_bet' && activity.multiplier && (
-                          <div style={{ color: '#ef4444', fontSize: '12px', marginTop: '4px', fontWeight: 600 }}>
-                            Risk: ${activity.amount * activity.multiplier} if lost
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          
-          {combinedBettingActivity.length > 10 && (
-            <div style={{ textAlign: 'center', marginTop: '20px' }}>
-              <p className="btn btn-secondary">Showing 10 of {combinedBettingActivity.length} total bets</p>
-            </div>
-          )}
-        </section>
-
-        <section className="section">
-          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
-            <Play size={28} weight="fill" style={{ marginBottom: '-2px' }} />
-            Recent Activity
-          </h2>
-          
-          {recentTransactions.length === 0 ? (
-            <div>
-              <p style={{ color: 'var(--text-secondary)' }}>No recent transactions.</p>
-              {isBot && (
-                <p style={{ color: '#10b981', fontSize: '14px', marginTop: '10px' }}>
-                  🤖 This bot will start trading once the market becomes active!
-                </p>
-              )}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {recentTransactions.map((transaction) => {
-                let activityText = '';
-                let emoji = '';
-                
-                switch (transaction.type) {
-                  case 'buy':
-                    emoji = '🛒';
-                    activityText = 'Bought Opinion';
-                    break;
-                  case 'sell':
-                    emoji = '💰';
-                    activityText = 'Sold Opinion';
-                    break;
-                  case 'earn':
-                    emoji = '✨';
-                    activityText = 'Generated Opinion';
-                    break;
-                  case 'short_place':
-                    emoji = '📉';
-                    activityText = 'Placed Short Bet';
-                    break;
-                  case 'short_win':
-                    emoji = '🎉';
-                    activityText = 'Won Short Bet';
-                    break;
-                  case 'short_loss':
-                    emoji = '💸';
-                    activityText = 'Lost Short Bet';
-                    break;
-                  case 'bet_place':
-                    emoji = '🎲';
-                    activityText = 'Placed Portfolio Bet';
-                    break;
-                  case 'bet_win':
-                    emoji = '🎉';
-                    activityText = 'Won Portfolio Bet';
-                    break;
-                  case 'bet_loss':
-                    emoji = '💸';
-                    activityText = 'Lost Portfolio Bet (with multiplier applied)';
-                    break;
-                  default:
-                    emoji = '📝';
-                    activityText = 'Transaction';
-                }
-                
-                return (
-                  <div key={transaction.id} className="card">
-                    <div className="card-header">
-                      <div className="card-content">
-                        <p>
-                          {transaction.type === 'buy' ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', background: '#4ade80' }}>
-                                <CurrencyDollar size={18} color="#fff" weight="bold" />
-                              </span>
-                              <span style={{ fontWeight: 700, fontSize: '1.1rem', marginLeft: '6px' }}>
-                                Bought{transaction.quantity ? ` ${transaction.quantity} unit${transaction.quantity > 1 ? 's' : ''}` : ''}
-                              </span>
-                            </span>
-                          ) : (
-                            <span>{emoji} {activityText}</span>
-                          )}
-                        </p>
-                        <p className="card-subtitle">
-                          {transaction.opinionText || transaction.description || 'Transaction activity'} • {transaction.date}
-                        </p>
-                      </div>
-                      <span className={`${styles.activityAmount} ${transaction.amount >= 0 ? 'status-positive' : 'status-negative'}`}>
-                        {transaction.amount >= 0 ? '+' : ''}${Math.abs(transaction.amount)}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* NEW: Betting Modal */}
-        {showBetModal && userProfile && (
-          <div 
-            className={styles.modalOverlay}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowBetModal(false);
-              }
-            }}
-          >
-            <div className={styles.modalContent}>
-              <div className={styles.modalHeader}>
-                <h2 className={styles.modalTitle}>
-                  Bet on {userProfile.username} Portfolio
-                </h2>
-                <button
-                  onClick={() => setShowBetModal(false)}
-                  className={styles.closeButton}
-                >
-                  ✕
-                </button>
-              </div>
-
-                <div className={styles.portfolioSummary}>
-                  <div className={styles.summaryItem}>
-                    <p>Current Value</p>
-                    <p>${portfolioValue.toLocaleString()}</p>
-                  </div>
-                  <div className={styles.summaryItem}>
-                    <p>Real 7-Day Performance</p>
-                    <p className={getPerformanceClass(calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined))}>
-                      {calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined) >= 0 ? '+' : ''}{calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined).toFixed(1)}%
-                    </p>
-                  </div>
-                  <div className={styles.summaryItem}>
-                    <p>Volatility</p>
-                    <p className={calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'high' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'medium' : 'low'}>
-                      {calculatePortfolioVolatility(ownedOpinions) > 2.0 ? 'High' : calculatePortfolioVolatility(ownedOpinions) > 1.3 ? 'Medium' : 'Low'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className={styles.bettingForm}>
-                <h3 className={styles.formTitle}>Custom Portfolio Bet</h3>
-                  
-                  <div className={styles.formGroup}>
-                    <p className={styles.formLabel}>Direction:</p>
-                    <div className={styles.directionButtons}>
-                      <button
-                        onClick={() => setBetForm({ ...betForm, betType: 'increase' })}
-                        className={`${styles.directionButton} ${styles.increase} ${betForm.betType === 'increase' ? styles.active : ''}`}
-                      >
-                        📈 INCREASE
-                      </button>
-                      <button
-                        onClick={() => setBetForm({ ...betForm, betType: 'decrease' })}
-                        className={`${styles.directionButton} ${styles.decrease} ${betForm.betType === 'decrease' ? styles.active : ''}`}
-                      >
-                        📉 DECREASE
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Target Percentage: {betForm.targetPercentage}%
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      step="1"
-                      value={betForm.targetPercentage}
-                      onChange={(e) => setBetForm({ ...betForm, targetPercentage: parseInt(e.target.value) })}
-                      className={styles.rangeInput}
-                    />
-                    <div className={styles.rangeLabels}>
-                      <span>1% (Easy)</span>
-                      <span>25% (Medium)</span>
-                      <span>50% (Hard)</span>
-                      <span>100% (Extreme)</span>
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Timeframe: {betForm.timeFrame} days
-                    </label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="30"
-                      step="1"
-                      value={betForm.timeFrame}
-                      onChange={(e) => setBetForm({ ...betForm, timeFrame: parseInt(e.target.value) })}
-                      className={styles.rangeInput}
-                    />
-                    <div className={styles.rangeLabels}>
-                      <span>1 day (Hard)</span>
-                      <span>15 days</span>
-                      <span>30 days (Easy)</span>
-                    </div>
-                  </div>
-
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>Bet Amount:</label>
-                    <input
-                      type="number"
-                      value={betForm.amount}
-                      onChange={(e) => setBetForm({ ...betForm, amount: parseInt(e.target.value) || 0 })}
-                      placeholder="Enter amount..."
-                      min="1"
-                      max={currentUser.balance}
-                      className={styles.amountInput}
-                    />
-                    <div className={styles.quickAmounts}>
-                      {[50, 100, 250, 500].map(amount => (
-                        <button
-                          key={amount}
-                          onClick={() => setBetForm({ ...betForm, amount })}
-                          disabled={amount > currentUser.balance}
-                          className={styles.quickAmountButton}
-                        >
-                          ${amount}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {betForm.amount > 0 && (
-                    <div className={styles.betSummary}>
-                      <div className={styles.betSummaryHeader}>
-                      <p>Bet Summary:</p>
-                      </div>
-                      <p>
-                      Betting ${betForm.amount} that {userProfile.username} portfolio will{' '}
-                        <strong>{betForm.betType}</strong> by <strong>{betForm.targetPercentage}%</strong>{' '}
-                        within <strong>{betForm.timeFrame} days</strong>
-                      </p>
-                      <div className={styles.betCalculations}>
-                        <div className={styles.calculationRow}>
-                          <span>Multiplier:</span>
-                          <span><strong>
-                            {calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ).toFixed(2)}x
-                          </strong></span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>Volatility Rating:</span>
-                          <span><strong>{getVolatilityRating(betForm.targetPercentage)}</strong></span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>If You Win:</span>
-                          <span style={{ color: '#10b981', fontWeight: 'bold' }}>
-                            +${Math.round(betForm.amount * calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ))}
-                          </span>
-                        </div>
-                        <div className={styles.calculationRow}>
-                          <span>If You Lose:</span>
-                          <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
-                            -${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
-                              betForm.betType,
-                              betForm.targetPercentage,
-                              betForm.timeFrame,
-                              calculatePortfolioVolatility(ownedOpinions),
-                              calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                            ))}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Loss Warning */}
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '10px',
-                        backgroundColor: '#fef2f2',
-                        border: '1px solid #fecaca',
-                        borderRadius: '6px'
-                      }}>
-                        <div style={{ fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>
-                          ⚠️ Loss Calculation: ${betForm.amount} × {calculateBetMultiplier(
-                            betForm.betType,
-                            betForm.targetPercentage,
-                            betForm.timeFrame,
-                            calculatePortfolioVolatility(ownedOpinions),
-                            calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                          ).toFixed(2)}x = ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
-                            betForm.betType,
-                            betForm.targetPercentage,
-                            betForm.timeFrame,
-                            calculatePortfolioVolatility(ownedOpinions),
-                            calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                          ))}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '2px' }}>
-                          Higher percentages and shorter timeframes increase both potential rewards and losses
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={placeBet}
-                    disabled={betForm.amount <= 0 || betForm.amount > currentUser.balance}
-                    className={styles.placeBetButton}
-                  >
-                    {betForm.amount <= 0 ? 'Enter Bet Amount' :
-                     betForm.amount > currentUser.balance ? 'Insufficient Funds' :
-                     `Place Bet: ${betForm.amount} (Risk: ${calculatePotentialLoss(betForm.amount, calculateBetMultiplier(
-                       betForm.betType,
-                       betForm.targetPercentage,
-                       betForm.timeFrame,
-                       calculatePortfolioVolatility(ownedOpinions),
-                       calculateReal7DayPerformance(userProfile.username, portfolioValue, botId || undefined)
-                     ))})`}
-                  </button>
-                </div>
-
-              <div className={styles.modalHoldings} style={{ margin: '32px 0' }}>
-                <h3 style={{ fontWeight: 700, fontSize: '1.2rem', marginBottom: '16px' }}>Portfolio Holdings ({ownedOpinions.length} total)</h3>
-                  {ownedOpinions.length > 0 ? (
-                    <div className={styles.holdingsGrid}>
-                    {ownedOpinions.map((opinion, index) => (
-                        <div key={index} className={styles.holdingItem}>
-                          <div>
-                          <p className={styles.holdingText} style={{ fontStyle: 'italic', fontSize: '1rem', marginBottom: '8px' }}>
-                              "{safeSlice(opinion.text, 60)}"
-                            </p>
-                          <p style={{ color: '#888', fontSize: '0.95rem', margin: 0 }}>Qty: {opinion.quantity}</p>
-                          </div>
-                          <div className={styles.holdingStats}>
-                          <p style={{ fontWeight: 700, fontSize: '1.1rem', margin: 0 }}>${opinion.currentPrice}</p>
-                          <p className={(opinion.currentPrice - opinion.purchasePrice) >= 0 ? styles.positive : styles.negative} style={{ fontWeight: 700, fontSize: '1rem', margin: 0 }}>
-                              {(opinion.currentPrice - opinion.purchasePrice) >= 0 ? '+' : ''}${(opinion.currentPrice - opinion.purchasePrice).toFixed(0)}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ 
-                      padding: '20px', 
-                      textAlign: 'center', 
-                      color: '#666',
-                      backgroundColor: '#f8f9fa',
-                      borderRadius: '8px'
-                    }}>
-                      <p>📭 No holdings to display</p>
-                      <p style={{ fontSize: '14px' }}>
-                        {isBot ? 'This bot has not made any trades yet' : 'This user has not purchased any opinions yet'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-            </div>
-          </div>
-        )}
-
-        {message && (
-          <div className={`${styles.statusMessage} ${message.includes('won') || message.includes('placed') ? styles.success : styles.error}`}>
-            {message}
-          </div>
-        )}
-
-        {isBot && (
-          <div style={{ 
-            marginTop: '20px', 
-            padding: '15px', 
-            backgroundColor: '#f0f9ff', 
-            border: '1px solid #e0f2fe', 
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <p style={{ margin: 0, color: '#0369a1' }}>
-              🤖 This is an <strong>Autonomous Trading Bot</strong> with algorithmic strategies • 
-              Portfolio updates automatically based on market conditions • 
-              <strong>Bet range: 1%-100% with loss multipliers</strong> • 
-              <strong>Loss calculation: Bet Amount × Multiplier (higher % = higher risk)</strong>
-            </p>
-          </div>
-        )}
       </main>
+      
+      {/* Activity Integration for real-time updates */}
+      <ActivityIntegration userProfile={profile || undefined} />
     </div>
   );
 }

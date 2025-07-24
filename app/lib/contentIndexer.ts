@@ -1,5 +1,22 @@
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  orderBy,
+  limit,
+  Timestamp,
+} from 'firebase/firestore';
+import { db } from './firebase';
 import { EmbeddingService } from './embeddings';
 
+/**
+ * ContentIndexer (Firestore‑native)
+ * ---------------------------------------------------------------------------
+ * Indexes *all* public‑facing content into the vector store. 100 % Firestore –
+ * no trace of `localStorage` remains. Every helper now performs a live read
+ * against the relevant collection instead of poking the browser.
+ */
 export class ContentIndexer {
   private embeddingService: EmbeddingService;
 
@@ -7,289 +24,234 @@ export class ContentIndexer {
     this.embeddingService = EmbeddingService.getInstance();
   }
 
+  /**
+   * Kick off a full re‑index. Runs the individual jobs in parallel.
+   */
   async indexAllContent(): Promise<void> {
-    console.log('🚀 Starting comprehensive content indexing...');
-    
+    console.log('🚀 Starting comprehensive content indexing…');
+
     await Promise.all([
       this.indexOpinions(),
       this.indexUserProfiles(),
       this.indexActivityFeed(),
       this.indexTransactions(),
     ]);
-    
+
     console.log('✅ Content indexing completed!');
+  }
+
+  // ---------------------------------------------------------------------------
+  // 🔎  Opinions
+  // ---------------------------------------------------------------------------
+  private async getOpinions(): Promise<Array<{ id: string; text: string }>> {
+    const snap = await getDocs(collection(db, 'opinions'));
+    return snap.docs.map((d) => ({ id: d.id, text: (d.data() as any).opinionText || '' }));
   }
 
   async indexOpinions(): Promise<void> {
     try {
-      const opinions = this.getStoredOpinions();
-      const items = opinions.map((opinion, index) => ({
-        id: `opinion_${index}`,
-        text: opinion,
+      const opinions = await this.getOpinions();
+
+      const items = opinions.map((op, i) => ({
+        id: op.id,
+        text: op.text,
         type: 'opinion' as const,
         metadata: {
-          originalIndex: index,
-          url: `/opinion/${index}`,
+          firestoreId: op.id,
+          url: `/opinion/${op.id}`,
           category: 'opinion',
-          length: opinion.length,
-          wordCount: opinion.split(' ').length,
+          length: op.text.length,
+          wordCount: op.text.split(' ').length,
+          indexedAt: Timestamp.now().toMillis(),
         },
       }));
 
-      await this.embeddingService.batchAddEmbeddings(items);
+      if (items.length) {
+        await this.embeddingService.batchAddEmbeddings(items);
+      }
+
       console.log(`📝 Indexed ${items.length} opinions`);
-    } catch (error) {
-      console.error('Error indexing opinions:', error);
+    } catch (err) {
+      console.error('Error indexing opinions:', err);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 👤  User profiles
+  // ---------------------------------------------------------------------------
+  private async getUsers(): Promise<Array<{ uid: string; username: string; balance: number }>> {
+    const snap = await getDocs(collection(db, 'users'));
+    return snap.docs.map((d) => {
+      const data = d.data() as any;
+      return {
+        uid: d.id,
+        username: data.username || 'User',
+        balance: data.balance ?? 0,
+      };
+    });
+  }
+
+  private async getUserPortfolio(uid: string): Promise<any[]> {
+    // Portfolios are stored as 1‑doc per user: `/user-portfolios/{uid}`
+    try {
+      const docSnap = await getDocs(
+        query(collection(db, 'user-portfolios'), where('uid', '==', uid), limit(1))
+      );
+      if (docSnap.empty) return [];
+      const holdings = (docSnap.docs[0].data() as any).holdings || [];
+      return holdings;
+    } catch {
+      return [];
     }
   }
 
   async indexUserProfiles(): Promise<void> {
     try {
-      const users = this.getAllUsers();
-      const items = [];
+      const users = await this.getUsers();
+      const items = [] as any[];
 
       for (const user of users) {
-        const portfolio = this.getUserPortfolio(user.username);
-        const portfolioText = portfolio.map(p => p.text).join(', ');
-        
+        const portfolio = await this.getUserPortfolio(user.uid);
+        const portfolioNames = portfolio.map((p: any) => p.opinionText || p.text).join(', ');
+        const portfolioValue = portfolio.reduce(
+          (sum: number, p: any) => sum + ((p.currentPrice || 0) * (p.quantity || 0)),
+          0
+        );
+
         const searchText = [
           `User: ${user.username}`,
-          portfolioText ? `Owns opinions: ${portfolioText}` : 'No opinions owned',
-          `Portfolio value: $${portfolio.reduce((sum, p) => sum + (p.currentPrice || 0) * (p.quantity || 0), 0)}`,
-          `Balance: $${user.balance || 0}`,
+          portfolioNames ? `Owns opinions: ${portfolioNames}` : 'No opinions owned',
+          `Portfolio value: $${portfolioValue.toFixed(2)}`,
+          `Balance: $${user.balance?.toFixed?.(2) ?? user.balance}`,
         ].join('. ');
 
         items.push({
-          id: `user_${user.username}`,
+          id: `user_${user.uid}`,
           text: searchText,
           type: 'user' as const,
           metadata: {
+            uid: user.uid,
             username: user.username,
             balance: user.balance,
             portfolioSize: portfolio.length,
-            portfolioValue: portfolio.reduce((sum, p) => sum + (p.currentPrice || 0) * (p.quantity || 0), 0),
+            portfolioValue,
             url: `/users/${user.username}`,
+            indexedAt: Timestamp.now().toMillis(),
           },
         });
       }
 
-      await this.embeddingService.batchAddEmbeddings(items);
+      if (items.length) {
+        await this.embeddingService.batchAddEmbeddings(items);
+      }
+
       console.log(`👥 Indexed ${items.length} user profiles`);
-    } catch (error) {
-      console.error('Error indexing user profiles:', error);
+    } catch (err) {
+      console.error('Error indexing user profiles:', err);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 📡  Activity Feed
+  // ---------------------------------------------------------------------------
+  private async getActivityFeed(): Promise<any[]> {
+    const q = query(collection(db, 'activity-feed'), orderBy('timestamp', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
   }
 
   async indexActivityFeed(): Promise<void> {
     try {
-      const activities = this.getActivityFeed();
+      const activities = await this.getActivityFeed();
       const items = activities
-        .filter(activity => activity.opinionText)
-        .map(activity => {
+        .filter((a) => a.opinionText)
+        .map((a) => {
           const activityText = [
-            `${activity.username} ${activity.type}`,
-            activity.opinionText,
-            activity.amount ? `Amount: $${activity.amount}` : '',
-            activity.price ? `Price: $${activity.price}` : '',
-          ].filter(Boolean).join('. ');
+            `${a.username} ${a.type}`,
+            a.opinionText,
+            a.amount ? `Amount: $${a.amount}` : '',
+            a.price ? `Price: $${a.price}` : '',
+          ]
+            .filter(Boolean)
+            .join('. ');
 
           return {
-            id: `activity_${activity.id}`,
+            id: `activity_${a.id}`,
             text: activityText,
             type: 'activity' as const,
             metadata: {
-              userId: activity.username,
-              activityType: activity.type,
-              amount: activity.amount,
-              price: activity.price,
-              timestamp: activity.timestamp,
-              isBot: activity.isBot || false,
-              opinionId: activity.opinionId,
+              userId: a.username,
+              activityType: a.type,
+              amount: a.amount,
+              price: a.price,
+              timestamp: a.timestamp,
+              isBot: a.isBot || false,
+              opinionId: a.opinionId,
+              indexedAt: Timestamp.now().toMillis(),
             },
           };
         });
 
-      await this.embeddingService.batchAddEmbeddings(items);
+      if (items.length) {
+        await this.embeddingService.batchAddEmbeddings(items);
+      }
+
       console.log(`📊 Indexed ${items.length} activities`);
-    } catch (error) {
-      console.error('Error indexing activities:', error);
+    } catch (err) {
+      console.error('Error indexing activities:', err);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 💸  Transactions (user + bot)
+  // ---------------------------------------------------------------------------
+  private async getTransactions(isBot: boolean | null = null): Promise<any[]> {
+    const base = collection(db, 'transactions');
+    // Removed isBot filtering - transactions documents don't have this field
+    const q = base;
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
   }
 
   async indexTransactions(): Promise<void> {
     try {
-      const userTransactions = this.getUserTransactions();
-      const botTransactions = this.getBotTransactions();
-      const allTransactions = [...userTransactions, ...botTransactions];
+      // Get all transactions since isBot field doesn't exist in documents
+      const allTx = await this.getTransactions();
 
-      const items = allTransactions
-        .filter(transaction => transaction.opinionText)
-        .map(transaction => {
+      const items = allTx
+        .filter((t) => t.opinionText)
+        .map((t) => {
           const transactionText = [
-            `Transaction: ${transaction.type}`,
-            transaction.opinionText,
-            `Amount: $${transaction.amount}`,
-            `Date: ${transaction.date}`,
-            transaction.botId ? `Bot: ${transaction.botId}` : 'User transaction',
+            `Transaction: ${t.type}`,
+            t.opinionText,
+            `Amount: $${t.amount}`,
+            `Date: ${t.date || t.timestamp}`,
+            t.isBot ? 'Bot transaction' : 'User transaction',
           ].join('. ');
 
           return {
-            id: `transaction_${transaction.id}`,
+            id: `transaction_${t.id}`,
             text: transactionText,
             type: 'transaction' as const,
             metadata: {
-              transactionType: transaction.type,
-              amount: transaction.amount,
-              date: transaction.date,
-              opinionId: transaction.opinionId,
-              botId: transaction.botId,
-              isBot: !!transaction.botId,
+              transactionType: t.type,
+              amount: t.amount,
+              date: t.date || t.timestamp,
+              opinionId: t.opinionId,
+              isBot: t.isBot,
+              botId: t.botId,
+              indexedAt: Timestamp.now().toMillis(),
             },
           };
         });
 
-      await this.embeddingService.batchAddEmbeddings(items);
+      if (items.length) {
+        await this.embeddingService.batchAddEmbeddings(items);
+      }
+
       console.log(`💰 Indexed ${items.length} transactions`);
-    } catch (error) {
-      console.error('Error indexing transactions:', error);
+    } catch (err) {
+      console.error('Error indexing transactions:', err);
     }
-  }
-
-  // Real-time indexing methods
-  async indexNewOpinion(opinion: string, index: number): Promise<void> {
-    await this.embeddingService.addEmbedding(
-      `opinion_${index}`,
-      opinion,
-      'opinion',
-      {
-        originalIndex: index,
-        url: `/opinion/${index}`,
-        category: 'opinion',
-        length: opinion.length,
-        wordCount: opinion.split(' ').length,
-        createdAt: new Date().toISOString(),
-      }
-    );
-  }
-
-  async indexNewActivity(activity: any): Promise<void> {
-    if (!activity.opinionText) return;
-
-    const activityText = [
-      `${activity.username} ${activity.type}`,
-      activity.opinionText,
-      activity.amount ? `Amount: $${activity.amount}` : '',
-      activity.price ? `Price: $${activity.price}` : '',
-    ].filter(Boolean).join('. ');
-
-    await this.embeddingService.addEmbedding(
-      `activity_${activity.id}`,
-      activityText,
-      'activity',
-      {
-        userId: activity.username,
-        activityType: activity.type,
-        amount: activity.amount,
-        price: activity.price,
-        timestamp: activity.timestamp,
-        isBot: activity.isBot || false,
-        opinionId: activity.opinionId,
-      }
-    );
-  }
-
-  // Helper methods to get data from your existing system
-  private getStoredOpinions(): string[] {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('opinions') || '[]').filter(Boolean);
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private getAllUsers(): Array<{ username: string; balance: number }> {
-    if (typeof window !== 'undefined') {
-      try {
-        // Extract unique users from transactions and activity
-        const users = new Set<string>();
-        const activities = JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
-        const userTransactions = JSON.parse(localStorage.getItem('transactions') || '[]');
-        
-        activities.forEach((activity: any) => {
-          if (activity.username && !activity.isBot) {
-            users.add(activity.username);
-          }
-        });
-        
-        userTransactions.forEach((transaction: any) => {
-          if (transaction.username) {
-            users.add(transaction.username);
-          }
-        });
-
-        // Get current user
-        const currentUser = JSON.parse(localStorage.getItem('userProfile') || '{}');
-        if (currentUser.username) {
-          users.add(currentUser.username);
-        }
-
-        return Array.from(users).map(username => ({
-          username,
-          balance: username === currentUser.username ? currentUser.balance : 10000,
-        }));
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private getUserPortfolio(username: string): any[] {
-    if (typeof window !== 'undefined') {
-      try {
-        const ownedOpinions = JSON.parse(localStorage.getItem('ownedOpinions') || '[]');
-        // For now, return current user's portfolio. In a real app, you'd have per-user storage
-        return ownedOpinions;
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private getActivityFeed(): any[] {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('globalActivityFeed') || '[]');
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private getUserTransactions(): any[] {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('transactions') || '[]');
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private getBotTransactions(): any[] {
-    if (typeof window !== 'undefined') {
-      try {
-        return JSON.parse(localStorage.getItem('botTransactions') || '[]');
-      } catch {
-        return [];
-      }
-    }
-    return [];
   }
 }
